@@ -15,6 +15,9 @@ would put a translation layer between the audit claim and what actually runs.
 | `satyapramana_store/projections.py` | Rebuild, collusion, provenance |
 | `satyapramana_store/adapters/` | The verification adapter interface, capability registry, failure taxonomy, redacting raw-response archive |
 | `satyapramana_store/normalise.py` | Per-attribute normalisation for shared-attribute detection |
+| `satyapramana_store/rulepacks.py` | Rule pack adoption, validated and gated |
+| `satyapramana_store/evidence.py` | The evidence projection and the resolver the rule engine reads through |
+| `satyapramana_store/decide.py` | The DECIDE stage -- deterministic, zero model involvement |
 | `satyapramana_store/app.py` | The FastAPI orchestrator |
 
 ## Run
@@ -77,6 +80,35 @@ rendered rather than hidden.
 along `causation_id` returning verdict, fused evidence, the verification with
 its raw-response reference, the extraction with page and region, and the source
 document.
+
+## The closed loop
+
+```
+POST /tenders/T1/rule-pack     adopt (human act, validated, content-addressed)
+POST /tenders/T1/bidders       register, linking shared attributes
+POST /bidders/A/verify         run every capability -> UNKNOWN, with reasons
+POST /bidders/A/evaluate       fold evidence, fuse, decide
+GET  /bidders/A                three metrics, risk, collusion
+GET  /bidders/A/requirements/R4.2/provenance
+```
+
+With no credentials configured, that last call returns:
+
+```
+0  REQUIREMENT_EVALUATED    UNKNOWN
+1  EVIDENCE_FUSED           GAP
+2  VERIFICATION_FAILED      UNKNOWN
+3  VERIFICATION_REQUESTED   PAN_STATUS
+```
+
+Four hops, and every one of them true. The trail is shorter than it will be
+because no document has been ingested yet -- extraction and the source document
+are the two hops still missing, and they appear as soon as there is a real
+document to read. Nothing is faked to fill them in.
+
+The metrics read `compliance_score: null`, `verification_coverage: 0.0`, and the
+risk is HIGH on "mandatory requirement unverified". That is the correct answer,
+not a placeholder.
 
 ## Plugging in a real authority
 

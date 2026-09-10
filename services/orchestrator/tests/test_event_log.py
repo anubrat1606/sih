@@ -29,7 +29,11 @@ def test_update_delete_truncate_are_all_refused(conn):
     for stmt in ("UPDATE events SET actor_id='forged'",
                  "DELETE FROM events",
                  "TRUNCATE events"):
-        with pytest.raises(psycopg.errors.RaiseException):
+        # TRUNCATE is refused twice over: PostgreSQL rejects it outright while
+        # rule_packs holds a foreign key into events, and the statement-level
+        # trigger catches it otherwise. Either refusal is correct.
+        with pytest.raises((psycopg.errors.RaiseException,
+                            psycopg.errors.FeatureNotSupported)):
             with conn.cursor() as cur:
                 cur.execute(stmt)
     with conn.cursor() as cur:

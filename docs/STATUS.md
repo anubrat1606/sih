@@ -84,6 +84,18 @@ longer all-or-nothing across the four attributes, and attributes are normalised
 per type so `+91 98765 43210` and `9876543210` are recognised as one phone
 number.
 
+**The loop is closed.** Rule pack adoption, the evidence projection, and the
+DECIDE stage are in, so the system now produces real verdicts with a walkable
+provenance chain: adopt -> register -> verify -> evaluate -> read metrics ->
+walk provenance. 117 orchestrator tests and 182 core tests pass.
+
+With no credentials configured the end-to-end result is: every verdict
+`UNKNOWN` with a machine-readable reason, `compliance_score: null` (not zero),
+coverage 0%, risk HIGH on "mandatory requirement unverified", and a four-hop
+provenance trail ending at the verification attempt. Extraction and the source
+document are the two hops still missing from that trail; they appear when there
+is a real document to read, and nothing is faked to fill them in.
+
 **Two approvals were taken as granted after three explicit go-aheads.** Both are
 recorded here because both are reversible and neither has been confirmed in
 writing:

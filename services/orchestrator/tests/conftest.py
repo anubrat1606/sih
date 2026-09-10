@@ -25,10 +25,12 @@ def dsn():
 def conn(dsn):
     c = connect(dsn)
     with c.cursor() as cur:
-        cur.execute("DROP TRIGGER IF EXISTS raw_responses_no_mutate ON raw_responses")
-        cur.execute("DROP TRIGGER IF EXISTS raw_responses_no_truncate ON raw_responses")
+        for t in ("rule_packs", "raw_responses"):
+            cur.execute(f"DROP TRIGGER IF EXISTS {t}_no_mutate ON {t}")
+            cur.execute(f"DROP TRIGGER IF EXISTS {t}_no_truncate ON {t}")
         cur.execute("DROP TABLE IF EXISTS proj_verdicts, proj_collusion, "
-                    "bidder_in_tender, raw_responses CASCADE")
+                    "proj_evidence, bidder_in_tender, raw_responses, "
+                    "rule_packs CASCADE")
         cur.execute("DROP TRIGGER IF EXISTS events_no_mutate ON events")
         cur.execute("DROP TRIGGER IF EXISTS events_no_truncate ON events")
         cur.execute("DROP TABLE IF EXISTS events CASCADE")

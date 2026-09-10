@@ -20,14 +20,19 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from satyapramana.metrics import Constants, RequirementResult, compute
+from satyapramana.predicates import EvaluationContext
 from satyapramana.risk import ConflictSignals, classify
+from satyapramana.rulepack import derived_bindings
 from satyapramana.verdicts import Obligation, Tier, Verdict
 
 from .adapters import Registry, VerificationRequest, failure_to_judgement
 from .adapters.base import Basis, LawfulBasis
 from .db import connect, migrate
+from .decide import fuse_and_evaluate
 from .events import Actor, append, export_jsonl, verify_chain
+from .evidence import ProjectionResolver, rebuild_evidence
 from .projections import collusion_clusters, provenance_trail, rebuild_projections
+from .rulepacks import NotAdoptable, active_pack, adopt
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -71,6 +76,16 @@ class BidderIn(BaseModel):
     address: str | None = None
     phone: str | None = None
     bank_account: str | None = None
+
+
+class RulePackIn(BaseModel):
+    officer_id: str
+    pack: dict
+
+
+class EvaluateIn(BaseModel):
+    as_of: date | None = None
+    bid_submission_date: date
 
 
 class DecisionIn(BaseModel):
@@ -247,6 +262,54 @@ def verify(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
             "outcomes": outcomes}
 
 
+# --- rule packs and decision --------------------------------------------------
+
+@app.post("/tenders/{tender_id}/rule-pack", status_code=201)
+def adopt_rule_pack(tender_id: str, body: RulePackIn, conn=Depends(db)) -> dict[str, Any]:
+    """Adoption is a human act, recorded with the officer's identity, the
+    content hash and a timestamp.
+
+    Validation gates it. A pack whose predicates reference evidence paths no
+    registered capability can produce is refused here rather than becoming a
+    permanent, unexplained UNKNOWN in production -- and a pack carrying an
+    unreviewed uncertain requirement cannot be adopted at all.
+    """
+    try:
+        return adopt(conn, body.pack, tender_id=tender_id,
+                     officer_id=body.officer_id, registry=REGISTRY)
+    except NotAdoptable as exc:
+        raise HTTPException(422, {
+            "error": "rule pack cannot be adopted",
+            "violations": [{"rule": v.rule, "requirement_id": v.requirement_id,
+                            "message": v.message} for v in exc.violations],
+        }) from exc
+
+
+@app.post("/bidders/{bidder_id}/evaluate")
+def evaluate_bidder_endpoint(bidder_id: str, tender_id: str, body: EvaluateIn,
+                             conn=Depends(db)) -> dict[str, Any]:
+    """Fold the evidence, fuse it, and decide -- deterministically, with no
+    model in the path.
+
+    `as_of` and `bid_submission_date` come from the request, never from the
+    system clock, which is what makes the result reproducible on replay.
+    """
+    found = active_pack(conn, tender_id)
+    if not found:
+        raise HTTPException(409, f"no rule pack adopted for tender {tender_id}")
+    version, pack = found
+
+    rebuild_evidence(conn, bidder_id, REGISTRY)
+    ctx = EvaluationContext(
+        as_of=body.as_of or date.today(),
+        bid_submission_date=body.bid_submission_date,
+        tender_id=tender_id, bidder_id=bidder_id, rule_pack_version=version)
+    result = fuse_and_evaluate(conn, pack=pack, rule_pack_version=version,
+                              tender_id=tender_id, bidder_id=bidder_id, ctx=ctx)
+    rebuild_projections(conn)
+    return {"bidder_id": bidder_id, "rule_pack_version": version, **result}
+
+
 # --- read models --------------------------------------------------------------
 
 @app.get("/bidders/{bidder_id}")
@@ -262,16 +325,36 @@ def get_bidder(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, An
         cols = [d[0] for d in cur.description]
         verdicts = [dict(zip(cols, row)) for row in cur.fetchall()]
 
-    results = [
-        RequirementResult(v["requirement_id"], Verdict(v["verdict_effective"]),
-                          Obligation.MANDATORY, covered=False, tier=Tier.C)
-        for v in verdicts
-    ]
+    resolver = ProjectionResolver(conn, bidder_id)
+    found = active_pack(conn, tender_id)
+    obligations, bindings = {}, {}
+    if found:
+        for req in found[1]["requirements"]:
+            obligations[req["id"]] = Obligation(req["obligation"])
+            bindings[req["id"]] = derived_bindings(req)
+
+    results = []
+    for v in verdicts:
+        rid = v["requirement_id"]
+        tiers = resolver.tiers_for(bindings.get(rid, ()))
+        # Coverage counts only fresh Tier A evidence. Nothing is Tier A yet,
+        # because no capability is configured -- so coverage is honestly 0%.
+        covered = any(t is Tier.A for t in tiers)
+        results.append(RequirementResult(
+            rid, Verdict(v["verdict_effective"]),
+            obligations.get(rid, Obligation.MANDATORY),
+            covered=covered,
+            tier=max(tiers, key=lambda t: {Tier.A: 3, Tier.B: 2, Tier.C: 1}[t])
+                 if tiers else None))
     metrics = compute(results, CONSTANTS)
     clusters = {c.bidder_id: c for c in collusion_clusters(conn, tender_id)}
     cluster = clusters.get(bidder_id)
+    self_declared = tuple(
+        r.requirement_id for r in results
+        if r.obligation is Obligation.MANDATORY and r.tier is Tier.C)
     risk = classify(results, metrics, ConflictSignals(
-        collusion_edge=bool(cluster and cluster.flagged)), CONSTANTS)
+        collusion_edge=bool(cluster and cluster.flagged),
+        self_declared_mandatory=self_declared), CONSTANTS)
 
     return {
         "bidder_id": bidder_id,

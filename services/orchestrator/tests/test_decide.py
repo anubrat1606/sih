@@ -1,0 +1,266 @@
+"""The closed loop: adopt a rule pack, verify, evaluate, walk the provenance.
+
+The rule pack here encodes illustrative requirement text pending a real GeM
+tender PDF. It is a structural fixture, not simulated evidence: no authority
+response is fabricated anywhere, which is why every verdict below comes out
+UNKNOWN.
+"""
+import copy
+
+import pytest
+from fastapi.testclient import TestClient
+
+from satyapramana_store.app import app, db
+
+PACK = {
+    "rule_pack_id": "cpcl.tender.2026.gem-test",
+    "semver": "1.0.0",
+    "tender_reference": {
+        "tender_id": "T1",
+        "source_document_sha256": "b" * 64,
+        "issuing_authority": "Chennai Petroleum Corporation Limited",
+    },
+    "constants": {
+        "partial_credit": 0.5, "w_mandatory": 1.0, "w_desirable": 0.3,
+        "recency_floor": 0.5, "corroboration_step": 0.1,
+        "coverage_floor_high": 50, "coverage_floor_medium": 80,
+        "confidence_floor": 70, "freshness_days": {"GST_STATUS": 30},
+    },
+    "requirements": [
+        {"id": "R4", "text": "Bidder shall hold valid GST registration and PAN.",
+         "source": {"page": 14, "region": [72, 410, 523, 468]},
+         "obligation": "mandatory", "operator": "ALL_OF",
+         "children": ["R4.1", "R4.2"]},
+        {"id": "R4.1", "text": "Valid GST registration, active on the bid submission date.",
+         "source": {"page": 14, "region": [72, 470, 523, 494]},
+         "obligation": "mandatory", "operator": "LEAF",
+         "predicate": {"op": "active_on",
+                       "subject": {"field": "bidder.gst.status_history"},
+                       "at": {"context": "bid_submission_date"}}},
+        {"id": "R4.2", "text": "Valid PAN issued to the bidding entity.",
+         "source": {"page": 14, "region": [72, 496, 523, 520]},
+         "obligation": "mandatory", "operator": "LEAF",
+         "predicate": {"op": "eq", "left": {"field": "bidder.pan.status"},
+                       "right": {"literal": "VALID"}}},
+    ],
+}
+
+EVAL = {"as_of": "2026-09-10", "bid_submission_date": "2026-09-22"}
+
+
+@pytest.fixture()
+def client(conn):
+    app.dependency_overrides[db] = lambda: conn
+    with TestClient(app) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+def adopt(client, pack=None):
+    return client.post("/tenders/T1/rule-pack",
+                       json={"officer_id": "officer_1", "pack": pack or PACK})
+
+
+def full_run(client):
+    adopt(client)
+    client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
+    client.post("/bidders/A/verify", params={"tender_id": "T1"})
+    return client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL)
+
+
+# --- adoption -----------------------------------------------------------------
+
+def test_a_valid_pack_is_adopted_with_a_content_addressed_version(client):
+    body = adopt(client).json()
+    assert body["rule_pack_version"].startswith("cpcl.tender.2026.gem-test@1.0.0+")
+    assert len(body["rule_pack_version"].split("+")[1]) == 12
+
+
+def test_adoption_is_a_human_event(client, conn):
+    adopt(client)
+    with conn.cursor() as cur:
+        cur.execute("SELECT actor_kind, actor_id, payload FROM events "
+                    "WHERE event_type='RULE_PACK_ADOPTED'")
+        kind, actor, payload = cur.fetchone()
+    assert kind == "HUMAN" and actor == "officer_1"
+    assert payload["requirement_count"] == 3
+
+
+def test_a_pack_referencing_an_unproducible_path_is_refused(client):
+    """Rule 8, against the live registry. Otherwise the requirement would become
+    a permanent, unexplained UNKNOWN in production."""
+    bad = copy.deepcopy(PACK)
+    bad["requirements"][2]["predicate"]["left"]["field"] = "bidder.astrology.sign"
+    r = adopt(client, bad)
+    assert r.status_code == 422
+    violations = r.json()["detail"]["violations"]
+    assert any(v["rule"] == 8 for v in violations)
+
+
+def test_an_unreviewed_requirement_blocks_adoption(client):
+    bad = copy.deepcopy(PACK)
+    bad["requirements"][2]["review_required"] = True
+    bad["requirements"][2]["review_note"] = "clause 7.2 is ambiguous"
+    r = adopt(client, bad)
+    assert r.status_code == 422
+    assert any(v["rule"] == 11 for v in r.json()["detail"]["violations"])
+
+
+def test_a_pack_reading_the_system_clock_is_refused(client):
+    bad = copy.deepcopy(PACK)
+    bad["requirements"][2]["predicate"] = {
+        "op": "date_before", "left": {"field": "bidder.pan.status"},
+        "right": {"field": "today"}}
+    assert any(v["rule"] == 10
+               for v in adopt(client, bad).json()["detail"]["violations"])
+
+
+def test_an_adopted_pack_cannot_be_mutated(client, conn):
+    import psycopg
+    adopt(client)
+    with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
+        with conn.cursor() as cur:
+            cur.execute("UPDATE rule_packs SET semver='9.9.9'")
+
+
+def test_evaluation_without_an_adopted_pack_is_refused(client):
+    client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
+    r = client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL)
+    assert r.status_code == 409
+
+
+# --- the decision stage -------------------------------------------------------
+
+def test_every_requirement_is_evaluated(client):
+    body = full_run(client).json()
+    assert set(body["verdicts"]) == {"R4", "R4.1", "R4.2"}
+
+
+def test_with_no_authority_configured_everything_is_unknown_never_pass(client):
+    verdicts = full_run(client).json()["verdicts"]
+    assert all(v["verdict"] == "UNKNOWN" for v in verdicts.values())
+    assert not any(v["verdict"] == "PASS" for v in verdicts.values())
+
+
+def test_the_reason_propagates_from_the_evidence_record(client):
+    """Not a generic placeholder: the officer sees why."""
+    verdicts = full_run(client).json()["verdicts"]
+    assert verdicts["R4.2"]["reason"] == "AUTHORITY_UNAUTHORIZED"
+    assert "awaiting credentials" not in verdicts["R4.2"]["reason"].lower()
+
+
+def test_unknown_children_compose_to_unknown_not_fail(client):
+    verdicts = full_run(client).json()["verdicts"]
+    assert verdicts["R4"]["verdict"] == "UNKNOWN"
+
+
+def test_every_verdict_records_the_rule_pack_that_produced_it(client, conn):
+    version = full_run(client).json()["rule_pack_version"]
+    with conn.cursor() as cur:
+        cur.execute("SELECT DISTINCT payload->>'rule_pack_version' FROM events "
+                    "WHERE event_type='REQUIREMENT_EVALUATED'")
+        assert [r[0] for r in cur.fetchall()] == [version]
+
+
+def test_evaluation_is_deterministic(client, conn):
+    """Same evidence, same rule pack, same verdicts -- every time."""
+    adopt(client)
+    client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
+    client.post("/bidders/A/verify", params={"tender_id": "T1"})
+    first = client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
+                        json=EVAL).json()["verdicts"]
+    for _ in range(5):
+        again = client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
+                            json=EVAL).json()["verdicts"]
+        assert again == first
+
+
+def test_the_verdict_carries_its_clause_location_in_the_tender(client, conn):
+    """The other half of provenance: verdict -> rule -> quoted clause."""
+    full_run(client)
+    with conn.cursor() as cur:
+        cur.execute("SELECT payload->'source' FROM events "
+                    "WHERE event_type='REQUIREMENT_EVALUATED' "
+                    "AND payload->>'requirement_id'='R4.1'")
+        assert cur.fetchone()[0] == {"page": 14, "region": [72, 470, 523, 494]}
+
+
+# --- provenance, end to end ---------------------------------------------------
+
+def test_the_provenance_walk_reaches_the_evidence(client):
+    full_run(client)
+    trail = client.get("/bidders/A/requirements/R4.2/provenance").json()["trail"]
+    kinds = [t["event_type"] for t in trail]
+    assert kinds[0] == "REQUIREMENT_EVALUATED"
+    assert "EVIDENCE_FUSED" in kinds
+    assert "VERIFICATION_FAILED" in kinds, (
+        "an unreachable authority is part of the evidence chain, not a gap in it")
+
+
+def test_the_trail_explains_an_unknown(client):
+    full_run(client)
+    trail = client.get("/bidders/A/requirements/R4.2/provenance").json()["trail"]
+    failure = next(t for t in trail if t["event_type"] == "VERIFICATION_FAILED")
+    assert failure["payload"]["failure_code"] == "UNAUTHORIZED"
+    assert "awaiting credentials" in failure["payload"]["detail"]
+
+
+def test_a_composed_verdict_walks_to_its_first_child(client):
+    full_run(client)
+    trail = client.get("/bidders/A/requirements/R4/provenance").json()["trail"]
+    assert trail[0]["payload"]["requirement_id"] == "R4"
+    assert trail[1]["payload"]["requirement_id"] == "R4.1"
+
+
+# --- the read model -----------------------------------------------------------
+
+def test_metrics_report_zero_coverage_honestly(client):
+    full_run(client)
+    body = client.get("/bidders/A", params={"tender_id": "T1"}).json()
+    assert body["metrics"]["verification_coverage"] == 0.0
+    assert body["metrics"]["compliance_score"] is None, (
+        "nothing determinate -- must be null, never zero")
+
+
+def test_an_unverified_mandatory_requirement_is_high_risk(client):
+    full_run(client)
+    risk = client.get("/bidders/A", params={"tender_id": "T1"}).json()["risk"]
+    assert risk["level"] == "HIGH"
+    assert any("unverified" in t for t in risk["triggers"])
+    assert not any("failed" in t for t in risk["triggers"]), (
+        "UNKNOWN must never be reported as a failure")
+
+
+def test_an_override_keeps_the_systems_own_conclusion(client):
+    full_run(client)
+    client.post("/bidders/A/override", params={"tender_id": "T1"},
+                json={"officer_id": "officer_1", "requirement_id": "R4.2",
+                      "verdict_after": "PASS",
+                      "justification": "Original PAN card produced in person."})
+    verdicts = {v["requirement_id"]: v for v in
+                client.get("/bidders/A", params={"tender_id": "T1"}).json()["verdicts"]}
+    assert verdicts["R4.2"]["verdict_system"] == "UNKNOWN"
+    assert verdicts["R4.2"]["verdict_effective"] == "PASS"
+    assert verdicts["R4.2"]["overridden_by"] == "officer_1"
+
+
+def test_the_chain_stays_intact_across_the_whole_flow(client):
+    import json
+    full_run(client)
+    client.post("/bidders/A/decision", params={"tender_id": "T1"},
+                json={"officer_id": "officer_1", "decision": "DISQUALIFY"})
+
+    report = client.get("/audit/verify").json()
+    assert report["intact"]
+    assert report["events"] == report["linked"] == report["rehashed"] > 0
+
+    # Every stage of the flow is present in the one chain, and only the two
+    # human acts carry a HUMAN actor.
+    lines = [json.loads(l) for l in client.get("/audit/export").text.splitlines()
+             if l.strip()][1:]
+    kinds = {l["event_type"] for l in lines}
+    assert {"RULE_PACK_ADOPTED", "BIDDER_REGISTERED", "VERIFICATION_REQUESTED",
+            "VERIFICATION_FAILED", "EVIDENCE_FUSED", "REQUIREMENT_EVALUATED",
+            "DECISION_RECORDED"} <= kinds
+    human = {l["event_type"] for l in lines if l["actor_kind"] == "HUMAN"}
+    assert human == {"RULE_PACK_ADOPTED", "DECISION_RECORDED"}
