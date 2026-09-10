@@ -7,3 +7,5 @@ services/extraction/uploads/
 data/consented_bidders/
 frontend/dist/
 *.log
+
+*.egg-info/
