@@ -43,6 +43,7 @@ from .base import (
 )
 
 TEST_BASE_URL = "https://test-api.sandbox.co.in"
+LIVE_BASE_URL = "https://api.sandbox.co.in"
 API_VERSION = "1.0.0"
 TIMEOUT_SECONDS = 10.0
 
@@ -358,10 +359,22 @@ class GstStatusAdapter:
 def build_from_env() -> list[Any]:
     """The whole plug-in point. Set both env vars and these two capabilities
     flip from AWAITING_CREDENTIALS to LIVE on next process start; unset either
-    and verification falls straight back to the honest UnconfiguredAdapter."""
+    and verification falls straight back to the honest UnconfiguredAdapter.
+
+    Sandbox.co.in issues separate credential pools for their test and
+    production hosts -- a `key_live_...` pair is production and belongs
+    against LIVE_BASE_URL, not the test host. Defaulting to the test host
+    would just 401 for a live key pair, so the environment says which one:
+    unset or "test" -> TEST_BASE_URL (default, safest); "live" -> LIVE_BASE_URL.
+    Every call against the live host is a real, billed query against a real
+    government-adjacent record -- this flag exists so that only happens when
+    someone deliberately set it, never by a default guess.
+    """
     api_key = os.environ.get("SATYAPRAMANA_SANDBOX_API_KEY")
     api_secret = os.environ.get("SATYAPRAMANA_SANDBOX_API_SECRET")
     if not api_key or not api_secret:
         return []
-    session = SandboxSession(api_key, api_secret)
+    environment = os.environ.get("SATYAPRAMANA_SANDBOX_ENV", "test").lower()
+    base_url = LIVE_BASE_URL if environment == "live" else TEST_BASE_URL
+    session = SandboxSession(api_key, api_secret, base_url=base_url)
     return [PanStatusAdapter(session), GstStatusAdapter(session)]
