@@ -2,6 +2,63 @@
 
 Last reviewed: 2026-09-10. Read `../CLAUDE.md` first for architecture and conventions.
 
+## Architecture direction — added 2026-09-10
+
+The team has a second, more ambitious spec (`satyapramana.md`, the architecture
+charter). It is **not** compatible with the prompts file that built this repo:
+it locks the stack to Next.js / FastAPI / PostgreSQL and forbids MongoDB and
+graph databases.
+
+Adopted position: **charter integrity, prototype infrastructure.** Take the
+charter's evidentiary properties (four-state verdicts, evidence tiers, three
+orthogonal metrics, rule packs as data, honest `UNAVAILABLE`); decline its
+infrastructure cost (full event sourcing/CQRS, Next.js migration, 13 of the 17
+modules). One migration only: the Node/Express + Mongo backend becomes
+FastAPI + PostgreSQL, so the audit log is append-only at the database level.
+
+Collusion detection stays in scope, as an 18th module: edges become events,
+clusters become a PostgreSQL recursive-CTE projection instead of an in-memory
+networkx graph, so a flag survives restart and can be audited.
+
+New specs, both verified:
+
+- `VERDICT_ALGEBRA.md` — four-state algebra, one composition function covering
+  `ALL_OF` / `ANY_OF` / `K_OF_N`, the Tier A/B/C ceiling, reason codes, and the
+  three metric formulas. Algebraic properties checked exhaustively.
+- `RULE_PACKS.md` + `/schemas/rule_pack.schema.json` — declarative,
+  content-addressed rule packs and the closed predicate language. Meta-schema is
+  draft-07 valid; the worked example validates; 20 malformed variants rejected.
+- `ADAPTERS.md` + `/schemas/capability_manifest.schema.json` +
+  `/schemas/capability_registry.json` — the verification adapter interface,
+  capability manifests, the failure taxonomy (no row maps to `PASS`), the raw
+  response archive, lawful basis, freshness and temporal-query handling.
+  Meta-schema draft-07 valid; all 6 registry adapters validate; 11 malformed
+  variants rejected; the rule-pack operand grammar and the registry's evidence
+  paths cross-check.
+
+The registry records the honest current state: four capabilities
+(`PAN_STATUS`, `GST_STATUS`, `CIN_STATUS`, `UDYAM_STATUS`) sit at
+`AWAITING_CREDENTIALS`, and EPFO/ESIC are registered null adapters with no
+lawful programmatic source. Verification Coverage is therefore honestly 0%
+until one aggregator account exists — still the highest-value errand outstanding.
+
+**Two approvals still outstanding, both blocking implementation:**
+
+1. **v2 schemas.** The four-state algebra replaces
+   `PASS | FAIL | MISMATCH | UNVERIFIED`, and the three metrics replace
+   `final_score.compliance_score`. `CLAUDE.md` freezes the five original
+   schemas, so this needs an explicit yes. Nothing in `/schemas` has been
+   modified; `rule_pack.schema.json` is purely additive.
+2. **Charter section 8 amendment** — keep Vite, drop the Next.js requirement.
+   Justification: no SSR, no file-based routing and no server components are
+   needed; the charter's UI value is in design tokens and the seven evidence
+   primitives, all framework-agnostic. Migrating costs days and gains nothing
+   demonstrable.
+
+The priorities below still stand and are unaffected by either approval.
+
+---
+
 ## Verdict by component
 
 | Component | State | Action |

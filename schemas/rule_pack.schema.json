@@ -1,0 +1,278 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sih26100.local/schemas/rule_pack.schema.json",
+  "title": "Rule Pack",
+  "description": "Declarative, versioned, content-addressed encoding of one tender's compliance requirements. See docs/RULE_PACKS.md. This file is additive: it does not modify the five frozen schemas.",
+  "type": "object",
+  "required": ["rule_pack_id", "semver", "content_hash", "tender_reference", "constants", "requirements"],
+  "additionalProperties": false,
+  "properties": {
+    "rule_pack_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9-]+)*$",
+      "description": "Stable across versions of the same tender's rules."
+    },
+    "semver": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" },
+    "content_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "sha256 over the canonical JSON form with this field excluded. See docs/RULE_PACKS.md section 2.1."
+    },
+    "tender_reference": {
+      "type": "object",
+      "required": ["tender_id", "source_document_sha256", "issuing_authority"],
+      "additionalProperties": false,
+      "properties": {
+        "tender_id": { "type": "string", "minLength": 1 },
+        "source_document_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "issuing_authority": { "type": "string", "minLength": 1 }
+      }
+    },
+    "constants": {
+      "type": "object",
+      "required": ["partial_credit", "w_mandatory", "w_desirable", "recency_floor",
+                   "corroboration_step", "coverage_floor_high", "coverage_floor_medium",
+                   "confidence_floor", "freshness_days"],
+      "additionalProperties": false,
+      "properties": {
+        "partial_credit":        { "type": "number", "minimum": 0, "maximum": 1 },
+        "w_mandatory":           { "type": "number", "exclusiveMinimum": 0 },
+        "w_desirable":           { "type": "number", "exclusiveMinimum": 0 },
+        "recency_floor":         { "type": "number", "minimum": 0, "maximum": 1 },
+        "corroboration_step":    { "type": "number", "minimum": 0, "maximum": 1 },
+        "coverage_floor_high":   { "type": "number", "minimum": 0, "maximum": 100 },
+        "coverage_floor_medium": { "type": "number", "minimum": 0, "maximum": 100 },
+        "confidence_floor":      { "type": "number", "minimum": 0, "maximum": 100 },
+        "freshness_days": {
+          "type": "object",
+          "description": "Per-capability freshness window in days. Keys are capability identifiers declared by adapters.",
+          "minProperties": 1,
+          "additionalProperties": { "type": "integer", "exclusiveMinimum": 0 }
+        }
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/requirement" }
+    }
+  },
+
+  "definitions": {
+
+    "requirement_id": { "type": "string", "pattern": "^[A-Za-z0-9]+([._][A-Za-z0-9]+)*$" },
+
+    "source_ref": {
+      "type": "object",
+      "description": "Location of the quoted clause in the tender document. page is mandatory; region is [x0,y0,x1,y1] in PDF user space.",
+      "required": ["page"],
+      "additionalProperties": false,
+      "properties": {
+        "page": { "type": "integer", "minimum": 1 },
+        "region": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 4,
+          "maxItems": 4
+        }
+      }
+    },
+
+    "requirement": {
+      "type": "object",
+      "required": ["id", "text", "source", "obligation", "operator"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/definitions/requirement_id" },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Prose quoted from the tender document, not paraphrased."
+        },
+        "source": { "$ref": "#/definitions/source_ref" },
+        "obligation": { "enum": ["mandatory", "desirable"] },
+        "operator": { "enum": ["ALL_OF", "ANY_OF", "K_OF_N", "NOT", "LEAF"] },
+        "k": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Required for K_OF_N. Validator additionally checks k <= len(children)."
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/requirement_id" },
+          "minItems": 1
+        },
+        "predicate": { "$ref": "#/definitions/predicate" },
+        "review_required": {
+          "type": "boolean",
+          "default": false,
+          "description": "Set by the decomposer when uncertain. Adoption is blocked while any requirement carries true."
+        },
+        "review_note": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "operator": { "const": "LEAF" } }, "required": ["operator"] },
+          "then": { "required": ["predicate"], "not": { "required": ["children"] } },
+          "else": { "required": ["children"], "not": { "required": ["predicate"] } }
+        },
+        {
+          "if": { "properties": { "operator": { "const": "K_OF_N" } }, "required": ["operator"] },
+          "then": { "required": ["k"] }
+        },
+        {
+          "if": { "properties": { "operator": { "const": "NOT" } }, "required": ["operator"] },
+          "then": { "properties": { "children": { "maxItems": 1 } } }
+        }
+      ]
+    },
+
+    "operand": {
+      "description": "Exactly one of field / literal / context / aggregate.",
+      "type": "object",
+      "oneOf": [
+        {
+          "required": ["field"],
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
+              "description": "Path into the fused evidence projection. Validator checks a producing stage or adapter exists."
+            }
+          }
+        },
+        {
+          "required": ["literal"],
+          "additionalProperties": false,
+          "properties": {
+            "literal": {
+              "type": ["string", "number", "boolean"],
+              "description": "Currency literals MUST be integers in minor units (paise). Dates MUST be ISO-8601 strings."
+            }
+          }
+        },
+        {
+          "required": ["context"],
+          "additionalProperties": false,
+          "properties": {
+            "context": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "description": "The ONLY permitted source of temporal values. No predicate may read the system clock."
+            }
+          }
+        },
+        {
+          "required": ["aggregate", "over", "select"],
+          "additionalProperties": false,
+          "properties": {
+            "aggregate": { "enum": ["sum", "mean", "min", "max", "count"] },
+            "over": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" },
+            "select": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+            "window": {
+              "type": "object",
+              "required": ["last_n", "order_by", "direction"],
+              "additionalProperties": false,
+              "description": "If fewer than last_n items are available the aggregate is undefined and the predicate yields UNKNOWN. It is never computed over a short window.",
+              "properties": {
+                "last_n": { "type": "integer", "minimum": 1 },
+                "order_by": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+                "direction": { "enum": ["asc", "desc"] }
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    "predicate": {
+      "description": "Closed, total, deterministic. Yields PASS, FAIL or UNKNOWN -- never a boolean, never PARTIAL.",
+      "type": "object",
+      "oneOf": [
+        {
+          "title": "binary comparison",
+          "required": ["op", "left", "right"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "date_before", "date_after"] },
+            "left": { "$ref": "#/definitions/operand" },
+            "right": { "$ref": "#/definitions/operand" }
+          }
+        },
+        {
+          "title": "set membership",
+          "required": ["op", "left", "values"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "enum": ["one_of", "not_one_of"] },
+            "left": { "$ref": "#/definitions/operand" },
+            "values": { "type": "array", "minItems": 1, "items": { "type": ["string", "number", "boolean"] } }
+          }
+        },
+        {
+          "title": "anchored regex",
+          "required": ["op", "left", "pattern"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "const": "matches" },
+            "left": { "$ref": "#/definitions/operand" },
+            "pattern": {
+              "type": "string",
+              "description": "Anchored and RE2-safe. No backreferences, no lookaround, no unbounded nested quantifiers."
+            }
+          }
+        },
+        {
+          "title": "existence",
+          "required": ["op", "subject"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "const": "exists" },
+            "subject": { "$ref": "#/definitions/operand" }
+          }
+        },
+        {
+          "title": "date range",
+          "required": ["op", "left", "from", "to"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "const": "date_between" },
+            "left": { "$ref": "#/definitions/operand" },
+            "from": { "$ref": "#/definitions/operand" },
+            "to": { "$ref": "#/definitions/operand" }
+          }
+        },
+        {
+          "title": "temporal status",
+          "required": ["op", "subject", "at"],
+          "additionalProperties": false,
+          "description": "Was this status active at the given instant? Requires an adapter whose capability manifest declares as_of support; otherwise yields UNKNOWN rather than substituting today's answer.",
+          "properties": {
+            "op": { "const": "active_on" },
+            "subject": { "$ref": "#/definitions/operand" },
+            "at": { "$ref": "#/definitions/operand" }
+          }
+        },
+        {
+          "title": "logical n-ary",
+          "required": ["op", "of"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "enum": ["all", "any"] },
+            "of": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/predicate" } }
+          }
+        },
+        {
+          "title": "logical negation",
+          "required": ["op", "of"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "const": "not" },
+            "of": { "$ref": "#/definitions/predicate" }
+          }
+        }
+      ]
+    }
+  }
+}
