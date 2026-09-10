@@ -27,11 +27,24 @@ class NotAdoptable(ValueError):
 
 
 def _registry_as_dict(registry: Registry) -> dict[str, Any]:
-    return {"adapters": [
+    """Everything that can produce evidence, for rule 8.
+
+    Adapters are only half of it. The deterministic extraction stage produces
+    evidence too -- the identifiers it reads off a document -- and a rule pack
+    that may not reference them could never express "the bidder stated a GSTIN".
+    Rule 8's wording is "no producing stage or adapter"; both belong here.
+    """
+    from .extract.ingest import FIELD_PATHS
+
+    adapters = [
         {"adapter_id": a.manifest.adapter_id,
          "capabilities": [{"provides": list(c.provides)}
                           for c in a.manifest.capabilities]}
-        for a in registry.adapters]}
+        for a in registry.adapters]
+    adapters.append({
+        "adapter_id": "extract-deterministic",
+        "capabilities": [{"provides": sorted(FIELD_PATHS.values())}]})
+    return {"adapters": adapters}
 
 
 def adopt(

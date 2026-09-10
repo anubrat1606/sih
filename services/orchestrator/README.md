@@ -18,6 +18,7 @@ would put a translation layer between the audit claim and what actually runs.
 | `satyapramana_store/rulepacks.py` | Rule pack adoption, validated and gated |
 | `satyapramana_store/evidence.py` | The evidence projection and the resolver the rule engine reads through |
 | `satyapramana_store/decide.py` | The DECIDE stage -- deterministic, zero model involvement |
+| `satyapramana_store/extract/` | INGEST and the deterministic half of EXTRACT: grammars with structural checks, page layout, bounding boxes |
 | `satyapramana_store/app.py` | The FastAPI orchestrator |
 
 ## Run
@@ -109,6 +110,43 @@ document to read. Nothing is faked to fill them in.
 The metrics read `compliance_score: null`, `verification_coverage: 0.0`, and the
 risk is HIGH on "mandatory requirement unverified". That is the correct answer,
 not a placeholder.
+
+## Extraction without a model
+
+For a PDF with a text layer the whole extraction path runs with **no model
+involved**. Identifiers are located by grammar, validated structurally, and
+recorded with the exact page and region their characters occupy:
+
+```
+0  REQUIREMENT_EVALUATED  PARTIAL
+1  EVIDENCE_FUSED         CLAIM_ONLY
+2  FIELD_EXTRACTED        33AAAAA0000A1Z9  page 1  region [111.7, 71.2, 211.4, 82.2]
+3  DOCUMENT_INGESTED      documents/A/b7ac1d3a-fixture.pdf
+```
+
+That is the demo axiom working with zero AI in the path, and it is the charter's
+tell-tale test made concrete.
+
+**Boxes never come from a model.** Vision models are unreliable at emitting
+coordinates, so the box comes from the text layer and a model's only job is to
+say *which* span is the identifier. A page with no text layer records
+`EXTRACTION_FAILED` with a stated reason -- never a guessed value.
+
+**Structural validation runs before any authority is asked.** A GSTIN carries a
+check digit, a state code, and its holder's PAN in characters 3-12. An OCR
+misread of one character still matches the regex, so without these checks the
+system would ask an authority about a business that does not exist and record
+the `NOT_FOUND` as if it meant something. A structurally invalid candidate is an
+extraction problem, and is recorded as one.
+
+**The PAN embedded in a GSTIN is cross-checked against the PAN card.** If they
+disagree the two documents are not about the same legal entity, and no amount of
+name similarity changes that.
+
+> The check-digit algorithm is implemented from the published specification and
+> is property-tested, but it has **not** been checked against a real GSTIN.
+> Doing that needs one real registration number. Until then, treat a check-digit
+> failure as a reason to look rather than as proof.
 
 ## Plugging in a real authority
 

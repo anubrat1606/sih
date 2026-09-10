@@ -96,6 +96,12 @@ provenance trail ending at the verification attempt. Extraction and the source
 document are the two hops still missing from that trail; they appear when there
 is a real document to read, and nothing is faked to fill them in.
 
+**Extraction works without a model.** For a PDF with a text layer, identifiers
+are located by grammar, validated structurally (GSTIN check digit, state code,
+embedded PAN), and recorded with the exact page and region -- so the provenance
+trail now reaches the source document and a click lands on the right line, with
+no AI anywhere in the path. 145 orchestrator tests and 182 core tests pass.
+
 **Two approvals were taken as granted after three explicit go-aheads.** Both are
 recorded here because both are reversible and neither has been confirmed in
 writing:

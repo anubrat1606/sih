@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
@@ -31,6 +31,7 @@ from .db import connect, migrate
 from .decide import fuse_and_evaluate
 from .events import Actor, append, export_jsonl, verify_chain
 from .evidence import ProjectionResolver, rebuild_evidence
+from .extract import ingest_document
 from .projections import collusion_clusters, provenance_trail, rebuild_projections
 from .rulepacks import NotAdoptable, active_pack, adopt
 
@@ -260,6 +261,28 @@ def verify(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
 
     return {"bidder_id": bidder_id, "correlation_id": correlation,
             "outcomes": outcomes}
+
+
+@app.post("/bidders/{bidder_id}/documents", status_code=201)
+async def upload_document(bidder_id: str, tender_id: str,
+                          declared_type: str | None = None,
+                          file: UploadFile = File(...),
+                          conn=Depends(db)) -> dict[str, Any]:
+    """Ingest a document and extract what can be read from it deterministically.
+
+    For a PDF with a text layer this needs no model at all: identifiers are
+    located by grammar, validated structurally, and recorded with the exact page
+    and region their characters occupy. A page with no text layer is recorded as
+    EXTRACTION_FAILED with a stated reason -- never a guessed value.
+    """
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "empty upload")
+    result = ingest_document(conn, tender_id=tender_id, bidder_id=bidder_id,
+                             filename=file.filename or "upload.pdf", data=data,
+                             declared_type=declared_type)
+    rebuild_evidence(conn, bidder_id, REGISTRY)
+    return result
 
 
 # --- rule packs and decision --------------------------------------------------

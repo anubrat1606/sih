@@ -9,3 +9,7 @@ frontend/dist/
 *.log
 
 *.egg-info/
+
+# uploaded documents (never committed)
+documents/
+**/documents/

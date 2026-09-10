@@ -122,6 +122,12 @@ def evaluate_bidder(
     return judgements
 
 
+def _fusion_outcome(rec) -> str:
+    if rec is None or not rec.resolved:
+        return "GAP"
+    return "AUTHORITY_ONLY" if rec.capability_id else "CLAIM_ONLY"
+
+
 def fuse_and_evaluate(
     conn, *, pack, rule_pack_version, tender_id, bidder_id, ctx,
 ) -> dict[str, Any]:
@@ -145,8 +151,11 @@ def fuse_and_evaluate(
                causation_id=rec.source_event if rec else None,
                tender_id=tender_id, bidder_id=bidder_id,
                payload={"path": path,
-                        "outcome": "GAP" if rec is None or not rec.resolved
-                                   else "AUTHORITY_ONLY",
+                        # CLAIM_ONLY means the value came off the bidder's own
+                        # document with no authority consulted. Labelling that
+                        # AUTHORITY_ONLY would overstate the evidence, which is
+                        # the whole failure mode this system exists to avoid.
+                        "outcome": _fusion_outcome(rec),
                         "observed": rec.value if rec and rec.resolved else None,
                         "unresolved_reason": (
                             rec.unresolved_reason.value
