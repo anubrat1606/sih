@@ -2,6 +2,17 @@
 
 Context for Claude Code. Read this first, then `docs/STATUS.md` for what to work on next.
 
+> **Superseded, kept for history.** Everything below describes the original
+> Node/Express + Mongo + Python-services scaffold. The team has since adopted
+> a stricter architecture charter — [`docs/satyapramana.md`](docs/satyapramana.md)
+> — and `main` now points at that implementation (`services/core`,
+> `services/orchestrator`, event-sourced PostgreSQL audit log, the four-state
+> verdict algebra). The old services under `backend/`, `services/extraction/`,
+> `services/verification/`, `services/collusion/` are retiring, not the
+> current architecture. Read `docs/STATUS.md` and
+> [`CONTRIBUTING.md`](CONTRIBUTING.md) for what's actually live and who owns
+> what now.
+
 ## What this is
 
 **SIH26100 — AI-powered bid compliance verification platform** for GeM (the
