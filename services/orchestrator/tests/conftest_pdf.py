@@ -20,6 +20,16 @@ def valid_gstin(stem: str = "33AAAAA0000A1Z") -> str:
     return stem + gstin_check_digit(stem)
 
 
+def valid_cin(state: str = "KA", year: str = "2015", ownership: str = "PTC") -> str:
+    """A structurally valid 21-character CIN for exercising the validator.
+
+    Not a real registration -- the industry code and the registration number are
+    filler digits; only the segments the validator checks (state, year,
+    ownership class) carry meaning. A CIN has no check digit.
+    """
+    return f"U74999{state}{year}{ownership}012345"
+
+
 def text_pdf(lines: list[str], pages: int = 1) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
