@@ -60,6 +60,14 @@ SYSTEM = Actor("SYSTEM", "orchestrator")
 REGISTRY = Registry.from_file()
 CONSTANTS = Constants()
 
+# The whole plug-in point (docs/ADAPTERS.md): a real adapter takes over the
+# capabilities its manifest declares, and nothing else changes. With no
+# SATYAPRAMANA_SANDBOX_* credentials set this is a no-op and PAN_STATUS /
+# GST_STATUS stay on the honest UnconfiguredAdapter.
+from .adapters.sandbox_co_in import build_from_env as _build_sandbox_adapters  # noqa: E402
+for _adapter in _build_sandbox_adapters():
+    REGISTRY.register(_adapter)
+
 
 def db():
     conn = connect()
@@ -215,6 +223,18 @@ def verify(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
     correlation = str(uuid.uuid4())
     basis = LawfulBasis(Basis.TENDER_EVALUATION, "orchestrator",
                         f"Compliance evaluation for tender {tender_id}")
+
+    # What we actually have on file for this bidder, so a live adapter has an
+    # identifier to submit. Only what was genuinely extracted goes in here --
+    # a field ProjectionResolver can't resolve is simply absent, never guessed.
+    resolver = ProjectionResolver(conn, bidder_id)
+    subject = {"bidder_id": bidder_id}
+    for key, path in (("pan_number", "bidder.pan.pan_number"),
+                       ("gstin", "bidder.gst.gstin")):
+        resolved = resolver.field(path)
+        if resolved.ok:
+            subject[key] = resolved.value
+
     outcomes = []
     for capability_id, (adapter, capability) in sorted(REGISTRY.capabilities().items()):
         requested = append(
@@ -225,7 +245,7 @@ def verify(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
                      "requested_by": basis.requested_by})
 
         outcome = adapter.verify(
-            VerificationRequest(capability_id, {"bidder_id": bidder_id}, basis))
+            VerificationRequest(capability_id, subject, basis), conn)
 
         if hasattr(outcome, "code"):
             judgement = failure_to_judgement(outcome, capability)
