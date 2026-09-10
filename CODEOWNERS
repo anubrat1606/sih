@@ -1,0 +1,6 @@
+# Every pull request into main requires anubrat1606's review before it can
+# merge. See CONTRIBUTING.md for the day-to-day file-ownership split between
+# teammates within their own workstreams -- this file is about who has final
+# sign-off on what actually lands on main, not who does the work.
+
+* @anubrat1606
