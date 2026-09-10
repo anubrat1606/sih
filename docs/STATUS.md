@@ -71,6 +71,19 @@ all against a real PostgreSQL; they skip rather than fall back to a stub when
 `DATABASE_URL` is unset. `/backend` (Node/Mongo) stays running until this has
 passed the same end-to-end path.
 
+The adapter layer and the FastAPI orchestrator are in. `GET /capabilities`
+reports the honest position (no capability LIVE, so Coverage is 0%);
+`POST /bidders/{id}/verify` returns `UNKNOWN` with a machine-readable reason for
+every capability; `GET /bidders/{id}/requirements/{rid}/provenance` is the
+two-click demo path. Raw responses are archived with credentials redacted
+*before* storage. 96 orchestrator tests and 182 core tests pass.
+
+Two behaviours deliberately differ from the services being replaced, both
+recorded in `services/orchestrator/README.md`: collusion registration is no
+longer all-or-nothing across the four attributes, and attributes are normalised
+per type so `+91 98765 43210` and `9876543210` are recognised as one phone
+number.
+
 **Two approvals were taken as granted after three explicit go-aheads.** Both are
 recorded here because both are reversible and neither has been confirmed in
 writing:

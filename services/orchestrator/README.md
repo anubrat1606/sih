@@ -13,6 +13,9 @@ would put a translation layer between the audit claim and what actually runs.
 | `sql/002_projections.sql` | Projection tables, `collusion_clusters()`, `provenance_trail()` |
 | `satyapramana_store/events.py` | Canonical hashing, `append`, export, independent verification |
 | `satyapramana_store/projections.py` | Rebuild, collusion, provenance |
+| `satyapramana_store/adapters/` | The verification adapter interface, capability registry, failure taxonomy, redacting raw-response archive |
+| `satyapramana_store/normalise.py` | Per-attribute normalisation for shared-attribute detection |
+| `satyapramana_store/app.py` | The FastAPI orchestrator |
 
 ## Run
 
@@ -55,6 +58,53 @@ Correctness never rested on that lock. `UNIQUE(prev_hash)` means a hash can be
 claimed as a predecessor exactly once, so a fork is a constraint violation
 rather than something a lock merely discourages. The lock turns loud failure
 into no failure when writers contend.
+
+## Run the API
+
+```bash
+export DATABASE_URL=postgresql://localhost/satyapramana
+export SATYAPRAMANA_MIGRATE_ON_START=1
+./venv/bin/uvicorn satyapramana_store.app:app --port 4000
+```
+
+`GET /capabilities` is the endpoint to open first. It reports what this
+deployment can and cannot verify. Today every row reads `AWAITING_CREDENTIALS`
+or `UNAVAILABLE`, so every verification returns `UNKNOWN` with a
+machine-readable reason and Verification Coverage is honestly 0%. That is
+rendered rather than hidden.
+
+`GET /bidders/{id}/requirements/{rid}/provenance` is the demo: one backward walk
+along `causation_id` returning verdict, fused evidence, the verification with
+its raw-response reference, the extraction with page and region, and the source
+document.
+
+## Plugging in a real authority
+
+Implement `verify(request) -> Success | Failure`, declare a
+`CapabilityManifest`, and call `registry.register(adapter)`. It replaces the
+`UnconfiguredAdapter` for the same `adapter_id` and takes over the capabilities
+its manifest declares. No rule, no projection and no screen changes -- that is
+the whole point of the abstraction.
+
+## Two behaviours that differ from the service this replaces
+
+**Collusion registration is no longer all-or-nothing.** `/backend` only
+registered a bidder in the collusion graph when `director_name`, `address`,
+`phone` and `bank_account` were *all* present, so one missing field silently
+disabled collusion detection for that bidder. Here a bidder links on whatever
+subset is present.
+
+**Attributes are normalised per type.** `/services/collusion` compared trimmed,
+lowercased strings exactly, so `+91 98765 43210` and `9876543210` were different
+phone numbers -- and people concealing a link rarely format their fields
+identically. Phones reduce to their last ten digits, account numbers to
+alphanumerics, names and addresses to collapsed punctuation-free lowercase. The
+fingerprint is salted with the attribute name, so the same digits appearing as a
+phone and as an account number do not collide.
+
+The false-positive trade is deliberate: a shared attribute is a signal for an
+officer to review, never a disqualification. A false positive costs one look; a
+false negative costs a missed cartel.
 
 ## Invariants
 
