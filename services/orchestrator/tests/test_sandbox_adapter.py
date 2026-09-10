@@ -17,7 +17,7 @@ from satyapramana_store.adapters.base import (
     Basis, Failure, FailureCode, LawfulBasis, Success, VerificationRequest,
 )
 from satyapramana_store.adapters.sandbox_co_in import (
-    GstStatusAdapter, PanStatusAdapter, SandboxSession, build_from_env,
+    CinStatusAdapter, GstStatusAdapter, PanStatusAdapter, SandboxSession, build_from_env,
 )
 
 BASIS = LawfulBasis(Basis.TENDER_EVALUATION, "officer_1",
@@ -42,11 +42,11 @@ def test_no_adapters_without_both_env_vars(monkeypatch):
     assert build_from_env() == []
 
 
-def test_two_live_adapters_once_both_are_set(monkeypatch):
+def test_three_live_adapters_once_both_are_set(monkeypatch):
     monkeypatch.setenv("SATYAPRAMANA_SANDBOX_API_KEY", "k")
     monkeypatch.setenv("SATYAPRAMANA_SANDBOX_API_SECRET", "s")
     adapters = build_from_env()
-    assert {a.manifest.adapter_id for a in adapters} == {"pan_status", "gst_status"}
+    assert {a.manifest.adapter_id for a in adapters} == {"pan_status", "gst_status", "mca_cin"}
     assert all(c.live for a in adapters for c in a.manifest.capabilities)
 
 
@@ -187,6 +187,53 @@ def test_gst_rate_limited_maps_correctly():
     outcome = adapter.verify(VerificationRequest(
         "GST_STATUS", {"gstin": "33ABKCS2033B1ZW"}, BASIS))
     assert isinstance(outcome, Failure) and outcome.code is FailureCode.RATE_LIMITED
+
+
+# --- CIN --------------------------------------------------------------------
+
+def test_cin_master_data_success():
+    def handler(request):
+        if request.url.path == "/authenticate":
+            return AUTH_OK
+        assert json.loads(request.content) == {"cin": "U74999DL2015PTC284875"}
+        return httpx.Response(200, json={
+            "code": 200, "data": [{
+                "@entity": "in.co.sandbox.kyc.mca.company_master_data",
+                "cin": "U74999DL2015PTC284875", "company_name": "Test Traders Pvt Ltd",
+                "company_status": "Active", "company_registration_date": "01/01/2015",
+            }],
+        })
+
+    adapter = CinStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest(
+        "CIN_STATUS", {"cin": "U74999DL2015PTC284875"}, BASIS))
+
+    assert isinstance(outcome, Success)
+    values = {o.path: o.value for o in outcome.observations}
+    assert values["bidder.entity.legal_name_canonical"] == "Test Traders Pvt Ltd"
+    assert values["bidder.entity.status"] == "Active"
+    assert "bidder.entity.directors" not in values, (
+        "Sandbox's director lookup is discontinued -- never claim to provide it")
+
+
+def test_cin_not_found_uses_the_documented_521():
+    def handler(request):
+        if request.url.path == "/authenticate":
+            return AUTH_OK
+        return httpx.Response(521, text="Company master data not found for CIN: X")
+
+    adapter = CinStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest("CIN_STATUS", {"cin": "X"}, BASIS))
+    assert isinstance(outcome, Failure) and outcome.code is FailureCode.NOT_FOUND
+
+
+def test_cin_missing_is_refused_not_guessed():
+    def handler(request):
+        raise AssertionError("no HTTP call should happen without a CIN")
+
+    adapter = CinStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest("CIN_STATUS", {}, BASIS))
+    assert isinstance(outcome, Failure) and outcome.code is FailureCode.MALFORMED
 
 
 # --- archiving, with a real database -----------------------------------------

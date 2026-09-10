@@ -155,6 +155,10 @@ def _status_failure(status: int, body_text: str) -> Failure | None:
         return Failure(FailureCode.RATE_LIMITED, "Sandbox.co.in rate-limited this request")
     if status == 422:
         return Failure(FailureCode.MALFORMED, f"Sandbox.co.in rejected the request as malformed: {body_text}")
+    if status == 521:
+        # Documented, non-standard: MCA's own "not found" signal, not the
+        # authority being down. Must be checked before the >=500 branch below.
+        return Failure(FailureCode.NOT_FOUND, body_text or "company master data not found")
     if status >= 500:
         return Failure(FailureCode.UNAVAILABLE, f"Sandbox.co.in returned HTTP {status}: {body_text}")
     if status != 200:
@@ -356,8 +360,98 @@ class GstStatusAdapter:
         )
 
 
+class CinStatusAdapter:
+    """docs/ADAPTERS.md capability CIN_STATUS, backed by Sandbox.co.in's
+    Company Master Data endpoint.
+
+    The registry's placeholder manifest lists `bidder.entity.directors` among
+    this capability's provided paths, inherited from when the design assumed
+    a director lookup would exist. Sandbox's Director Master Data API is
+    documented as discontinued, so this adapter's `provides` omits that path
+    rather than promise a field it can never return -- narrower than the
+    placeholder, on purpose.
+
+    Nothing in this codebase extracts a CIN from a document yet (`extract/`
+    is Suhani's, per CONTRIBUTING.md) -- so today this always returns the
+    honest MALFORMED refusal below, exactly like PAN_STATUS does for the
+    missing name/DOB. It goes live for real the moment that extraction
+    lands, no adapter change required.
+    """
+
+    def __init__(self, session: SandboxSession):
+        self._session = session
+        self.manifest = CapabilityManifest(
+            adapter_id="mca_cin",
+            adapter_version="1.0.0",
+            authority="Ministry of Corporate Affairs",
+            intermediary="Sandbox.co.in",
+            identifier_queryable=True,
+            capabilities=(
+                Capability(
+                    capability_id="CIN_STATUS",
+                    provides=(
+                        "bidder.entity.cin", "bidder.entity.legal_name_canonical",
+                        "bidder.entity.incorporation_date", "bidder.entity.status",
+                    ),
+                    tier=Tier.A,
+                    channel=Channel.AGGREGATOR,
+                    as_of_supported=False,
+                    freshness_days=90,
+                    not_found_is_negative=False,
+                    lawful_bases=(Basis.TENDER_EVALUATION, Basis.PUBLIC_REGISTER),
+                    status="LIVE",
+                ),
+            ),
+        )
+
+    def verify(self, request: VerificationRequest, conn=None) -> Success | Failure:
+        cin = request.subject.get("cin")
+        if not cin:
+            return Failure(FailureCode.MALFORMED, "no CIN extracted for this bidder; nothing to submit")
+
+        body = {"cin": cin}
+        observed_at = datetime.now(timezone.utc)
+        url = f"{self._session.base_url}/kyc/mca/company/master-data"
+
+        try:
+            resp = self._session.post("/kyc/mca/company/master-data", body)
+        except httpx.HTTPError as exc:
+            return _http_failure(exc)
+
+        ref = _record(
+            conn, adapter_id="mca_cin", adapter_version="1.0.0",
+            capability_id="CIN_STATUS", observed_at=observed_at, url=url,
+            request_headers=dict(resp.request.headers), request_body=json.dumps(body),
+            response_status=resp.status_code, response_headers=dict(resp.headers),
+            response_body=resp.text, lawful_basis=request.lawful_basis,
+        )
+
+        failure = _status_failure(resp.status_code, resp.text)
+        if failure:
+            failure = Failure(failure.code, failure.detail, raw_response_ref=ref)
+            return failure
+
+        rows = resp.json().get("data") or []
+        if not rows:
+            return Failure(FailureCode.NOT_FOUND, "no company master data returned", raw_response_ref=ref)
+        record = rows[0]
+
+        observations = [Observation("bidder.entity.cin", record.get("cin", cin), Tier.A, Channel.AGGREGATOR)]
+        if record.get("company_name"):
+            observations.append(Observation("bidder.entity.legal_name_canonical", record["company_name"], Tier.A, Channel.AGGREGATOR))
+        if record.get("company_registration_date"):
+            observations.append(Observation("bidder.entity.incorporation_date", record["company_registration_date"], Tier.A, Channel.AGGREGATOR))
+        if record.get("company_status"):
+            observations.append(Observation("bidder.entity.status", record["company_status"], Tier.A, Channel.AGGREGATOR))
+
+        return Success(
+            observations=tuple(observations), raw_response_ref=ref,
+            observed_at=observed_at, source_asserted_at=None,
+        )
+
+
 def build_from_env() -> list[Any]:
-    """The whole plug-in point. Set both env vars and these two capabilities
+    """The whole plug-in point. Set both env vars and these three capabilities
     flip from AWAITING_CREDENTIALS to LIVE on next process start; unset either
     and verification falls straight back to the honest UnconfiguredAdapter.
 
@@ -377,4 +471,4 @@ def build_from_env() -> list[Any]:
     environment = os.environ.get("SATYAPRAMANA_SANDBOX_ENV", "test").lower()
     base_url = LIVE_BASE_URL if environment == "live" else TEST_BASE_URL
     session = SandboxSession(api_key, api_secret, base_url=base_url)
-    return [PanStatusAdapter(session), GstStatusAdapter(session)]
+    return [PanStatusAdapter(session), GstStatusAdapter(session), CinStatusAdapter(session)]

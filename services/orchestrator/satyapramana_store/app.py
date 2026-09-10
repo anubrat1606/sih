@@ -230,7 +230,11 @@ def verify(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
     resolver = ProjectionResolver(conn, bidder_id)
     subject = {"bidder_id": bidder_id}
     for key, path in (("pan_number", "bidder.pan.pan_number"),
-                       ("gstin", "bidder.gst.gstin")):
+                       ("gstin", "bidder.gst.gstin"),
+                       # Nothing extracts this yet (extract/ is Suhani's,
+                       # per CONTRIBUTING.md) -- harmless to resolve early,
+                       # CIN_STATUS goes live the moment it exists.
+                       ("cin", "bidder.entity.cin")):
         resolved = resolver.field(path)
         if resolved.ok:
             subject[key] = resolved.value
