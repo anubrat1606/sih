@@ -1,64 +1,77 @@
-// Single place the backend URL is configured -- change this to match
-// wherever your backend actually ends up running. No fallback/mock data
-// is generated client-side if a call fails; components show the real error.
+// Single place the backend URL is configured. Every function here calls the
+// real satyapramana_store orchestrator -- no client-side fallback or mock
+// value is ever generated when a call fails; callers show the real error.
 export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
-export const COLLUSION_URL = import.meta.env.VITE_COLLUSION_URL || "http://localhost:8003";
 
-export async function uploadDocument(bidderId, documentType, file) {
+async function call(path, options) {
+  const resp = await fetch(`${BACKEND_URL}${path}`, options);
+  if (!resp.ok) {
+    let detail;
+    try {
+      detail = (await resp.json()).detail;
+    } catch {
+      detail = await resp.text();
+    }
+    // `detail` can be a plain string or a structured object (e.g. rule pack
+    // adoption returns {error, violations[]}) -- callers that care about the
+    // structure read err.detail directly; ErrorBox falls back to JSON.
+    const message = typeof detail === "string" ? detail : JSON.stringify(detail);
+    const err = new Error(message || `${resp.status} ${resp.statusText}`);
+    err.detail = detail;
+    throw err;
+  }
+  const contentType = resp.headers.get("content-type") || "";
+  return contentType.includes("application/json") ? resp.json() : resp.text();
+}
+
+const json = (body) => ({ headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+export const getCapabilities = () => call("/capabilities");
+
+export const registerBidder = (tenderId, bidderId, attrs) =>
+  call(`/tenders/${encodeURIComponent(tenderId)}/bidders`, { method: "POST", ...json({ bidder_id: bidderId, ...attrs }) });
+
+export const uploadDocument = (bidderId, tenderId, file, declaredType) => {
   const form = new FormData();
-  form.append("document_type", documentType);
   form.append("file", file);
-  const resp = await fetch(`${BACKEND_URL}/bidders/${encodeURIComponent(bidderId)}/documents`, {
-    method: "POST",
-    body: form,
+  const params = new URLSearchParams({ tender_id: tenderId });
+  if (declaredType) params.set("declared_type", declaredType);
+  return call(`/bidders/${encodeURIComponent(bidderId)}/documents?${params}`, { method: "POST", body: form });
+};
+
+export const verifyBidder = (bidderId, tenderId) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/verify?${new URLSearchParams({ tender_id: tenderId })}`, { method: "POST" });
+
+export const adoptRulePack = (tenderId, officerId, pack) =>
+  call(`/tenders/${encodeURIComponent(tenderId)}/rule-pack`, { method: "POST", ...json({ officer_id: officerId, pack }) });
+
+export const evaluateBidder = (bidderId, tenderId, bidSubmissionDate, asOf) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/evaluate?${new URLSearchParams({ tender_id: tenderId })}`, {
+    method: "POST", ...json({ bid_submission_date: bidSubmissionDate, as_of: asOf || null }),
   });
-  if (!resp.ok) throw new Error(await resp.text());
-  return resp.json();
-}
 
-export async function verifyBidder(bidderId, payload) {
-  const resp = await fetch(`${BACKEND_URL}/bidders/${encodeURIComponent(bidderId)}/verify`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+export const listTenderBidders = (tenderId) =>
+  call(`/tenders/${encodeURIComponent(tenderId)}/bidders`);
+
+export const getBidder = (bidderId, tenderId) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}?${new URLSearchParams({ tender_id: tenderId })}`);
+
+export const getProvenance = (bidderId, requirementId) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/requirements/${encodeURIComponent(requirementId)}/provenance`);
+
+export const getTenderCollusion = (tenderId) =>
+  call(`/tenders/${encodeURIComponent(tenderId)}/collusion`);
+
+export const recordDecision = (bidderId, tenderId, officerId, decision, note) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/decision?${new URLSearchParams({ tender_id: tenderId })}`, {
+    method: "POST", ...json({ officer_id: officerId, decision, note: note || null }),
   });
-  if (!resp.ok) throw new Error(await resp.text());
-  return resp.json();
-}
 
-export async function getTenderBidders(tenderId) {
-  const resp = await fetch(`${BACKEND_URL}/tenders/${encodeURIComponent(tenderId)}/bidders`);
-  if (!resp.ok) throw new Error(await resp.text());
-  return resp.json();
-}
-
-export async function getBidder(bidderId, tenderId) {
-  const url = tenderId
-    ? `${BACKEND_URL}/bidders/${encodeURIComponent(bidderId)}?tender_id=${encodeURIComponent(tenderId)}`
-    : `${BACKEND_URL}/bidders/${encodeURIComponent(bidderId)}`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(await resp.text());
-  return resp.json();
-}
-
-export async function postDecision(bidderId, tenderId, officerId, decision) {
-  const resp = await fetch(`${BACKEND_URL}/bidders/${encodeURIComponent(bidderId)}/decision`, {
+export const overrideVerdict = (bidderId, tenderId, officerId, requirementId, verdictAfter, justification) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/override?${new URLSearchParams({ tender_id: tenderId })}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ officer_id: officerId, decision, tender_id: tenderId }),
+    ...json({ officer_id: officerId, requirement_id: requirementId, verdict_after: verdictAfter, justification }),
   });
-  if (!resp.ok) throw new Error(await resp.text());
-  return resp.json();
-}
 
-export async function getAuditLog(bidderId) {
-  const resp = await fetch(`${BACKEND_URL}/audit/${encodeURIComponent(bidderId)}`);
-  if (!resp.ok) throw new Error(await resp.text());
-  return resp.json();
-}
-
-export async function getTenderGraph(tenderId) {
-  const resp = await fetch(`${COLLUSION_URL}/graph/${encodeURIComponent(tenderId)}`);
-  if (!resp.ok) throw new Error(await resp.text());
-  return resp.json();
-}
+export const getAuditExport = () => call("/audit/export");
+export const getAuditVerify = () => call("/audit/verify");

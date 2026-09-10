@@ -1,115 +1,181 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import ForceGraph2D from "react-force-graph-2d";
-import { getBidder, postDecision, getAuditLog, getTenderGraph } from "../api";
-
-const STATUS_COLOR = { PASS: "#1a7f37", FAIL: "#cf222e", MISMATCH: "#b08800", UNVERIFIED: "#6e7781" };
+import {
+  evaluateBidder, getBidder, getProvenance, overrideVerdict, recordDecision,
+} from "../api";
+import { ErrorBox, Metric, RiskBadge, VerdictBadge } from "../components";
 
 export default function BidderDetailPage() {
   const { bidderId } = useParams();
-  const [searchParams] = useSearchParams();
-  const tenderId = searchParams.get("tender_id");
+  const [params] = useSearchParams();
+  const tenderId = params.get("tender_id");
 
-  const [data, setData] = useState(null);
-  const [graph, setGraph] = useState({ nodes: [], links: [] });
-  const [auditLog, setAuditLog] = useState([]);
-  const [error, setError] = useState("");
-  const [decisionMsg, setDecisionMsg] = useState("");
-  const graphRef = useRef();
+  const [bidder, setBidder] = useState(null);
+  const [error, setError] = useState(null);
+  const [openProvenance, setOpenProvenance] = useState(null);
+  const [provenance, setProvenance] = useState(null);
+
+  const [bidSubmissionDate, setBidSubmissionDate] = useState("");
+  const [officerId, setOfficerId] = useState("officer_demo");
+  const [decisionNote, setDecisionNote] = useState("");
+  const [lastDecision, setLastDecision] = useState(null);
+
+  const [overrideForm, setOverrideForm] = useState({ requirement_id: "", verdict_after: "PASS", justification: "" });
 
   function load() {
-    getBidder(bidderId, tenderId).then(setData).catch((err) => setError(String(err.message || err)));
-    getAuditLog(bidderId).then(setAuditLog).catch(() => {});
-    if (tenderId) {
-      getTenderGraph(tenderId)
-        .then((g) =>
-          setGraph({
-            nodes: g.nodes.map((id) => ({ id, isCurrent: id === bidderId })),
-            links: g.edges.map((e) => ({ source: e.from, target: e.to, label: e.shared_attribute })),
-          })
-        )
-        .catch(() => {});
-    }
+    if (!tenderId) return;
+    getBidder(bidderId, tenderId).then(setBidder).catch(setError);
   }
 
   useEffect(load, [bidderId, tenderId]);
 
-  async function decide(decision) {
-    setDecisionMsg("");
-    setError("");
+  if (!tenderId) return <div className="page"><p className="error">Missing tender_id in the URL -- open this page from the tender dashboard.</p></div>;
+
+  async function onEvaluate(e) {
+    e.preventDefault();
+    setError(null);
     try {
-      await postDecision(bidderId, tenderId, "officer_demo", decision);
-      setDecisionMsg(`Recorded: ${decision}. Written to the tamper-evident audit log.`);
+      await evaluateBidder(bidderId, tenderId, bidSubmissionDate);
       load();
     } catch (err) {
-      setError(String(err.message || err));
+      setError(err);
     }
   }
 
-  if (error) return <div className="page"><p className="error">Error: {error}</p></div>;
-  if (!data) return <div className="page"><p>Loading...</p></div>;
+  async function onDecision(decision) {
+    setError(null);
+    try {
+      setLastDecision(await recordDecision(bidderId, tenderId, officerId, decision, decisionNote));
+    } catch (err) {
+      setError(err);
+    }
+  }
 
-  const { score } = data;
+  async function onOverride(e) {
+    e.preventDefault();
+    setError(null);
+    try {
+      await overrideVerdict(bidderId, tenderId, officerId, overrideForm.requirement_id, overrideForm.verdict_after, overrideForm.justification);
+      setOverrideForm({ requirement_id: "", verdict_after: "PASS", justification: "" });
+      load();
+    } catch (err) {
+      setError(err);
+    }
+  }
+
+  async function toggleProvenance(requirementId) {
+    if (openProvenance === requirementId) {
+      setOpenProvenance(null);
+      return;
+    }
+    setError(null);
+    try {
+      setProvenance(await getProvenance(bidderId, requirementId));
+      setOpenProvenance(requirementId);
+    } catch (err) {
+      setError(err);
+    }
+  }
 
   return (
     <div className="page">
       <h1>{bidderId}</h1>
-      <p className="score-big">{score.compliance_score}/100 — {score.risk_level} RISK</p>
-      <p>{score.ai_recommendation}</p>
+      <p className="hint">Tender {tenderId}</p>
+      <ErrorBox error={error} />
+      {bidder && (
+        <>
+          <div className="actions">
+            <RiskBadge level={bidder.risk.level} />
+          </div>
+          {bidder.risk.triggers.length > 0 && (
+            <p className="hint">Risk triggers: {bidder.risk.triggers.join(", ")} (function {bidder.risk.function_version})</p>
+          )}
+          <div className="metric-row">
+            <Metric label="Compliance score" value={bidder.metrics.compliance_score} />
+            <Metric label="Verification coverage" value={bidder.metrics.verification_coverage} />
+            <Metric label="Mandatory coverage" value={bidder.metrics.verification_coverage_mandatory} />
+            <Metric label="Evidence confidence" value={bidder.metrics.evidence_confidence} />
+          </div>
+          <p className="hint">
+            Three independent metrics, never blended into one score -- a bidder can be
+            fully compliant on what was checked while coverage is honestly low.
+          </p>
 
-      <div className="actions">
-        <button onClick={() => decide("QUALIFY")}>Qualify</button>
-        <button className="danger" onClick={() => decide("DISQUALIFY")}>Disqualify</button>
-      </div>
-      {decisionMsg && <p className="status">{decisionMsg}</p>}
+          {bidder.collusion && (
+            <p className={bidder.collusion.flagged ? "flag" : "hint"}>
+              Collusion: {bidder.collusion.flagged ? `flagged, cluster ${bidder.collusion.cluster_id}, with ${bidder.collusion.members.filter((m) => m !== bidderId).join(", ")}` : "not flagged"}
+            </p>
+          )}
 
-      <h2>Evidence Trail</h2>
-      <table className="evidence-table">
-        <thead>
-          <tr><th>Field</th><th>Value</th><th>Source</th><th>Status</th><th>Confidence</th><th>Details</th></tr>
-        </thead>
-        <tbody>
-          {score.verification_breakdown.map((c, i) => (
-            <tr key={i}>
-              <td>{c.field}</td>
-              <td>{c.value_extracted || "—"}</td>
-              <td>{c.matched_against}</td>
-              <td style={{ color: STATUS_COLOR[c.status], fontWeight: 600 }}>{c.status}</td>
-              <td>{Math.round(c.confidence * 100)}%</td>
-              <td className="details">{c.details}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+          <h2>Verdicts</h2>
+          {bidder.verdicts.length === 0 ? (
+            <p className="hint">No rule pack has been evaluated for this bidder yet.</p>
+          ) : (
+            <table className="evidence-table">
+              <thead><tr><th>Requirement</th><th>Verdict</th><th>Reason</th><th>Overridden by</th><th></th></tr></thead>
+              <tbody>
+                {bidder.verdicts.map((v) => (
+                  <Fragment key={v.requirement_id}>
+                    <tr>
+                      <td>{v.requirement_id}</td>
+                      <td><VerdictBadge verdict={v.verdict_effective} /></td>
+                      <td>{v.reason_effective}</td>
+                      <td>{v.overridden_by || "—"}</td>
+                      <td><button onClick={() => toggleProvenance(v.requirement_id)}>
+                        {openProvenance === v.requirement_id ? "Hide" : "Why?"}
+                      </button></td>
+                    </tr>
+                    {openProvenance === v.requirement_id && provenance && (
+                      <tr>
+                        <td colSpan={5}>
+                          <ol className="audit-list">
+                            {provenance.trail.map((t) => (
+                              <li key={t.seq}>
+                                {t.event_type} (seq {t.seq}, {t.occurred_at}): {JSON.stringify(t.payload)}
+                              </li>
+                            ))}
+                          </ol>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          )}
 
-      <h2>Collusion Graph {tenderId ? `— Tender ${tenderId}` : ""}</h2>
-      <div className="graph-box">
-        {graph.nodes.length > 0 ? (
-          <ForceGraph2D
-            ref={graphRef}
-            graphData={graph}
-            width={600}
-            height={400}
-            nodeLabel="id"
-            nodeColor={(n) => (n.isCurrent ? "#cf222e" : "#57606a")}
-            linkLabel={(l) => l.label}
-            linkColor={() => "#b08800"}
-            linkDirectionalArrowLength={0}
-          />
-        ) : (
-          <p>No graph data for this tender yet.</p>
-        )}
-      </div>
+          <h2>Evaluate</h2>
+          <p className="hint">Folds evidence, fuses it, and decides -- deterministically. Needs a rule pack adopted on this tender first.</p>
+          <form className="form" onSubmit={onEvaluate}>
+            <label>Bid submission date<input type="date" value={bidSubmissionDate} onChange={(e) => setBidSubmissionDate(e.target.value)} required /></label>
+            <button type="submit">Evaluate</button>
+          </form>
 
-      <h2>Audit Log</h2>
-      <ul className="audit-list">
-        {auditLog.map((e) => (
-          <li key={e.entry_id}>
-            <strong>{e.decision}</strong> by {e.officer_id} at {e.timestamp} — hash {e.hash.slice(0, 12)}… (prev {e.prev_hash === "genesis" ? "genesis" : e.prev_hash.slice(0, 12) + "…"})
-          </li>
-        ))}
-        {auditLog.length === 0 && <li>No decisions recorded yet.</li>}
-      </ul>
+          <h2>Officer decision</h2>
+          <form className="form" onSubmit={(e) => e.preventDefault()}>
+            <label>Officer ID<input value={officerId} onChange={(e) => setOfficerId(e.target.value)} /></label>
+            <label>Note (optional)<input value={decisionNote} onChange={(e) => setDecisionNote(e.target.value)} /></label>
+            <div className="actions">
+              <button onClick={() => onDecision("QUALIFY")}>Qualify</button>
+              <button className="danger" onClick={() => onDecision("DISQUALIFY")}>Disqualify</button>
+            </div>
+          </form>
+          {lastDecision && <p className="status">Recorded: {lastDecision.decision} (seq {lastDecision.seq}, hash {lastDecision.hash.slice(0, 16)}…)</p>}
+
+          <h2>Override a verdict</h2>
+          <p className="hint">A human may overrule the system. The system remembers that they did, and keeps its own conclusion alongside theirs.</p>
+          <form className="form" onSubmit={onOverride}>
+            <label>Requirement ID<input value={overrideForm.requirement_id} onChange={(e) => setOverrideForm({ ...overrideForm, requirement_id: e.target.value })} required /></label>
+            <label>New verdict
+              <select value={overrideForm.verdict_after} onChange={(e) => setOverrideForm({ ...overrideForm, verdict_after: e.target.value })}>
+                {["PASS", "FAIL", "PARTIAL", "UNKNOWN"].map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </label>
+            <label>Justification<input value={overrideForm.justification} onChange={(e) => setOverrideForm({ ...overrideForm, justification: e.target.value })} required /></label>
+            <button type="submit">Override</button>
+          </form>
+        </>
+      )}
     </div>
   );
 }
