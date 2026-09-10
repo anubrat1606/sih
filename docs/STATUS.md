@@ -54,7 +54,18 @@ The registry records the honest current state: four capabilities
 lawful programmatic source. Verification Coverage is therefore honestly 0%
 until one aggregator account exists — still the highest-value errand outstanding.
 
-**Two approvals still outstanding, both blocking implementation:**
+**Implementation has begun.** `services/core` is the domain layer: pure,
+deterministic, framework-free, 182 passing tests. It implements the verdict
+algebra, the three metrics, risk classification, the predicate evaluator and
+rule pack validation. It is the layer charter section 5's tell-tale test is
+about -- remove every model and this package still produces correct verdicts on
+already-extracted evidence. `tests/test_rulepack.py` reads the real schema and
+capability registry, so package, schemas and registry are checked against each
+other rather than in isolation.
+
+**Two approvals were taken as granted after three explicit go-aheads.** Both are
+recorded here because both are reversible and neither has been confirmed in
+writing:
 
 1. **v2 schemas.** The four-state algebra replaces
    `PASS | FAIL | MISMATCH | UNVERIFIED`, and the three metrics replace
