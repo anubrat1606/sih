@@ -36,6 +36,18 @@ New specs, both verified:
   variants rejected; the rule-pack operand grammar and the registry's evidence
   paths cross-check.
 
+- `EVENTS.md` — the append-only hash-chained event log, the event catalogue,
+  projections, the collusion recursive CTE, the "why does this say PASS"
+  provenance query, and independent chain verification. **Every SQL statement in
+  it was executed against PostgreSQL 14.20**, which surfaced three defects in the
+  first draft: a row-level trigger does not fire on `TRUNCATE` (the log was
+  wipeable), `char(64)` blank-pads the genesis sentinel (our own check passes
+  while an independent verifier sees a broken chain), and `ORDER BY`/`LIMIT` is
+  illegal in a recursive CTE anchor member (the provenance query was a syntax
+  error). All three are fixed and re-verified: 0 chain forks across 8 concurrent
+  writers, 200/200 events verified by an external script, tampering detected at
+  the successor event.
+
 The registry records the honest current state: four capabilities
 (`PAN_STATUS`, `GST_STATUS`, `CIN_STATUS`, `UDYAM_STATUS`) sit at
 `AWAITING_CREDENTIALS`, and EPFO/ESIC are registered null adapters with no
