@@ -63,6 +63,14 @@ already-extracted evidence. `tests/test_rulepack.py` reads the real schema and
 capability registry, so package, schemas and registry are checked against each
 other rather than in isolation.
 
+`services/orchestrator` is the persistence layer: the append-only hash-chained
+`events` table, `append()` with canonical hashing, the JSON Lines export and its
+independent verifier, and the projections -- collusion clusters via recursive
+CTE, the provenance walk, and rebuild-from-genesis with time travel. 27 tests,
+all against a real PostgreSQL; they skip rather than fall back to a stub when
+`DATABASE_URL` is unset. `/backend` (Node/Mongo) stays running until this has
+passed the same end-to-end path.
+
 **Two approvals were taken as granted after three explicit go-aheads.** Both are
 recorded here because both are reversible and neither has been confirmed in
 writing:

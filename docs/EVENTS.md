@@ -390,8 +390,23 @@ Results after correction:
 | Collusion CTE on a cyclic graph (A–B–C ring, D–E pair, F isolated) | Terminates; `cluster_A_B_C`, `cluster_D_E`, F unflagged |
 | Provenance walk | 5 hops: `PASS` → `AGREEMENT` → `GST_STATUS` → extracted value with page and region → source document |
 
-The tamper case is worth understanding precisely: altering an event is detected
-at its **successor**, not at the altered row, because the successor's `prev_hash`
-no longer matches. An attacker must therefore rewrite every event from the point
-of tampering to the tip, and the export makes that visible to anyone holding an
-earlier copy.
+The tamper case has two shapes, and an earlier draft of this section conflated
+them:
+
+- **Altering a payload only** breaks that event's *own* hash. Linkage is
+  untouched, so the break surfaces at the altered row itself.
+- **Altering a payload and recomputing its hash** makes the event internally
+  consistent, so the break moves to its **successor**, whose `prev_hash` no
+  longer matches.
+
+The competent attacker therefore has to rewrite every event from the point of
+tampering to the tip — and anyone holding an earlier copy of the export can see
+that they did. The verifier catches both shapes; both are covered by tests.
+
+One further trap, found by running the export against the verifier: PostgreSQL
+returns `timestamptz` in the **client session's** timezone, so the same instant
+reads back as `...T09:20:54.957687+00:00` in UTC and `...T14:50:54.957687+05:30`
+in `Asia/Kolkata`. Hashing whatever the driver rendered would make chain
+verification depend on the auditor's own timezone — the identical export would
+verify for one reader and fail for another. `canonical_ts()` renders every
+instant as UTC with microsecond precision, at hash time and at export time.

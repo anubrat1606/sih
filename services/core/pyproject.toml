@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "satyapramana-core"
+version = "0.1.0"
+description = "SATYAPRAMANA domain logic: verdict algebra, metrics, risk, predicates, rule packs"
+requires-python = ">=3.11"
+dependencies = ["jsonschema>=4.0"]
+
+[tool.setuptools.packages.find]
+include = ["satyapramana*"]
