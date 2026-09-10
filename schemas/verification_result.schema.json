@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VerificationResult",
+  "type": "object",
+  "required": ["bidder_id", "checks", "sub_score"],
+  "properties": {
+    "bidder_id": { "type": "string" },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["field", "value_extracted", "matched_against", "status", "confidence", "details"],
+        "properties": {
+          "field": { "type": "string" },
+          "value_extracted": { "type": "string" },
+          "matched_against": {
+            "type": "string",
+            "enum": ["LIVE_KYC_PROVIDER", "GST_PUBLIC_PORTAL", "EPFO_PUBLIC_PORTAL", "UDYAM_PUBLIC_PORTAL"]
+          },
+          "status": { "type": "string", "enum": ["PASS", "FAIL", "MISMATCH", "UNVERIFIED"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "details": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "sub_score": { "type": "number", "minimum": 0, "maximum": 100 }
+  },
+  "additionalProperties": false,
+  "note": "Every matched_against value is a real, live external source. There is no mock/sandbox status by design. UNVERIFIED means the live call failed or the field could not be extracted -- it must never be used to disguise a fabricated PASS."
+}

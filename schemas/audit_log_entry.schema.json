@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AuditLogEntry",
+  "type": "object",
+  "required": ["entry_id", "prev_hash", "hash", "bidder_id", "tender_id", "officer_id", "decision", "score_snapshot", "timestamp"],
+  "properties": {
+    "entry_id": { "type": "string" },
+    "prev_hash": { "type": "string" },
+    "hash": { "type": "string" },
+    "bidder_id": { "type": "string" },
+    "tender_id": { "type": "string" },
+    "officer_id": { "type": "string" },
+    "decision": { "type": "string", "enum": ["QUALIFY", "DISQUALIFY"] },
+    "score_snapshot": {
+      "type": "object",
+      "description": "Same shape as final_score.schema.json"
+    },
+    "timestamp": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false,
+  "note": "Insert-only collection. hash = SHA-256(prev_hash + canonical JSON of this entry's other fields). prev_hash of the first entry ever written is the literal string 'genesis'."
+}

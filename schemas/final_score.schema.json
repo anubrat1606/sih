@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FinalScore",
+  "type": "object",
+  "required": ["bidder_id", "tender_id", "compliance_score", "risk_level", "verification_breakdown", "collusion_flag", "ai_recommendation", "timestamp"],
+  "properties": {
+    "bidder_id": { "type": "string" },
+    "tender_id": { "type": "string" },
+    "compliance_score": { "type": "number", "minimum": 0, "maximum": 100 },
+    "risk_level": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH"] },
+    "verification_breakdown": {
+      "type": "array",
+      "description": "Same shape as verification_result.schema.json's checks array"
+    },
+    "collusion_flag": {
+      "type": "object",
+      "description": "Same shape as collusion_result.schema.json"
+    },
+    "ai_recommendation": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

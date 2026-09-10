@@ -1,0 +1,27 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, sans-serif; background: #f6f8fa; color: #1f2328; }
+.topnav { display: flex; align-items: center; gap: 16px; padding: 12px 20px; background: #24292f; color: white; }
+.topnav a { color: white; text-decoration: none; font-weight: 600; }
+.topnav-note { opacity: 0.75; font-size: 13px; margin-left: auto; }
+.page { max-width: 900px; margin: 0 auto; padding: 24px 20px; }
+.hint { color: #57606a; font-size: 14px; }
+.form { display: flex; flex-direction: column; gap: 12px; max-width: 480px; }
+.form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; }
+.form input, .form select { padding: 8px; border: 1px solid #d0d7de; border-radius: 6px; font-size: 14px; }
+.form fieldset { border: 1px solid #d0d7de; border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+button { padding: 8px 16px; border-radius: 6px; border: 1px solid #1a7f37; background: #2da44e; color: white; font-weight: 600; cursor: pointer; }
+button.danger { border-color: #cf222e; background: #cf222e; }
+.status { color: #1a7f37; }
+.error { color: #cf222e; font-weight: 600; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-top: 16px; }
+.card { display: block; padding: 16px; background: white; border: 1px solid #d0d7de; border-radius: 8px; text-decoration: none; color: inherit; }
+.card h2 { margin: 0 0 6px; font-size: 16px; }
+.score { font-size: 22px; font-weight: 700; margin: 4px 0; }
+.flag { color: #cf222e; font-weight: 600; }
+.score-big { font-size: 24px; font-weight: 700; }
+.actions { display: flex; gap: 10px; margin: 14px 0; }
+.evidence-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px; }
+.evidence-table th, .evidence-table td { border: 1px solid #d0d7de; padding: 8px; text-align: left; }
+.evidence-table .details { color: #57606a; font-size: 12px; max-width: 260px; }
+.graph-box { background: white; border: 1px solid #d0d7de; border-radius: 8px; padding: 8px; }
+.audit-list { font-size: 13px; font-family: monospace; }

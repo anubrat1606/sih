@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExtractionOutput",
+  "type": "object",
+  "required": ["bidder_id", "document_type", "extracted_fields", "confidence", "raw_ocr_text", "source_s3_key"],
+  "properties": {
+    "bidder_id": { "type": "string" },
+    "document_type": { "type": "string", "enum": ["PAN", "GST", "UDYAM", "EPFO"] },
+    "extracted_fields": {
+      "type": "object",
+      "properties": {
+        "pan_number": { "type": ["string", "null"] },
+        "name": { "type": ["string", "null"] },
+        "gstin": { "type": ["string", "null"] },
+        "udyam_number": { "type": ["string", "null"] },
+        "epfo_number": { "type": ["string", "null"] },
+        "date_of_issue": { "type": ["string", "null"], "format": "date" },
+        "date_of_expiry": { "type": ["string", "null"], "format": "date" }
+      },
+      "additionalProperties": false
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+    },
+    "raw_ocr_text": { "type": "string" },
+    "source_s3_key": { "type": "string" }
+  },
+  "additionalProperties": false
+}

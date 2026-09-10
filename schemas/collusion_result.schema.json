@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CollusionResult",
+  "type": "object",
+  "required": ["bidder_id", "tender_id", "flagged", "cluster_id", "shared_with"],
+  "properties": {
+    "bidder_id": { "type": "string" },
+    "tender_id": { "type": "string" },
+    "flagged": { "type": "boolean" },
+    "cluster_id": { "type": ["string", "null"] },
+    "shared_with": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["bidder_id", "shared_attribute", "value"],
+        "properties": {
+          "bidder_id": { "type": "string" },
+          "shared_attribute": {
+            "type": "string",
+            "enum": ["director_name", "address", "phone", "bank_account"]
+          },
+          "value": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

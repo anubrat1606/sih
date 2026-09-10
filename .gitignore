@@ -1,0 +1,9 @@
+node_modules/
+venv/
+__pycache__/
+*.pyc
+.env
+services/extraction/uploads/
+data/consented_bidders/
+frontend/dist/
+*.log
