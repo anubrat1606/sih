@@ -52,12 +52,12 @@ export default function PdfEvidenceViewer({ documentSha256, page, region }) {
     position: "absolute",
     left: x0 * SCALE, top: top * SCALE,
     width: (x1 - x0) * SCALE, height: (bottom - top) * SCALE,
-    border: "2px solid #cf222e", background: "rgba(207,34,46,0.12)",
+    border: "2px solid var(--status-fail-fg)", background: "var(--highlight-overlay-bg)",
     pointerEvents: "none",
   };
 
   return (
-    <div style={{ position: "relative", display: "inline-block", border: "1px solid #d0d7de", borderRadius: 8, overflow: "auto", maxWidth: "100%", maxHeight: 500 }}>
+    <div style={{ position: "relative", display: "inline-block", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", overflow: "auto", maxWidth: "100%", maxHeight: 500 }}>
       {loading && <p className="hint" style={{ padding: 12 }}>Loading page {page}…</p>}
       {error && <p className="error" style={{ padding: 12 }}>Could not load the source document: {String(error.message || error)}</p>}
       <canvas ref={canvasRef} style={{ display: loading || error ? "none" : "block" }} />

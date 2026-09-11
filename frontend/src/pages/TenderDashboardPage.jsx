@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import ForceGraph2D from "react-force-graph-2d";
 import { adoptRulePack, getCollusionEdges, getTenderCollusion, listTenderBidders } from "../api";
 import { ErrorBox, Metric, RiskBadge } from "../components";
+import { cssVar } from "../theme";
 
 export default function TenderDashboardPage() {
   const { tenderId } = useParams();
@@ -52,14 +53,14 @@ export default function TenderDashboardPage() {
       <div className="card-grid">
         {bidders && bidders.map((b) => (
           <Link className="card" key={b.bidder_id} to={`/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(tenderId)}`}>
-            <h2>{b.bidder_id}</h2>
+            <h2 className="mono">{b.bidder_id}</h2>
             <RiskBadge level={b.risk.level} />
             <div className="metric-row">
               <Metric label="Compliance" value={b.metrics.compliance_score} />
               <Metric label="Coverage" value={b.metrics.verification_coverage} />
               <Metric label="Confidence" value={b.metrics.evidence_confidence} />
             </div>
-            {b.collusion?.flagged && <p className="flag">Collusion flagged: {b.collusion.cluster_id}</p>}
+            {b.collusion?.flagged && <p className="flag">Collusion flagged: <span className="mono">{b.collusion.cluster_id}</span></p>}
           </Link>
         ))}
       </div>
@@ -84,9 +85,9 @@ export default function TenderDashboardPage() {
                 links: edges.map((e) => ({ source: e.bidder_a, target: e.bidder_b, label: e.attribute })),
               }}
               nodeLabel="id"
-              nodeColor={(n) => (n.flagged ? "#cf222e" : "#57606a")}
+              nodeColor={(n) => (n.flagged ? cssVar("--status-fail-fg") : cssVar("--status-unknown-fg"))}
               linkLabel={(l) => l.label}
-              linkColor={() => "#9a6700"}
+              linkColor={() => cssVar("--status-partial-fg")}
               linkDirectionalArrowLength={0}
               linkCanvasObjectMode={() => "after"}
               linkCanvasObject={(link, ctx) => {
@@ -94,7 +95,7 @@ export default function TenderDashboardPage() {
                 const midX = (link.source.x + link.target.x) / 2;
                 const midY = (link.source.y + link.target.y) / 2;
                 ctx.font = "3px sans-serif";
-                ctx.fillStyle = "#9a6700";
+                ctx.fillStyle = cssVar("--status-partial-fg");
                 ctx.textAlign = "center";
                 ctx.fillText(link.label, midX, midY);
               }}
@@ -108,7 +109,7 @@ export default function TenderDashboardPage() {
           <thead><tr><th>Bidder A</th><th>Bidder B</th><th>Shared attribute</th></tr></thead>
           <tbody>
             {(edges || []).map((e, i) => (
-              <tr key={i}><td>{e.bidder_a}</td><td>{e.bidder_b}</td><td>{e.attribute}</td></tr>
+              <tr key={i}><td className="mono">{e.bidder_a}</td><td className="mono">{e.bidder_b}</td><td>{e.attribute}</td></tr>
             ))}
           </tbody>
         </table>

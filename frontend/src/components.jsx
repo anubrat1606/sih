@@ -1,17 +1,30 @@
-// Small shared bits. Not a design system (see satyapramana.md section 2.3
-// for what that would look like) -- just enough to keep every screen
-// rendering the four-state verdict and the three metrics consistently.
+// Shared components, built on the token set in tokens.css (satyapramana.md
+// section 2.3). Every badge here carries colour + glyph + text label --
+// colour is never the only carrier of meaning, so an officer with
+// deuteranopia reads the identical verdict a sighted colleague does.
 
 const VERDICT_CLASS = { PASS: "v-pass", FAIL: "v-fail", PARTIAL: "v-partial", UNKNOWN: "v-unknown" };
+const VERDICT_GLYPH = { PASS: "✓", FAIL: "✕", PARTIAL: "◑", UNKNOWN: "?" };
 
 export function VerdictBadge({ verdict }) {
-  return <span className={`badge ${VERDICT_CLASS[verdict] || "v-unknown"}`}>{verdict}</span>;
+  return (
+    <span className={`badge ${VERDICT_CLASS[verdict] || "v-unknown"}`}>
+      <span aria-hidden="true">{VERDICT_GLYPH[verdict] || VERDICT_GLYPH.UNKNOWN}</span>
+      {verdict}
+    </span>
+  );
 }
 
 const RISK_CLASS = { LOW: "r-low", MEDIUM: "r-medium", HIGH: "r-high" };
+const RISK_GLYPH = { LOW: "○", MEDIUM: "◑", HIGH: "●" };
 
 export function RiskBadge({ level }) {
-  return <span className={`badge ${RISK_CLASS[level] || "r-medium"}`}>{level} RISK</span>;
+  return (
+    <span className={`badge ${RISK_CLASS[level] || "r-medium"}`}>
+      <span aria-hidden="true">{RISK_GLYPH[level] || RISK_GLYPH.MEDIUM}</span>
+      {level} RISK
+    </span>
+  );
 }
 
 // Bid Autopsy: FATAL is positive evidence against the bidder (re-checking the
@@ -21,13 +34,15 @@ export function RiskBadge({ level }) {
 // than inventing a second colour vocabulary for the same underlying idea.
 export function ClassificationBadge({ classification }) {
   const cls = classification === "FATAL" ? "v-fail" : classification === "CURABLE" ? "v-partial" : "v-unknown";
-  return <span className={`badge ${cls}`}>{classification}</span>;
+  const glyph = classification === "FATAL" ? "✕" : classification === "CURABLE" ? "◑" : "?";
+  return <span className={`badge ${cls}`}><span aria-hidden="true">{glyph}</span>{classification}</span>;
 }
 
 // Compliance Repair: who can actually act on this gap. SYSTEM means "we
 // haven't configured this yet" -- never told to a bidder as their problem.
 export function ActionableBadge({ actionableBy }) {
-  return <span className={`badge ${actionableBy === "BIDDER" ? "v-pass" : "v-unknown"}`}>{actionableBy}</span>;
+  const glyph = actionableBy === "BIDDER" ? "✓" : "⚙";
+  return <span className={`badge ${actionableBy === "BIDDER" ? "v-pass" : "v-unknown"}`}><span aria-hidden="true">{glyph}</span>{actionableBy}</span>;
 }
 
 // A metric is null, never zero, when nothing could be determined -- an em

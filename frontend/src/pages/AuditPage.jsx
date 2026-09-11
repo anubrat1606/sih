@@ -74,7 +74,7 @@ export default function AuditPage() {
         <button onClick={loadExport}>Load full JSON Lines export</button>
       </div>
       {exportText !== null && (
-        <pre className="audit-list" style={{ whiteSpace: "pre-wrap", maxHeight: 400, overflow: "auto", background: "white", border: "1px solid #d0d7de", borderRadius: 8, padding: 12 }}>
+        <pre className="audit-list" style={{ whiteSpace: "pre-wrap", maxHeight: 400, overflow: "auto", background: "var(--color-surface)", color: "var(--color-text)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: "var(--space-3)" }}>
           {exportText || "(no events yet)"}
         </pre>
       )}

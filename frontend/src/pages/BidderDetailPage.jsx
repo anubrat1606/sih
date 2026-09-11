@@ -91,7 +91,7 @@ export default function BidderDetailPage() {
 
   return (
     <div className="page">
-      <h1>{bidderId}</h1>
+      <h1 className="mono">{bidderId}</h1>
       <p className="hint">Tender {tenderId}</p>
       <ErrorBox error={error} />
       {bidder && (
@@ -129,7 +129,7 @@ export default function BidderDetailPage() {
                 {bidder.verdicts.map((v) => (
                   <Fragment key={v.requirement_id}>
                     <tr>
-                      <td>{v.requirement_id}</td>
+                      <td className="mono">{v.requirement_id}</td>
                       <td><VerdictBadge verdict={v.verdict_effective} /></td>
                       <td>{v.reason_effective}</td>
                       <td>{v.overridden_by || "—"}</td>
@@ -184,7 +184,7 @@ export default function BidderDetailPage() {
                 <tbody>
                   {autopsy.blocking_requirements.map((b) => (
                     <tr key={b.requirement_id}>
-                      <td>{b.requirement_id}</td>
+                      <td className="mono">{b.requirement_id}</td>
                       <td>{b.text}</td>
                       <td><VerdictBadge verdict={b.verdict} /></td>
                       <td><ClassificationBadge classification={b.classification} /></td>
@@ -212,7 +212,7 @@ export default function BidderDetailPage() {
               <tbody>
                 {repairPlan.actions.map((a) => (
                   <tr key={a.requirement_id}>
-                    <td>{a.requirement_id}</td>
+                    <td className="mono">{a.requirement_id}</td>
                     <td>{a.action}</td>
                     <td>{a.authority || "—"}</td>
                     <td><ActionableBadge actionableBy={a.actionable_by} /></td>
@@ -238,7 +238,7 @@ export default function BidderDetailPage() {
               <button className="danger" onClick={() => onDecision("DISQUALIFY")}>Disqualify</button>
             </div>
           </form>
-          {lastDecision && <p className="status">Recorded: {lastDecision.decision} (seq {lastDecision.seq}, hash {lastDecision.hash.slice(0, 16)}…)</p>}
+          {lastDecision && <p className="status">Recorded: {lastDecision.decision} (seq {lastDecision.seq}, hash <span className="mono">{lastDecision.hash.slice(0, 16)}…</span>)</p>}
 
           <h2>Override a verdict</h2>
           <p className="hint">A human may overrule the system. The system remembers that they did, and keeps its own conclusion alongside theirs.</p>
