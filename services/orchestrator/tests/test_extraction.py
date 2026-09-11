@@ -200,6 +200,27 @@ def test_a_structurally_invalid_cin_is_reported_as_invalid():
     assert "year" in found[0].detail
 
 
+def test_gstin_pan_and_cin_are_each_found_independently_on_one_document():
+    """A bidder's document packet realistically carries all three on adjacent
+    lines. Adding CIN to the front of SCAN_ORDER must not steal or lose a
+    character from the others."""
+    pdf = text_pdf(["Test fixture, not a certificate.",
+                    f"GSTIN: {GSTIN}", f"PAN: {PAN}", f"CIN: {CIN}"])
+    found = {c.field: c.value for c in find_candidates(read_pdf(pdf))[0] if c.valid}
+    assert found == {"gstin": GSTIN, "pan_number": PAN, "cin": CIN}
+
+
+def test_a_rejected_cin_does_not_affect_a_valid_gstin_on_the_same_page():
+    broken_cin = "U74999KA1500PTC012345"
+    pdf = text_pdf([f"GSTIN: {GSTIN}", f"CIN: {broken_cin}"])
+    candidates, _ = find_candidates(read_pdf(pdf))
+    valid = {c.field: c.value for c in candidates if c.valid}
+    invalid = [c for c in candidates if not c.valid]
+    assert valid == {"gstin": GSTIN}
+    assert len(invalid) == 1
+    assert invalid[0].field == "cin" and invalid[0].value == broken_cin
+
+
 # --- through the API ----------------------------------------------------------
 
 def test_uploading_a_document_extracts_and_records_it(client):
