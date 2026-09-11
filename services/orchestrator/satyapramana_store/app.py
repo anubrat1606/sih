@@ -39,6 +39,7 @@ from .reporting.blocker_summary import blocker_summary
 from .reporting.compliance_repair import repair_plan
 from .reporting.csv_export import bidders_to_csv
 from .reporting.dossier import build_dossier, render_dossier_text
+from .reporting.evidence_graph import build_evidence_graph
 from .reporting.tender_report import render_tender_report_text, tender_report
 from .rulepacks import NotAdoptable, active_pack, adopt
 
@@ -605,15 +606,49 @@ def bidder_evidence(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[st
     rebuild_evidence(conn, bidder_id, REGISTRY)
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT path, resolved, value, unresolved_reason, tier, channel
+            """SELECT path, resolved, value, unresolved_reason, tier, channel, capability_id
                FROM proj_evidence WHERE bidder_id=%s ORDER BY path""",
             (bidder_id,))
         rows = cur.fetchall()
     return {"bidder_id": bidder_id, "tender_id": tender_id,
             "evidence": [
                 {"path": path, "resolved": resolved, "value": value,
-                 "unresolved_reason": reason, "tier": tier, "channel": channel}
-                for path, resolved, value, reason, tier, channel in rows]}
+                 "unresolved_reason": reason, "tier": tier, "channel": channel,
+                 "capability_id": capability_id}
+                for path, resolved, value, reason, tier, channel, capability_id in rows]}
+
+
+def _evidence_by_path(conn, bidder_id: str) -> dict[str, dict[str, Any]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT path, resolved, value, unresolved_reason, tier, channel, capability_id
+               FROM proj_evidence WHERE bidder_id=%s""",
+            (bidder_id,))
+        return {
+            path: {"resolved": resolved, "value": value, "unresolved_reason": reason,
+                   "tier": tier, "channel": channel, "capability_id": capability_id}
+            for path, resolved, value, reason, tier, channel, capability_id in cur.fetchall()
+        }
+
+
+@app.get("/bidders/{bidder_id}/evidence-graph")
+def bidder_evidence_graph(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+    """satyapramana.md section 2.3's signature screen, as data: requirements
+    on one axis, the evidence each one actually consumes beneath it, and
+    which authority (if any) was ever asked about that evidence, beside it.
+    See reporting/evidence_graph.py for exactly what a node and an edge mean
+    here, and why a composite requirement or a self-declared-only path gets
+    no node of a kind it doesn't honestly have."""
+    found = active_pack(conn, tender_id)
+    if not found:
+        raise HTTPException(409, f"no rule pack adopted for tender {tender_id}")
+    _, pack = found
+    rebuild_projections(conn)
+    rebuild_evidence(conn, bidder_id, REGISTRY)
+    verdicts = _fetch_verdict_rows(conn, bidder_id)
+    evidence_by_path = _evidence_by_path(conn, bidder_id)
+    graph = build_evidence_graph(pack, verdicts, evidence_by_path, REGISTRY)
+    return {"bidder_id": bidder_id, "tender_id": tender_id, **graph}
 
 
 @app.get("/bidders/{bidder_id}/requirements/{requirement_id}/provenance")

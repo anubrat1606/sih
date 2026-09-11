@@ -17,6 +17,7 @@ from satyapramana_store.reporting.dossier import build_dossier, render_dossier_t
 from satyapramana_store.reporting.tender_report import tender_report, render_tender_report_text
 from satyapramana_store.reporting.csv_export import bidders_to_csv
 from satyapramana_store.reporting.blocker_summary import blocker_summary
+from satyapramana_store.reporting.evidence_graph import build_evidence_graph
 
 _SOURCE = {"page": 1, "region": [0, 0, 100, 20]}
 
@@ -660,3 +661,132 @@ def test_blocker_summary_records_every_classification_seen_for_a_requirement():
     ]
     assert blocker_summary(autopsies) == [
         {"requirement_id": "L1", "blocked_bidder_count": 2, "classifications": ["CURABLE", "FATAL"]}]
+
+
+# --- Evidence Graph ---------------------------------------------------------
+# Pure-function tests first (no database, no live adapter needed --
+# Registry.from_file() loads the declarative manifest, which carries every
+# authority's display name regardless of credential status).
+
+def test_evidence_graph_skips_composite_requirements_and_includes_leaves():
+    verdicts = [row("ROOT", "FAIL", "REQUIREMENT_NOT_SATISFIED"),
+                row("L1", "PASS", "AUTHORITY_CONFIRMED"),
+                row("L2", "FAIL", "AUTHORITY_CONTRADICTED")]
+    evidence_by_path = {
+        "bidder.gst.status": {"resolved": True, "value": "ACTIVE",
+                               "unresolved_reason": None, "tier": "C",
+                               "channel": None, "capability_id": None},
+        "bidder.pan.status": {"resolved": True, "value": "VALID",
+                               "unresolved_reason": None, "tier": "C",
+                               "channel": None, "capability_id": None},
+    }
+    graph = build_evidence_graph(PACK, verdicts, evidence_by_path, Registry())
+    assert {r["requirement_id"] for r in graph["requirements"]} == {"L1", "L2"}
+    assert {e["path"] for e in graph["evidence"]} == {"bidder.gst.status", "bidder.pan.status"}
+    # Self-declared only (no capability_id anywhere) -- no authority was ever
+    # asked, so no authority node and no evidence->authority edge.
+    assert graph["authorities"] == []
+    assert all(e["to_kind"] != "authority" for e in graph["edges"])
+    assert {(e["from_id"], e["to_id"]) for e in graph["edges"] if e["from_kind"] == "requirement"} == {
+        ("L1", "bidder.gst.status"), ("L2", "bidder.pan.status")}
+
+
+def test_evidence_graph_adds_an_authority_node_only_for_a_path_actually_verified():
+    verdicts = [row("L1", "PASS", "AUTHORITY_CONFIRMED"), row("L2", "FAIL", "SELF_DECLARED_CEILING")]
+    evidence_by_path = {
+        "bidder.gst.status": {"resolved": True, "value": "ACTIVE",
+                               "unresolved_reason": None, "tier": "A",
+                               "channel": "AGGREGATOR", "capability_id": "GST_STATUS"},
+        "bidder.pan.status": {"resolved": True, "value": "VALID",
+                               "unresolved_reason": None, "tier": "C",
+                               "channel": None, "capability_id": None},
+    }
+    graph = build_evidence_graph(PACK, verdicts, evidence_by_path, Registry.from_file())
+    assert graph["authorities"] == [
+        {"capability_id": "GST_STATUS", "authority": "Goods and Services Tax Network"}]
+    authority_edges = [e for e in graph["edges"] if e["to_kind"] == "authority"]
+    assert len(authority_edges) == 1
+    assert authority_edges[0] == {
+        "from_kind": "evidence", "from_id": "bidder.gst.status",
+        "to_kind": "authority", "to_id": "GST_STATUS",
+        "requirement_id": "L1", "verdict": "PASS", "resolved": True}
+
+
+def test_evidence_graph_an_unattempted_path_still_gets_an_honest_evidence_node():
+    """A path derived_bindings names but proj_evidence has nothing for at all
+    -- never extracted, never verified -- must still be a real, visible node,
+    not silently dropped."""
+    graph = build_evidence_graph(PACK, [], {}, Registry())
+    assert {e["path"] for e in graph["evidence"]} == {"bidder.gst.status", "bidder.pan.status"}
+    assert all(e["resolved"] is False and e["value"] is None for e in graph["evidence"])
+    assert graph["authorities"] == []
+
+
+def test_evidence_graph_falls_back_to_the_capability_id_when_the_registry_has_no_manifest():
+    verdicts = [row("L1", "FAIL", "AUTHORITY_UNAVAILABLE"), row("L2", "PASS", "AUTHORITY_CONFIRMED")]
+    evidence_by_path = {
+        "bidder.gst.status": {"resolved": False, "value": None,
+                               "unresolved_reason": "AUTHORITY_UNAVAILABLE", "tier": None,
+                               "channel": None, "capability_id": "GST_STATUS"},
+        "bidder.pan.status": {"resolved": True, "value": "VALID", "unresolved_reason": None,
+                               "tier": "A", "channel": "AGGREGATOR", "capability_id": "PAN_STATUS"},
+    }
+    graph = build_evidence_graph(PACK, verdicts, evidence_by_path, Registry())  # empty registry
+    assert {a["capability_id"] for a in graph["authorities"]} == {"GST_STATUS", "PAN_STATUS"}
+    # No manifest to resolve a display name from -- the capability id itself,
+    # never a guessed or fabricated authority name.
+    assert {a["authority"] for a in graph["authorities"]} == {"GST_STATUS", "PAN_STATUS"}
+
+
+def test_evidence_graph_is_identical_when_built_twice_from_the_same_input():
+    verdicts = [row("L1", "PASS", "AUTHORITY_CONFIRMED"), row("L2", "PASS", "AUTHORITY_CONFIRMED")]
+    evidence_by_path = {
+        "bidder.gst.status": {"resolved": True, "value": "ACTIVE", "unresolved_reason": None,
+                               "tier": "A", "channel": "AGGREGATOR", "capability_id": "GST_STATUS"},
+        "bidder.pan.status": {"resolved": True, "value": "VALID", "unresolved_reason": None,
+                               "tier": "A", "channel": "AGGREGATOR", "capability_id": "PAN_STATUS"},
+    }
+    reg = Registry.from_file()
+    assert build_evidence_graph(PACK, verdicts, evidence_by_path, reg) == \
+        build_evidence_graph(PACK, verdicts, evidence_by_path, reg)
+
+
+# --- through the real API ----------------------------------------------------
+
+def test_evidence_graph_endpoint_refuses_without_an_adopted_pack(client):
+    client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
+    assert client.get("/bidders/A/evidence-graph", params={"tender_id": "T1"}).status_code == 409
+
+
+def test_evidence_graph_endpoint_after_a_real_evaluation(client):
+    """No live capability is configured in this test environment (the same
+    as every other through-the-API reporting test) -- verification genuinely
+    runs and genuinely fails UNAUTHORIZED, which is exactly the case that
+    proves an authority node appears for an *attempted*, not just a
+    *successful*, verification."""
+    client.post("/tenders/T1/rule-pack", json={"officer_id": "officer_1", "pack": {
+        "rule_pack_id": "test.evidence-graph", "semver": "1.0.0",
+        "tender_reference": {"tender_id": "T1", "source_document_sha256": "a" * 64,
+                             "issuing_authority": "Test Authority"},
+        "constants": {"partial_credit": 0.5, "w_mandatory": 1.0, "w_desirable": 0.3,
+                     "recency_floor": 0.5, "corroboration_step": 0.1,
+                     "coverage_floor_high": 50, "coverage_floor_medium": 80,
+                     "confidence_floor": 70, "freshness_days": {"GST_STATUS": 30}},
+        "requirements": PACK["requirements"],
+    }})
+    client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
+    client.post("/bidders/A/verify", params={"tender_id": "T1"})
+    client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
+               json={"bid_submission_date": "2026-09-22"})
+
+    body = client.get("/bidders/A/evidence-graph", params={"tender_id": "T1"}).json()
+    assert body["bidder_id"] == "A" and body["tender_id"] == "T1"
+    assert {r["requirement_id"] for r in body["requirements"]} == {"L1", "L2"}
+    assert {e["path"] for e in body["evidence"]} == {"bidder.gst.status", "bidder.pan.status"}
+    assert all(not e["resolved"] for e in body["evidence"])  # unconfigured -- honestly unresolved
+    assert {a["capability_id"] for a in body["authorities"]} == {"GST_STATUS", "PAN_STATUS"}
+    req_evidence_edges = [e for e in body["edges"] if e["to_kind"] == "evidence"]
+    evidence_authority_edges = [e for e in body["edges"] if e["to_kind"] == "authority"]
+    assert len(req_evidence_edges) == 2
+    assert len(evidence_authority_edges) == 2
+    assert all(e["requirement_id"] in {"L1", "L2"} for e in req_evidence_edges)

@@ -5,6 +5,7 @@ import TendersPage from "./pages/TendersPage";
 import RegisterBidderPage from "./pages/RegisterBidderPage";
 import TenderDashboardPage from "./pages/TenderDashboardPage";
 import BidderDetailPage from "./pages/BidderDetailPage";
+import EvidenceGraphPage from "./pages/EvidenceGraphPage";
 import AuditPage from "./pages/AuditPage";
 import "./App.css";
 
@@ -63,6 +64,7 @@ export default function App() {
         <Route path="/register" element={<RegisterBidderPage />} />
         <Route path="/tenders/:tenderId" element={<TenderDashboardPage />} />
         <Route path="/bidders/:bidderId" element={<BidderDetailPage />} />
+        <Route path="/bidders/:bidderId/evidence-graph" element={<EvidenceGraphPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
