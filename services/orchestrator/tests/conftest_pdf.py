@@ -30,6 +30,28 @@ def valid_cin(state: str = "KA", year: str = "2015", ownership: str = "PTC") -> 
     return f"U74999{state}{year}{ownership}012345"
 
 
+def pan_card_lines(
+    name: str | None = "RAHUL KUMAR SHARMA",
+    dob: str | None = "15/08/1990",
+) -> list[str]:
+    """The 'Name' / 'Date of Birth' label-then-value lines as printed on a
+    real PAN card, for composing into a text_pdf() fixture -- e.g.
+    text_pdf(["not a certificate", *pan_card_lines()]).
+
+    Not a real card -- a synthetic name and a synthetic date, arranged the
+    way the card actually prints them (label on one line, value on the
+    next), so the label/value reader has something realistic to exercise.
+    Pass None for either to simulate that field being blank on the card.
+    """
+    result = ["Name"]
+    if name is not None:
+        result.append(name)
+    result.append("Date of Birth")
+    if dob is not None:
+        result.append(dob)
+    return result
+
+
 def text_pdf(lines: list[str], pages: int = 1) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas

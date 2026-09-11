@@ -8,11 +8,12 @@ from fastapi.testclient import TestClient
 
 from satyapramana_store.app import app, db
 from satyapramana_store.extract import (
-    find_candidates, gstin_check_digit, pan_from_gstin, read_pdf, validate_cin,
-    validate_gstin, validate_pan, validate_udyam,
+    find_candidates, find_pan_holder_fields, gstin_check_digit, pan_from_gstin,
+    read_pdf, validate_cin, validate_gstin, validate_pan,
+    validate_pan_date_of_birth, validate_pan_holder_name, validate_udyam,
 )
 
-from .conftest_pdf import imageless_pdf, text_pdf, valid_cin, valid_gstin
+from .conftest_pdf import imageless_pdf, pan_card_lines, text_pdf, valid_cin, valid_gstin
 
 GSTIN = valid_gstin()
 PAN = pan_from_gstin(GSTIN)
@@ -87,6 +88,39 @@ def test_a_well_formed_cin_validates():
 ])
 def test_malformed_cins_are_rejected(bad, why):
     assert not validate_cin(bad).ok, why
+
+
+def test_a_well_formed_date_of_birth_validates():
+    check = validate_pan_date_of_birth("15/08/1990")
+    assert check.ok and "1990" in check.detail
+
+
+@pytest.mark.parametrize("bad,why", [
+    ("1990-08-15", "wrong format (ISO, not DD/MM/YYYY)"),
+    ("15-08-1990", "wrong separator"),
+    ("31/02/1990", "February has no 31st"),
+    ("32/01/1990", "no 32nd day"),
+    ("15/13/1990", "no 13th month"),
+    ("15/08/90", "two-digit year"),
+    ("", "empty"),
+])
+def test_malformed_dates_of_birth_are_rejected(bad, why):
+    assert not validate_pan_date_of_birth(bad).ok, why
+
+
+def test_a_well_formed_holder_name_validates():
+    assert validate_pan_holder_name("RAHUL KUMAR SHARMA").ok
+    assert validate_pan_holder_name("A. K. NAIR").ok
+
+
+@pytest.mark.parametrize("bad,why", [
+    ("", "empty"),
+    ("15/08/1990", "a date, not a name"),
+    ("RAHUL2", "contains a digit"),
+    ("x", "single lowercase char -- not how a card prints a name"),
+])
+def test_malformed_holder_names_are_rejected(bad, why):
+    assert not validate_pan_holder_name(bad).ok, why
 
 
 def test_a_gstin_carries_its_holders_pan():
@@ -221,6 +255,57 @@ def test_a_rejected_cin_does_not_affect_a_valid_gstin_on_the_same_page():
     assert invalid[0].field == "cin" and invalid[0].value == broken_cin
 
 
+def test_pan_holder_name_and_dob_are_located_with_their_boxes():
+    pdf = text_pdf(["Test fixture, not a certificate.", *pan_card_lines()])
+    found = {c.field: c for c in find_pan_holder_fields(read_pdf(pdf))}
+    assert set(found) == {"pan_holder_name", "pan_date_of_birth"}
+    name, dob = found["pan_holder_name"], found["pan_date_of_birth"]
+    assert name.valid and name.value == "RAHUL KUMAR SHARMA" and name.page == 1
+    assert dob.valid and dob.value == "15/08/1990"
+    for field in (name, dob):
+        x0, top, x1, bottom = field.region
+        assert x1 > x0 and bottom > top, "a real, non-degenerate rectangle"
+
+
+def test_a_blank_name_field_is_not_read_as_a_guess():
+    """Name is the last thing on the page -- no line follows the label -- so
+    there is nothing to (mis)read as the name."""
+    pdf = text_pdf(["Date of Birth", "15/08/1990", "Name"])
+    found = {c.field: c for c in find_pan_holder_fields(read_pdf(pdf))}
+    assert not found["pan_holder_name"].valid
+    assert "no value line follows" in found["pan_holder_name"].detail
+    assert found["pan_date_of_birth"].valid
+
+
+def test_a_next_line_that_is_itself_a_label_is_not_read_as_a_value():
+    """The card left the name blank, so the line under 'Name' is the next
+    printed label, 'Date of Birth' -- not a name."""
+    pdf = text_pdf(["Name", "Date of Birth", "15/08/1990"])
+    found = {c.field: c for c in find_pan_holder_fields(read_pdf(pdf))}
+    assert not found["pan_holder_name"].valid
+    assert "itself a printed label" in found["pan_holder_name"].detail
+    # The date of birth label, found on its own line further down, still
+    # reads its own value correctly -- one blank field doesn't take the rest
+    # of the document down with it.
+    assert found["pan_date_of_birth"].valid
+    assert found["pan_date_of_birth"].value == "15/08/1990"
+
+
+def test_a_malformed_date_of_birth_is_reported_as_invalid_not_guessed():
+    pdf = text_pdf(pan_card_lines(dob="1990-08-15"))
+    found = [c for c in find_pan_holder_fields(read_pdf(pdf)) if c.field == "pan_date_of_birth"]
+    assert found and not found[0].valid
+    assert "DD/MM/YYYY" in found[0].detail
+
+
+def test_no_pan_holder_labels_means_no_candidates_at_all():
+    """A document that simply isn't a PAN card -- e.g. a GST certificate --
+    must not produce a pan_holder_name/pan_date_of_birth candidate of any
+    kind, valid or invalid. Absence of the label is not itself a failure."""
+    pdf = text_pdf([f"GSTIN: {GSTIN}"])
+    assert find_pan_holder_fields(read_pdf(pdf)) == []
+
+
 # --- through the API ----------------------------------------------------------
 
 def test_uploading_a_document_extracts_and_records_it(client):
@@ -268,6 +353,37 @@ def test_a_matching_pan_and_gstin_are_linked(client):
     assert upload(client, pdf).json()["identifier_cross_check"]["outcome"] == "LINKED"
 
 
+def test_the_cross_check_fires_across_two_separate_uploads(client):
+    """A bidder's PAN card and GST certificate are realistically two separate
+    files. The second, later upload must see the first upload's identifier."""
+    first = upload(client, text_pdf([f"PAN: {PAN}"])).json()
+    assert first["identifier_cross_check"] is None  # nothing to cross-check yet
+
+    second = upload(client, text_pdf([f"GSTIN: {GSTIN}"])).json()
+    cross = second["identifier_cross_check"]
+    assert cross is not None
+    assert cross["outcome"] == "LINKED"
+    assert cross["pan"] == PAN and cross["gstin"] == GSTIN
+
+
+def test_a_cross_document_conflict_is_flagged_too(client):
+    other_pan = "BBBPB1111B"
+    upload(client, text_pdf([f"PAN: {other_pan}"]))
+    body = upload(client, text_pdf([f"GSTIN: {GSTIN}"])).json()
+    cross = body["identifier_cross_check"]
+    assert cross["outcome"] == "IDENTIFIER_CONFLICT"
+    assert cross["pan"] == other_pan and cross["embedded_pan"] == PAN
+
+
+def test_the_cross_check_does_not_reach_across_different_bidders(client):
+    """Bidder A's PAN must never be cross-checked against bidder B's GSTIN --
+    that would compare two different legal entities' documents as if they
+    were one bidder's."""
+    upload(client, text_pdf([f"PAN: {PAN}"]), bidder="A")
+    body = upload(client, text_pdf([f"GSTIN: {GSTIN}"]), bidder="B").json()
+    assert body["identifier_cross_check"] is None
+
+
 def test_uploading_a_document_extracts_a_cin(client):
     pdf = text_pdf(["Certificate of Incorporation (test fixture).", f"CIN: {CIN}"])
     body = upload(client, pdf).json()
@@ -285,6 +401,29 @@ def test_a_rejected_cin_is_never_asserted_as_a_value(client, conn):
     assert body["rejected"][0]["candidate"] == broken
     with conn.cursor() as cur:
         cur.execute("SELECT count(*) FROM events WHERE event_type='FIELD_EXTRACTED'")
+        assert cur.fetchone()[0] == 0
+
+
+def test_uploading_a_pan_card_extracts_holder_name_and_dob(client):
+    pdf = text_pdf(["Income Tax Department (test fixture).", *pan_card_lines()])
+    body = upload(client, pdf).json()
+    by_path = {e["path"]: e for e in body["extracted"]}
+    assert by_path["bidder.pan.holder_name"]["value"] == "RAHUL KUMAR SHARMA"
+    assert by_path["bidder.pan.date_of_birth"]["value"] == "15/08/1990"
+    for path in ("bidder.pan.holder_name", "bidder.pan.date_of_birth"):
+        assert len(by_path[path]["region"]) == 4
+
+
+def test_a_pan_card_with_a_blank_name_field_reports_it_as_rejected(client, conn):
+    pdf = text_pdf(pan_card_lines(name=None))
+    body = upload(client, pdf).json()
+    assert "bidder.pan.holder_name" not in {e["path"] for e in body["extracted"]}
+    rejected_paths = {r["path"] for r in body["rejected"]}
+    assert "bidder.pan.holder_name" in rejected_paths
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM events WHERE event_type='FIELD_EXTRACTED' "
+            "AND payload->>'path'='bidder.pan.holder_name'")
         assert cur.fetchone()[0] == 0
 
 
@@ -373,6 +512,34 @@ def test_the_trail_reaches_the_source_document_for_a_cin(client):
     assert extraction["page"] == 1
     assert len(extraction["region"]) == 4
     assert extraction["path"] == "bidder.entity.cin"
+
+
+def test_the_trail_reaches_the_source_document_for_the_holder_name(client):
+    """This is the field PanStatusAdapter needs as `pan_holder_name` -- the
+    trail proves it, like every other extracted field, comes from a real
+    line on a real uploaded document."""
+    pdf = text_pdf(["Test fixture, not a certificate.", *pan_card_lines()])
+    upload(client, pdf)
+
+    from .test_decide import EVAL, PACK
+    pack = {**PACK, "requirements": [
+        {"id": "R1", "text": "Bidder shall state the PAN holder's name.",
+         "source": {"page": 14, "region": [72, 470, 523, 494]},
+         "obligation": "mandatory", "operator": "LEAF",
+         "predicate": {"op": "exists", "subject": {"field": "bidder.pan.holder_name"}}}]}
+    client.post("/tenders/T1/rule-pack",
+                json={"officer_id": "officer_1", "pack": pack})
+    client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL)
+
+    trail = client.get("/bidders/A/requirements/R1/provenance").json()["trail"]
+    kinds = [t["event_type"] for t in trail]
+    assert kinds == ["REQUIREMENT_EVALUATED", "EVIDENCE_FUSED",
+                     "FIELD_EXTRACTED", "DOCUMENT_INGESTED"]
+
+    extraction = trail[2]["payload"]
+    assert extraction["value"] == "RAHUL KUMAR SHARMA"
+    assert extraction["path"] == "bidder.pan.holder_name"
+    assert len(extraction["region"]) == 4
 
 
 def test_a_desirable_requirement_can_pass_with_no_model_in_the_path(client):
