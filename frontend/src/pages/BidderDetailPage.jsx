@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
-  evaluateBidder, getAutopsy, getBidder, getBidderEvidence, getProvenance,
-  getRepairPlan, overrideVerdict, recordDecision,
+  evaluateBidder, getAutopsy, getBidder, getBidderEvidence, getExplanation,
+  getProvenance, getRepairPlan, overrideVerdict, recordDecision,
 } from "../api";
 import {
   ClassificationBadge, ConflictCard, CoverageMeter, ErrorBox, EvidenceChip,
@@ -21,6 +21,8 @@ export default function BidderDetailPage() {
   const [autopsy, setAutopsy] = useState(null);
   const [repairPlan, setRepairPlan] = useState(null);
   const [evidence, setEvidence] = useState(null);
+  const [explanation, setExplanation] = useState(null);
+  const [explaining, setExplaining] = useState(false);
 
   const [bidSubmissionDate, setBidSubmissionDate] = useState("");
   const [officerId, setOfficerId] = useState("officer_demo");
@@ -52,6 +54,18 @@ export default function BidderDetailPage() {
       load();
     } catch (err) {
       setError(err);
+    }
+  }
+
+  async function onExplain() {
+    setError(null);
+    setExplaining(true);
+    try {
+      setExplanation(await getExplanation(bidderId, tenderId));
+    } catch (err) {
+      setError(err);
+    } finally {
+      setExplaining(false);
     }
   }
 
@@ -204,6 +218,26 @@ export default function BidderDetailPage() {
           ) : (
             repairPlan.actions.map((a) => <RepairAction key={a.requirement_id} action={a} />)
           )}
+
+          <h2>Officer summary</h2>
+          <p className="hint">
+            A narrator, not a judge (satyapramana.md section 2.2): the LLM restates the
+            dossier above in plain prose and may not alter a single fact in it. If it's
+            unavailable, everything above remains complete and correct on its own.
+          </p>
+          <div className="actions">
+            <button onClick={onExplain} disabled={explaining}>
+              {explaining ? "Generating…" : "Generate summary"}
+            </button>
+          </div>
+          {explanation && (explanation.available ? (
+            <>
+              <p className="explain-narrative">{explanation.narrative}</p>
+              <p className="hint">Narrated by {explanation.model} at {explanation.generated_at}.</p>
+            </>
+          ) : (
+            <p className="hint">Not available: {explanation.reason}</p>
+          ))}
 
           <h2>Evaluate</h2>
           <p className="hint">Folds evidence, fuses it, and decides -- deterministically. Needs a rule pack adopted on this tender first.</p>

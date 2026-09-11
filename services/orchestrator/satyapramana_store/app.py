@@ -32,6 +32,7 @@ from .db import connect, migrate
 from .decide import fuse_and_evaluate
 from .events import Actor, append, export_jsonl, verify_chain
 from .evidence import ProjectionResolver, rebuild_evidence
+from .explain import Unavailable
 from .extract import ingest_document
 from .projections import collusion_clusters, provenance_trail, rebuild_projections
 from .reporting.bid_autopsy import autopsy
@@ -94,6 +95,13 @@ CONSTANTS = Constants()
 from .adapters.sandbox_co_in import build_from_env as _build_sandbox_adapters  # noqa: E402
 for _adapter in _build_sandbox_adapters():
     REGISTRY.register(_adapter)
+
+# Same plug-in shape as the verification adapters above: with no
+# SATYAPRAMANA_GEMINI_API_KEY set, EXPLAINER stays on the honest
+# UnconfiguredExplainer and /bidders/{id}/explain returns Unavailable rather
+# than a fabricated narrative.
+from .explain import build_from_env as _build_explainer  # noqa: E402
+EXPLAINER = _build_explainer()
 
 
 def db():
@@ -592,6 +600,31 @@ def bidder_dossier(bidder_id: str, tender_id: str, as_text: bool = False,
     if as_text:
         return PlainTextResponse(render_dossier_text(dossier))
     return dossier
+
+
+@app.get("/bidders/{bidder_id}/explain")
+def bidder_explain(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+    """satyapramana.md section 2.2's EXPLAIN stage: narrate the already-final
+    dossier into officer-readable prose. A narrator, not a judge -- the LLM
+    receives exactly the plain-text Compliance Dossier an officer could
+    already read and may not alter a single fact in it. Never archived to
+    the event log (see explain/base.py): this endpoint recomputes the
+    dossier and re-narrates it fresh on every call.
+
+    Always 200 -- an unconfigured or failing provider is a normal, honest
+    outcome here (`available: false`, with the real reason), never a 5xx,
+    because the charter is explicit: "the system still returns complete,
+    correct, structured verdicts" with or without this."""
+    dossier = bidder_dossier(bidder_id, tender_id, conn=conn)
+    dossier_text = render_dossier_text(dossier)
+    outcome = EXPLAINER.narrate(dossier_text)
+    if isinstance(outcome, Unavailable):
+        return {"bidder_id": bidder_id, "tender_id": tender_id,
+                "available": False, "narrative": None, "reason": outcome.reason,
+                "model": None, "generated_at": None}
+    return {"bidder_id": bidder_id, "tender_id": tender_id,
+            "available": True, "narrative": outcome.narrative, "reason": None,
+            "model": outcome.model, "generated_at": outcome.generated_at.isoformat()}
 
 
 @app.get("/bidders/{bidder_id}/evidence")
