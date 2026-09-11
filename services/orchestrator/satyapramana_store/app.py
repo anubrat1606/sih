@@ -35,7 +35,9 @@ from .evidence import ProjectionResolver, rebuild_evidence
 from .extract import ingest_document
 from .projections import collusion_clusters, provenance_trail, rebuild_projections
 from .reporting.bid_autopsy import autopsy
+from .reporting.blocker_summary import blocker_summary
 from .reporting.compliance_repair import repair_plan
+from .reporting.csv_export import bidders_to_csv
 from .reporting.dossier import build_dossier, render_dossier_text
 from .reporting.tender_report import render_tender_report_text, tender_report
 from .rulepacks import NotAdoptable, active_pack, adopt
@@ -462,6 +464,29 @@ def tender_compliance_report(tender_id: str, as_text: bool = False, conn=Depends
     if as_text:
         return PlainTextResponse(render_tender_report_text(report))
     return report
+
+
+@app.get("/tenders/{tender_id}/report/csv")
+def tender_report_csv(tender_id: str, conn=Depends(db)):
+    """The same bidder list as `GET /tenders/{tender_id}/bidders`, as CSV --
+    the artifact an officer actually takes somewhere: a spreadsheet, an
+    email, a physical file. See reporting/csv_export.py."""
+    body = list_tender_bidders(tender_id, conn)
+    return PlainTextResponse(bidders_to_csv(body["bidders"]), media_type="text/csv")
+
+
+@app.get("/tenders/{tender_id}/blockers")
+def tender_blockers(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+    """Across every bidder on this tender, which requirement is blocking the
+    most of them -- aggregating each bidder's own Bid Autopsy. Useful for an
+    officer deciding whether a requirement needs relaxing, or which document
+    type to chase bidders for. See reporting/blocker_summary.py."""
+    found = active_pack(conn, tender_id)
+    if not found:
+        raise HTTPException(409, f"no rule pack adopted for tender {tender_id}")
+    bidder_ids = list_tender_bidders(tender_id, conn)["bidders"]
+    autopsies = [bidder_autopsy(b["bidder_id"], tender_id, conn) for b in bidder_ids]
+    return {"tender_id": tender_id, "blockers": blocker_summary(autopsies)}
 
 
 @app.get("/bidders/{bidder_id}")
