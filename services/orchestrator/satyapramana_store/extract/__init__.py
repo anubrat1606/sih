@@ -1,5 +1,6 @@
 from .grammars import (  # noqa: F401
-    GST_STATE_CODES, PAN_HOLDER_TYPES, gstin_check_digit, pan_from_gstin,
+    CIN_OWNERSHIP_CLASSES, CIN_ROC_STATE_CODES, GST_STATE_CODES,
+    PAN_HOLDER_TYPES, gstin_check_digit, pan_from_gstin, validate_cin,
     validate_gstin, validate_pan, validate_udyam,
 )
 from .ingest import Candidate, find_candidates, ingest_document  # noqa: F401

@@ -25,3 +25,22 @@ button.danger { border-color: #cf222e; background: #cf222e; }
 .evidence-table .details { color: #57606a; font-size: 12px; max-width: 260px; }
 .graph-box { background: white; border: 1px solid #d0d7de; border-radius: 8px; padding: 8px; }
 .audit-list { font-size: 13px; font-family: monospace; }
+
+/* Four-state verdict + three-tier risk. Colour is never the only carrier of
+   meaning long-term (satyapramana.md 2.3 wants colour+glyph+label) -- this
+   minimal pass is colour+label only, a gap to close in the design-system pass. */
+.badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; }
+.v-pass { background: #dafbe1; color: #1a7f37; }
+.v-fail { background: #ffebe9; color: #cf222e; }
+.v-partial { background: #fff8c5; color: #9a6700; }
+.v-unknown { background: #eaeef2; color: #57606a; }
+.r-low { background: #dafbe1; color: #1a7f37; }
+.r-medium { background: #fff8c5; color: #9a6700; }
+.r-high { background: #ffebe9; color: #cf222e; }
+
+.metric-row { display: flex; gap: 18px; margin: 10px 0; flex-wrap: wrap; }
+.metric { min-width: 90px; }
+.metric-label { font-size: 12px; color: #57606a; text-transform: uppercase; letter-spacing: 0.03em; }
+.metric-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+textarea { padding: 8px; border: 1px solid #d0d7de; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 13px; }

@@ -35,6 +35,7 @@ FIELD_PATHS = {
     "gstin": "bidder.gst.gstin",
     "pan_number": "bidder.pan.pan_number",
     "udyam_number": "bidder.udyam.udyam_number",
+    "cin": "bidder.entity.cin",
 }
 
 

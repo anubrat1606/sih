@@ -67,7 +67,7 @@ class NullAdapter:
             "programmatic source available"
         )
 
-    def verify(self, request: VerificationRequest) -> Failure:
+    def verify(self, request: VerificationRequest, conn=None) -> Failure:
         return Failure(FailureCode.NOT_CAPABLE, self.reason)
 
 
@@ -82,7 +82,7 @@ class UnconfiguredAdapter:
     def __init__(self, manifest: CapabilityManifest):
         self.manifest = manifest
 
-    def verify(self, request: VerificationRequest) -> Failure:
+    def verify(self, request: VerificationRequest, conn=None) -> Failure:
         return Failure(
             FailureCode.UNAUTHORIZED,
             f"{self.manifest.adapter_id}: awaiting credentials for "
