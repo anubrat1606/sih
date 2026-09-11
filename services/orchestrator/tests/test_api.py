@@ -146,6 +146,69 @@ def test_listing_tenders_with_none_registered_is_an_empty_list(client):
     assert client.get("/tenders").json() == {"tenders": []}
 
 
+# --- tender management ------------------------------------------------------
+
+def test_creating_a_tender_requires_authentication(client):
+    r = client.post("/tenders", json={"tender_id": "T-NEW", "title": "Supply of X",
+                                      "issuing_authority": "CPCL"})
+    assert r.status_code == 401
+
+
+def test_a_created_tender_appears_in_the_listing_with_no_bidders_yet(client, conn):
+    r = client.post("/tenders", json={
+        "tender_id": "T-NEW", "title": "Supply of pumps", "issuing_authority": "CPCL",
+        "bid_submission_deadline": "2026-12-01", "description": "Annual maintenance contract",
+    }, headers=auth_headers(conn))
+    assert r.status_code == 201
+    assert "T-NEW" in client.get("/tenders").json()["tenders"]
+
+
+def test_a_created_tenders_metadata_is_real_not_guessed(client, conn):
+    client.post("/tenders", json={
+        "tender_id": "T-NEW", "title": "Supply of pumps", "issuing_authority": "CPCL",
+        "bid_submission_deadline": "2026-12-01", "description": "Annual maintenance contract",
+    }, headers=auth_headers(conn, username="priya"))
+    body = client.get("/tenders/T-NEW").json()
+    assert body == {
+        "tender_id": "T-NEW", "title": "Supply of pumps", "issuing_authority": "CPCL",
+        "bid_submission_deadline": "2026-12-01", "description": "Annual maintenance contract",
+        "created_by": "priya",
+    }
+
+
+def test_a_tender_that_was_never_explicitly_created_has_honest_null_metadata(client):
+    register(client, "T-IMPLICIT", "A")
+    body = client.get("/tenders/T-IMPLICIT").json()
+    assert body["tender_id"] == "T-IMPLICIT"
+    assert body["title"] is None and body["issuing_authority"] is None
+
+
+def test_creating_the_same_tender_id_twice_is_refused(client, conn):
+    body = {"tender_id": "T-DUP", "title": "First", "issuing_authority": "CPCL"}
+    assert client.post("/tenders", json=body, headers=auth_headers(conn)).status_code == 201
+    r = client.post("/tenders", json={**body, "title": "Second"}, headers=auth_headers(conn))
+    assert r.status_code == 409
+    assert client.get("/tenders/T-DUP").json()["title"] == "First"  # not overwritten
+
+
+def test_a_tender_created_with_no_deadline_or_description_is_fine(client, conn):
+    r = client.post("/tenders", json={"tender_id": "T-MIN", "title": "Minimal",
+                                      "issuing_authority": "CPCL"}, headers=auth_headers(conn))
+    assert r.status_code == 201
+    body = client.get("/tenders/T-MIN").json()
+    assert body["bid_submission_deadline"] is None and body["description"] is None
+
+
+def test_creating_a_tender_is_recorded_as_the_real_authenticated_officer(client, conn):
+    client.post("/tenders", json={"tender_id": "T-WHO", "title": "Who made this",
+                                  "issuing_authority": "CPCL"},
+               headers=auth_headers(conn, username="priya"))
+    with conn.cursor() as cur:
+        cur.execute("SELECT actor_kind, actor_id FROM events WHERE event_type='TENDER_CREATED'")
+        kind, actor = cur.fetchone()
+    assert kind == "HUMAN" and actor == "priya"
+
+
 # --- dashboard ------------------------------------------------------------
 
 def test_dashboard_requires_authentication(client):

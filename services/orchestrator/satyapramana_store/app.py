@@ -128,6 +128,14 @@ def db():
 
 # --- request models -----------------------------------------------------------
 
+class TenderIn(BaseModel):
+    tender_id: str
+    title: str
+    issuing_authority: str
+    bid_submission_deadline: date | None = None
+    description: str | None = None
+
+
 class BidderIn(BaseModel):
     bidder_id: str
     director_name: str | None = None
@@ -269,17 +277,64 @@ def capabilities() -> dict[str, Any]:
 
 @app.get("/tenders")
 def list_tenders(conn=Depends(db)) -> dict[str, Any]:
-    """Every tender_id that has at least one registered bidder.
-
-    Tenders aren't a first-class entity anywhere in this system (no Tender
-    Management module -- see docs/STATUS.md's "declined infrastructure cost").
-    A tender_id is just a string threaded through bidder_in_tender, rule_packs
-    and the event log. This is a projection over the one table that captures
-    every tender's existence, not a new source of truth.
-    """
+    """Every tender_id known to this system -- either explicitly created
+    (POST /tenders, with real metadata) or only inferred from having at
+    least one registered bidder, the original path from before Tender
+    Management existed. Both stay valid: an officer can still just start
+    registering bidders on a tender_id with no ceremony, or set one up with
+    a title and deadline first. Either way it shows up here."""
     with conn.cursor() as cur:
-        cur.execute("SELECT DISTINCT tender_id FROM bidder_in_tender ORDER BY tender_id")
+        cur.execute(
+            """SELECT tender_id FROM bidder_in_tender
+               UNION SELECT tender_id FROM proj_tenders
+               ORDER BY tender_id""")
         return {"tenders": [row[0] for row in cur.fetchall()]}
+
+
+@app.post("/tenders", status_code=201)
+def create_tender(body: TenderIn, conn=Depends(db),
+                  user: User = Depends(current_user)) -> dict[str, Any]:
+    """Explicit tender creation with real metadata -- title, issuing
+    authority, bid submission deadline, description. Any authenticated
+    officer may create one; refuses if the tender_id was already explicitly
+    created (never silently overwrites another officer's metadata)."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM proj_tenders WHERE tender_id=%s", (body.tender_id,))
+        if cur.fetchone():
+            raise HTTPException(409, f"tender {body.tender_id!r} already exists")
+
+    rec = append(
+        conn, event_type="TENDER_CREATED", actor=Actor("HUMAN", user.username),
+        correlation_id=str(uuid.uuid4()), tender_id=body.tender_id,
+        payload={
+            "title": body.title, "issuing_authority": body.issuing_authority,
+            "bid_submission_deadline": body.bid_submission_deadline.isoformat()
+                if body.bid_submission_deadline else None,
+            "description": body.description, "created_by": user.username,
+        })
+    rebuild_projections(conn)
+    return {"tender_id": body.tender_id, "seq": rec["seq"], "hash": rec["hash"]}
+
+
+@app.get("/tenders/{tender_id}")
+def get_tender(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+    """This tender's explicit metadata, if it has any. A tender that only
+    exists because a bidder registered on it (no POST /tenders was ever
+    made) honestly returns null metadata fields, never a guessed title."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT title, issuing_authority, bid_submission_deadline,
+                      description, created_by
+               FROM proj_tenders WHERE tender_id=%s""",
+            (tender_id,))
+        row = cur.fetchone()
+    if not row:
+        return {"tender_id": tender_id, "title": None, "issuing_authority": None,
+                "bid_submission_deadline": None, "description": None, "created_by": None}
+    title, authority, deadline, description, created_by = row
+    return {"tender_id": tender_id, "title": title, "issuing_authority": authority,
+            "bid_submission_deadline": deadline.isoformat() if deadline else None,
+            "description": description, "created_by": created_by}
 
 
 @app.get("/dashboard")

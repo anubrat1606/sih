@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import ForceGraph2D from "react-force-graph-2d";
-import { adoptRulePack, getCollusionEdges, getTenderCollusion, listTenderBidders } from "../api";
+import { adoptRulePack, getCollusionEdges, getTender, getTenderCollusion, listTenderBidders } from "../api";
 import { roleAtLeast, useAuth } from "../authContext";
 import { ErrorBox, Metric, RiskBadge } from "../components";
 import { cssVar } from "../theme";
@@ -18,6 +18,7 @@ export default function TenderDashboardPage() {
   const [adoptResult, setAdoptResult] = useState(null);
   const [violations, setViolations] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
+  const [tender, setTender] = useState(null);
   const graphRef = useRef();
 
   // Which bidder ids are actually connected to the selected node, so a
@@ -34,6 +35,7 @@ export default function TenderDashboardPage() {
   }
 
   function load() {
+    getTender(tenderId).then(setTender).catch(() => setTender(null));
     listTenderBidders(tenderId).then((body) => setBidders(body.bidders)).catch(setError);
     getTenderCollusion(tenderId).then((body) => setCollusion(body.bidders)).catch(setError);
     getCollusionEdges(tenderId).then((body) => setEdges(body.edges)).catch(setError);
@@ -61,7 +63,16 @@ export default function TenderDashboardPage() {
 
   return (
     <div className="page">
-      <h1>Tender {tenderId}</h1>
+      <h1>{tender?.title || <span className="mono">{tenderId}</span>}</h1>
+      {tender?.title ? (
+        <p className="hint">
+          <span className="mono">{tenderId}</span> · {tender.issuing_authority}
+          {tender.bid_submission_deadline && ` · bids close ${tender.bid_submission_deadline}`}
+        </p>
+      ) : (
+        <p className="hint">No tender metadata on file -- this tender exists only because a bidder registered on it.</p>
+      )}
+      {tender?.description && <p className="hint">{tender.description}</p>}
       <ErrorBox error={error} />
 
       <h2>Bidders</h2>

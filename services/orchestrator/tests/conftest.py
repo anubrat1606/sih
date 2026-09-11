@@ -38,7 +38,7 @@ def conn(dsn):
             cur.execute(f"DROP TRIGGER IF EXISTS {t}_no_mutate ON {t}")
             cur.execute(f"DROP TRIGGER IF EXISTS {t}_no_truncate ON {t}")
         cur.execute("DROP TABLE IF EXISTS proj_verdicts, proj_collusion, "
-                    "proj_evidence, bidder_in_tender, raw_responses, "
+                    "proj_evidence, proj_tenders, bidder_in_tender, raw_responses, "
                     "rule_packs, users CASCADE")
         cur.execute("DROP TRIGGER IF EXISTS events_no_mutate ON events")
         cur.execute("DROP TRIGGER IF EXISTS events_no_truncate ON events")

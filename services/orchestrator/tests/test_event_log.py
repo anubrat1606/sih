@@ -140,7 +140,7 @@ def test_an_unknown_chain_format_is_reported(conn):
 
 # --- who may emit what --------------------------------------------------------
 
-def test_only_three_event_types_may_have_a_human_actor(conn):
+def test_only_the_named_event_types_may_have_a_human_actor(conn):
     with pytest.raises(ValueError, match="may not be emitted by a HUMAN"):
         append(conn, event_type="FIELD_EXTRACTED", actor=Actor("HUMAN", "officer_1"),
                correlation_id=CORR, payload={})

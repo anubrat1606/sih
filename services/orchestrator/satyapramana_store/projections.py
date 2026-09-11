@@ -49,13 +49,15 @@ def rebuild_projections(conn, up_to_seq: int | None = None) -> dict[str, int]:
     capability underneath it costs nothing extra, so the query stays supported.
     """
     ceiling = up_to_seq if up_to_seq is not None else _tip(conn)
-    counts = {"proj_verdicts": 0, "proj_collusion": 0}
+    counts = {"proj_verdicts": 0, "proj_collusion": 0, "proj_tenders": 0}
 
     with conn.cursor() as cur:
-        # proj_verdicts and proj_collusion are caches, not the log: DELETE here
-        # is correct and is exactly why they are separate tables from `events`.
+        # proj_verdicts, proj_collusion and proj_tenders are caches, not the
+        # log: DELETE here is correct and is exactly why they are separate
+        # tables from `events`.
         cur.execute("DELETE FROM proj_verdicts")
         cur.execute("DELETE FROM proj_collusion")
+        cur.execute("DELETE FROM proj_tenders")
 
         cur.execute(
             """SELECT event_id, event_type, tender_id, bidder_id, payload, seq
@@ -117,6 +119,29 @@ def rebuild_projections(conn, up_to_seq: int | None = None) -> dict[str, int]:
                 (tender, ceiling, tender),
             )
             counts["proj_collusion"] += cur.rowcount
+
+        cur.execute(
+            """SELECT tender_id, payload, seq FROM events
+               WHERE event_type='TENDER_CREATED' AND seq <= %s ORDER BY seq""",
+            (ceiling,))
+        tenders: dict[str, dict[str, Any]] = {}
+        for tender, payload, seq in cur.fetchall():
+            tenders[tender] = {
+                "tender_id": tender, "title": payload["title"],
+                "issuing_authority": payload["issuing_authority"],
+                "bid_submission_deadline": payload.get("bid_submission_deadline"),
+                "description": payload.get("description"),
+                "created_by": payload["created_by"], "built_from_seq": seq,
+            }
+        for row in tenders.values():
+            cur.execute(
+                """INSERT INTO proj_tenders (tender_id,title,issuing_authority,
+                       bid_submission_deadline,description,created_by,built_from_seq)
+                   VALUES (%(tender_id)s,%(title)s,%(issuing_authority)s,
+                       %(bid_submission_deadline)s,%(description)s,%(created_by)s,
+                       %(built_from_seq)s)""",
+                row)
+        counts["proj_tenders"] = len(tenders)
     return counts
 
 
