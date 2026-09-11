@@ -8,13 +8,52 @@ placeholder, all the way to the officer's screen.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 from satyapramana.predicates import Resolved
 from satyapramana.verdicts import Channel, Reason, Tier
 
 from .adapters import Registry
+
+#: satyapramana.md section 2.2 puts NORMALIZE between EXTRACT and RESOLVE:
+#: "canonicalise formats: dates to ISO-8601... deterministic validators
+#: enforce the target grammar." Nothing implemented that as a real stage --
+#: extraction correctly stores a date exactly as printed (DD/MM/YYYY, the
+#: same grammar validate_pan_date_of_birth / validate_document_date already
+#: structurally confirmed before the value was ever accepted), and
+#: satyapramana.predicates._as_date correctly expects ISO-8601 only, because
+#: that is this system's one canonical date representation. Neither side is
+#: wrong; nothing bridged them. This is that bridge, applied once, here --
+#: at the one place raw evidence becomes what the rule engine reads,
+#: never touching the event log itself (the raw printed string stays exactly
+#: as extracted, forever, in FIELD_EXTRACTED/VERIFICATION_OBSERVED) and never
+#: touching the frozen evaluator.
+#:
+#: Detected by the value's own shape, not by path name -- a path allowlist
+#: would silently miss a date field extraction adds under a new path later.
+#: Nothing else this system extracts or verifies is shaped like
+#: DD/MM/YYYY (PAN/GSTIN/CIN/Udyam numbers all look nothing like it), so this
+#: is unambiguous without needing to know which paths are dates.
+_DDMMYYYY = re.compile(r"^([0-9]{2})/([0-9]{2})/([0-9]{4})$")
+
+
+def _normalize(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    m = _DDMMYYYY.fullmatch(value)
+    if not m:
+        return value
+    day, month, year = (int(g) for g in m.groups())
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        # Already passed structural validation at extraction time -- this
+        # should not happen, but this function must never raise, only ever
+        # pass a value through unchanged if it can't confidently normalize it.
+        return value
 
 
 @dataclass(frozen=True)
@@ -53,7 +92,7 @@ def rebuild_evidence(conn, bidder_id: str, registry: Registry,
             if etype == "FIELD_EXTRACTED":
                 records[payload["path"]] = {
                     "path": payload["path"], "resolved": True,
-                    "value": payload.get("value"), "unresolved_reason": None,
+                    "value": _normalize(payload.get("value")), "unresolved_reason": None,
                     "tier": Tier.C.value, "channel": None, "capability_id": None,
                     "observed_at": occurred_at, "source_asserted_at": None,
                     "source_event": event_id, "built_from_seq": seq,
@@ -71,7 +110,7 @@ def rebuild_evidence(conn, bidder_id: str, registry: Registry,
                 for obs in payload.get("observations", []):
                     records[obs["path"]] = {
                         "path": obs["path"], "resolved": True,
-                        "value": obs.get("value"), "unresolved_reason": None,
+                        "value": _normalize(obs.get("value")), "unresolved_reason": None,
                         "tier": obs.get("tier"), "channel": obs.get("channel"),
                         "capability_id": payload.get("capability_id"),
                         "observed_at": occurred_at,

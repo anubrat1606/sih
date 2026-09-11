@@ -701,6 +701,36 @@ def test_the_trail_reaches_the_source_document_for_the_gst_expiry_date(client):
     assert len(extraction["region"]) == 4
 
 
+def test_a_date_predicate_actually_evaluates_against_an_extracted_expiry_date(client):
+    """Found live, not by review: a date_after predicate against a real
+    extracted DD/MM/YYYY expiry date came back UNKNOWN/EXTRACTION_FAILED
+    instead of FAIL, because satyapramana.predicates._as_date only parses
+    ISO-8601 and nothing normalized the raw printed date before it reached
+    the evaluator (evidence.py's _normalize -- the event log itself keeps
+    the exact printed string forever, only the projection is canonicalised).
+    This is the regression test for that gap."""
+    pdf = text_pdf(["Test fixture, not a certificate.", *gst_certificate_lines()])
+    upload(client, pdf)
+
+    from .test_decide import PACK
+    pack = {**PACK, "requirements": [
+        {"id": "R1", "text": "GST certificate must not be expired by bid submission.",
+         "source": {"page": 14, "region": [72, 470, 523, 494]},
+         "obligation": "mandatory", "operator": "LEAF",
+         "predicate": {"op": "date_after", "left": {"field": "bidder.gst.date_of_expiry"},
+                       "right": {"context": "bid_submission_date"}}}]}
+    client.post("/tenders/T1/rule-pack", json={"officer_id": "officer_1", "pack": pack})
+    # gst_certificate_lines()'s expiry is 31/03/2028 -- submitting in 2029 is
+    # genuinely past it.
+    client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
+               json={"bid_submission_date": "2029-01-01"})
+
+    verdicts = client.get("/bidders/A", params={"tender_id": "T1"}).json()["verdicts"]
+    r1 = next(v for v in verdicts if v["requirement_id"] == "R1")
+    assert r1["verdict_effective"] == "FAIL"
+    assert r1["reason_effective"] == "DOCUMENT_EXPIRED"
+
+
 def test_a_desirable_requirement_can_pass_with_no_model_in_the_path(client):
     """Remove every model from this system and it still produces correct
     verdicts on already-extracted evidence.
