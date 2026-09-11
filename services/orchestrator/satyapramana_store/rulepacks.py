@@ -47,6 +47,21 @@ def _registry_as_dict(registry: Registry) -> dict[str, Any]:
     return {"adapters": adapters}
 
 
+def validate_only(pack: Mapping[str, Any], *, registry: Registry) -> tuple[dict[str, Any], list[Violation]]:
+    """The exact same check `adopt()` gates on, without appending an event or
+    writing to `rule_packs` -- a dry run for the admin builder's "Validate"
+    step, kept separate from "Publish" (adopt) per the brief. Returns the
+    content-hashed body (so a valid pack's real hash/version can be shown to
+    the officer before they commit to adopting it) and the violation list
+    (empty means valid).
+    """
+    body = {k: v for k, v in pack.items() if k != "content_hash"}
+    body["content_hash"] = content_hash(body)
+    schema = json.loads(SCHEMA_PATH.read_text())
+    violations = validate(body, _registry_as_dict(registry), schema)
+    return body, violations
+
+
 def adopt(
     conn,
     pack: Mapping[str, Any],
@@ -61,11 +76,7 @@ def adopt(
     referencing an evidence path nothing can produce is refused at adoption
     rather than becoming a permanent, unexplained UNKNOWN in production.
     """
-    body = {k: v for k, v in pack.items() if k != "content_hash"}
-    body["content_hash"] = content_hash(body)
-
-    schema = json.loads(SCHEMA_PATH.read_text())
-    violations = validate(body, _registry_as_dict(registry), schema)
+    body, violations = validate_only(pack, registry=registry)
     if violations:
         raise NotAdoptable(violations)
 

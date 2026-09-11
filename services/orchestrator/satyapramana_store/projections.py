@@ -132,14 +132,18 @@ def rebuild_projections(conn, up_to_seq: int | None = None) -> dict[str, int]:
                 "bid_submission_deadline": payload.get("bid_submission_deadline"),
                 "description": payload.get("description"),
                 "created_by": payload["created_by"], "built_from_seq": seq,
+                "department": payload.get("department"),
+                "category": payload.get("category"),
+                "issue_date": payload.get("issue_date"),
             }
         for row in tenders.values():
             cur.execute(
                 """INSERT INTO proj_tenders (tender_id,title,issuing_authority,
-                       bid_submission_deadline,description,created_by,built_from_seq)
+                       bid_submission_deadline,description,created_by,built_from_seq,
+                       department,category,issue_date)
                    VALUES (%(tender_id)s,%(title)s,%(issuing_authority)s,
                        %(bid_submission_deadline)s,%(description)s,%(created_by)s,
-                       %(built_from_seq)s)""",
+                       %(built_from_seq)s,%(department)s,%(category)s,%(issue_date)s)""",
                 row)
         counts["proj_tenders"] = len(tenders)
     return counts

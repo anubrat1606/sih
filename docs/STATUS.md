@@ -104,6 +104,58 @@ report actions — all wired into the real pages, not sitting unused.
 
 ---
 
+## Built this session, NOT yet merged — needs live verification first
+
+Per this file's own rule below ("nothing here is asserted without having
+been run for real at least once"), the following is deliberately kept out
+of "Built and merged" above: it was implemented and statically verified
+(the FastAPI app imports cleanly with every new route registered, the new
+Pydantic models/pure functions were exercised directly and produced correct
+output, all 381 orchestrator tests — old and new — collect with zero
+errors, `npm run build`/`npm run lint` are clean), but the new orchestrator
+tests have **not** been run against a real PostgreSQL — Docker was not
+available in that session's environment. Whoever verifies this (see
+`NEXT_TASKS_5_kevin_anubrat_suhani.md`, Anubrat's lane) should run
+`cd services/orchestrator && python -m pytest tests/ -q` for real, fix
+anything that only shows up under a live database, and then — and only
+then — fold this section into "Built and merged" above.
+
+**The admin tender builder** (docs/COMPLETION_PLAN.md item 2, and the
+checklist items 10–17 it maps to):
+- Tender metadata extended: `department`, `category`, `issue_date`
+  (migration `sql/007_tender_metadata.sql`, additive, old tenders read back
+  as honest `NULL`).
+- `POST /tenders/{tender_id}/documents` — upload the tender's own source
+  PDF (separate from a bidder's compliance documents), no identifier
+  extraction run against it (a tender notice isn't an ID document).
+- `GET /requirement-types` — a catalog of 15 requirement types (GST, PAN,
+  CIN, Udyam, document-required, turnover, net worth, ITR, experience,
+  similar work, OEM authorization, certification, EPFO/ESIC, declaration,
+  technical). Each type's `evidence_backed` flag is computed **live**
+  against the real capability registry and extraction field list — the
+  same two sources rule 8 already validates a submitted pack against, so
+  this can never silently drift from what adoption will actually accept.
+  Four types (GST/PAN/CIN/Udyam) come back backed with real field paths;
+  the other eleven honestly come back unbacked with a stated reason —
+  nothing here fabricates an evidence path.
+- `POST /tenders/{tender_id}/rule-pack/validate` — dry-run validation
+  (`rulepacks.validate_only()`), same rule-8-through-13 check adoption
+  gates on, appends no event and writes no row.
+- Frontend: tender creation form gets department/category/issue_date +
+  PDF upload; the guided rule-pack builder gets a requirement-type picker
+  (pre-fills a working predicate for backed types, auto-sets
+  `review_required` with an honest note for unbacked ones — schema rule 11
+  already refuses to adopt anything still flagged), a Validate button
+  separate from Adopt, and unit/period/notes fields; Tender Intelligence
+  proposals get a "Use this →" button that adds a still-`review_required`
+  draft row into the builder — it still never adopts anything itself.
+- Tests: `tests/test_admin_tender_builder.py` (13 tests) plus extensions to
+  `test_api.py` and a new `test_decide.py` test proving adopting a new rule
+  pack version never mutates an earlier version's stored body or an
+  already-recorded verdict's `rule_pack_version` reference.
+
+---
+
 ## Outstanding — in priority order
 
 The first three need real-world input that no Claude Code session, working
@@ -135,15 +187,25 @@ demos it need their own `.env` set up beforehand?
 ### 3. No rule pack built from a real tender
 
 `rulepacks/` still only has the round-2 scaffold (`README.md`,
-`validate.py`) — no rule pack decomposed from an actual GeM tender PDF.
-Tender Intelligence (above) should make this faster once a real tender PDF
-and gap 2's credentials exist, but an officer still has to run it and
-review/adopt the result for real.
+`validate.py`) — no rule pack decomposed from an actual GeM tender PDF. The
+tooling to do this is now in place (tender PDF upload, Tender Intelligence,
+the requirement-type catalog, guided builder, dry-run validate) — see
+"Built this session" above — but it needs, in order: (a) that work verified
+against a live database, (b) a real tender PDF, (c) an officer to actually
+run the workflow and adopt the result. Still not buildable end-to-end by a
+Claude Code session alone.
 
-### 4. Everything else
+### 4. No deployment configuration exists
+
+Confirmed directly (not merely undocumented): no `Dockerfile`, no
+`docker-compose.yml`, no hosting config anywhere in this repo. Auth/security
+is done; getting the five services + Postgres + frontend running with one
+command, or hosted somewhere reachable, is not.
+
+### 5. Everything else
 
 No other gap is currently open. If a new one turns up, it goes here with
-the same rigor as 1–3: what's missing, why, and what real-world input (if
+the same rigor as 1–4: what's missing, why, and what real-world input (if
 any) it needs before it's buildable.
 
 ---

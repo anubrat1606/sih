@@ -52,11 +52,25 @@ export const createOfficerAccount = (username, password, displayName, role) =>
 
 export const listTenders = () => call("/tenders");
 
-export const createTender = (tenderId, title, issuingAuthority, bidSubmissionDeadline, description) =>
+export const createTender = (tenderId, title, issuingAuthority, bidSubmissionDeadline, description,
+  extra = {}) =>
   call("/tenders", { method: "POST", ...json({
     tender_id: tenderId, title, issuing_authority: issuingAuthority,
     bid_submission_deadline: bidSubmissionDeadline || null, description: description || null,
+    department: extra.department || null, category: extra.category || null,
+    issue_date: extra.issueDate || null,
   }) });
+
+export const uploadTenderDocument = (tenderId, file) => {
+  const form = new FormData();
+  form.append("file", file);
+  return call(`/tenders/${encodeURIComponent(tenderId)}/documents`, { method: "POST", body: form });
+};
+
+export const getRequirementTypes = () => call("/requirement-types");
+
+export const validateRulePack = (tenderId, pack) =>
+  call(`/tenders/${encodeURIComponent(tenderId)}/rule-pack/validate`, { method: "POST", ...json({ pack }) });
 
 export const getTender = (tenderId) => call(`/tenders/${encodeURIComponent(tenderId)}`);
 

@@ -125,6 +125,48 @@ def test_an_adopted_pack_cannot_be_mutated(client, conn):
             cur.execute("UPDATE rule_packs SET semver='9.9.9'")
 
 
+def test_a_published_tender_cannot_silently_change_its_approved_requirements(client, conn):
+    """Adopting a new rule pack version for the same tender must never
+    mutate what an earlier version said, and a verdict already computed
+    against v1 must keep pointing at v1 -- the versioned, content-addressed
+    design (docs/RULE_PACKS.md) exists specifically so 'publish' is never a
+    silent edit of the requirements bidders were already evaluated against.
+    """
+    v1 = adopt(client, conn).json()
+    client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
+    client.post("/bidders/A/verify", params={"tender_id": "T1"})
+    result_v1 = client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL).json()
+    assert result_v1["rule_pack_version"] == v1["rule_pack_version"]
+
+    v2_pack = copy.deepcopy(PACK)
+    v2_pack["semver"] = "2.0.0"
+    v2_pack["requirements"][2]["text"] = "A materially different requirement text, v2 only."
+    v2 = adopt(client, conn, v2_pack).json()
+    assert v2["rule_pack_version"] != v1["rule_pack_version"]
+
+    # v1's stored body is byte-for-byte unchanged -- fetched by its own
+    # version string, not silently rewritten by v2's adoption.
+    with conn.cursor() as cur:
+        cur.execute("SELECT body FROM rule_packs WHERE rule_pack_version=%s", (v1["rule_pack_version"],))
+        v1_body_after = cur.fetchone()[0]
+    assert v1_body_after["requirements"][2]["text"] == "Valid PAN issued to the bidding entity."
+    assert v1_body_after["semver"] == "1.0.0"
+
+    # The verdict already recorded against v1 still names v1 -- adopting v2
+    # did not retroactively reattribute it.
+    with conn.cursor() as cur:
+        cur.execute("SELECT payload->>'rule_pack_version' FROM events "
+                    "WHERE event_type='REQUIREMENT_EVALUATED' AND bidder_id='A' "
+                    "ORDER BY seq LIMIT 1")
+        first_evaluation_version = cur.fetchone()[0]
+    assert first_evaluation_version == v1["rule_pack_version"]
+
+    # Both versions remain independently stored and citable.
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM rule_packs WHERE tender_id='T1'")
+        assert cur.fetchone()[0] == 2
+
+
 def test_evaluation_without_an_adopted_pack_is_refused(client):
     client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
     r = client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL)

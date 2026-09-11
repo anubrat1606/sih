@@ -37,6 +37,8 @@ from .events import Actor, append, export_jsonl, verify_chain
 from .evidence import ProjectionResolver, rebuild_evidence
 from .explain import Unavailable
 from .extract import ingest_document, read_pdf
+from .extract.ingest import store_document
+from .requirement_types import requirement_type_catalog
 from .tender_intelligence import Unavailable as DecomposeUnavailable
 from .projections import collusion_clusters, provenance_trail, rebuild_projections
 from .reporting.bid_autopsy import autopsy
@@ -46,7 +48,7 @@ from .reporting.csv_export import bidders_to_csv
 from .reporting.dossier import build_dossier, render_dossier_text
 from .reporting.evidence_graph import build_evidence_graph
 from .reporting.tender_report import render_tender_report_text, tender_report
-from .rulepacks import NotAdoptable, active_pack, adopt
+from .rulepacks import NotAdoptable, active_pack, adopt, validate_only
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -142,6 +144,13 @@ class TenderIn(BaseModel):
     issuing_authority: str
     bid_submission_deadline: date | None = None
     description: str | None = None
+    #: Issuing department/organization within the authority (e.g. "Materials
+    #: Management"), the tender category (e.g. "Goods", "Works", "Services"),
+    #: and the notice's own issue date -- all optional, all additive to the
+    #: five fields Tender Management originally shipped with.
+    department: str | None = None
+    category: str | None = None
+    issue_date: date | None = None
 
 
 class BidderIn(BaseModel):
@@ -319,6 +328,8 @@ def create_tender(body: TenderIn, conn=Depends(db),
             "bid_submission_deadline": body.bid_submission_deadline.isoformat()
                 if body.bid_submission_deadline else None,
             "description": body.description, "created_by": user.username,
+            "department": body.department, "category": body.category,
+            "issue_date": body.issue_date.isoformat() if body.issue_date else None,
         })
     rebuild_projections(conn)
     return {"tender_id": body.tender_id, "seq": rec["seq"], "hash": rec["hash"]}
@@ -332,17 +343,20 @@ def get_tender(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
     with conn.cursor() as cur:
         cur.execute(
             """SELECT title, issuing_authority, bid_submission_deadline,
-                      description, created_by
+                      description, created_by, department, category, issue_date
                FROM proj_tenders WHERE tender_id=%s""",
             (tender_id,))
         row = cur.fetchone()
     if not row:
         return {"tender_id": tender_id, "title": None, "issuing_authority": None,
-                "bid_submission_deadline": None, "description": None, "created_by": None}
-    title, authority, deadline, description, created_by = row
+                "bid_submission_deadline": None, "description": None, "created_by": None,
+                "department": None, "category": None, "issue_date": None}
+    title, authority, deadline, description, created_by, department, category, issue_date = row
     return {"tender_id": tender_id, "title": title, "issuing_authority": authority,
             "bid_submission_deadline": deadline.isoformat() if deadline else None,
-            "description": description, "created_by": created_by}
+            "description": description, "created_by": created_by,
+            "department": department, "category": category,
+            "issue_date": issue_date.isoformat() if issue_date else None}
 
 
 @app.get("/dashboard")
@@ -585,6 +599,71 @@ def get_document(document_sha256: str, conn=Depends(db)):
     if not os.path.isfile(path):
         raise HTTPException(404, "the event log references this document, but it is not on disk here")
     return FileResponse(path, media_type="application/pdf")
+
+
+@app.post("/tenders/{tender_id}/documents", status_code=201)
+async def upload_tender_document(tender_id: str, file: UploadFile = File(...),
+                                 conn=Depends(db), user: User = Depends(current_user)) -> dict[str, Any]:
+    """Ingest the tender's own source document -- the original notice/RFP PDF,
+    as opposed to a bidder's compliance document (`POST /bidders/{id}/documents`).
+
+    Deliberately does not run identifier extraction (`find_candidates` and
+    friends look for a GSTIN/PAN/CIN/Udyam-shaped string, which a tender
+    notice has no reason to contain -- running them here would risk a
+    coincidental false match). What this stage produces is exactly what
+    Tender Intelligence's `POST /tenders/{tender_id}/decompose` and the rule
+    pack's `tender_reference.source_document_sha256` both need: a real,
+    hash-addressed, retrievable document, recorded as who uploaded it and
+    when -- the event log, unchanged.
+    """
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "empty upload")
+    digest, storage_ref = store_document(data, tender_id, file.filename or "tender.pdf")
+    rec = append(
+        conn, event_type="DOCUMENT_INGESTED", actor=Actor("HUMAN", user.username),
+        correlation_id=str(uuid.uuid4()), tender_id=tender_id,
+        payload={"document_sha256": digest, "storage_ref": storage_ref,
+                 "filename": os.path.basename(file.filename or "tender.pdf"),
+                 "declared_type": "TENDER_NOTICE", "bytes": len(data)})
+    return {"tender_id": tender_id, "document_sha256": digest,
+            "seq": rec["seq"], "hash": rec["hash"]}
+
+
+@app.get("/requirement-types")
+def requirement_types() -> dict[str, Any]:
+    """The admin builder's requirement-type catalog (docs/COMPLETION_PLAN.md
+    item 2). Computed live against REGISTRY and the deterministic-extraction
+    field list -- the same two sources rule 8 validates a submitted pack
+    against -- so `evidence_backed` here is never a second, driftable copy
+    of that answer."""
+    return {"requirement_types": requirement_type_catalog(REGISTRY)}
+
+
+class RulePackValidateIn(BaseModel):
+    pack: dict[str, Any]
+
+
+@app.post("/tenders/{tender_id}/rule-pack/validate")
+def validate_rule_pack(tender_id: str, body: RulePackValidateIn, conn=Depends(db),
+                       user: User = Depends(current_user)) -> dict[str, Any]:
+    """Dry-run validation -- the admin builder's "Validate Rule Pack" step,
+    distinct from "Publish Tender" (`POST /tenders/{tender_id}/rule-pack`,
+    which adopts). Runs the identical rule-8-through-13 check adoption gates
+    on, against the same live registry, but appends no event and writes no
+    row -- so an officer can iterate on a draft without every attempt
+    becoming a permanent adoption record. Open to any authenticated officer
+    (not just SENIOR_OFFICER+): checking a draft commits nothing, so the
+    higher bar belongs on adoption alone, where it already is.
+    """
+    body_hashed, violations = validate_only(body.pack, registry=REGISTRY)
+    if violations:
+        return {"valid": False,
+                "violations": [{"rule": v.rule, "requirement_id": v.requirement_id,
+                                "message": v.message} for v in violations]}
+    return {"valid": True, "violations": [],
+            "content_hash": body_hashed["content_hash"],
+            "requirement_count": len(body_hashed["requirements"])}
 
 
 class DecomposeIn(BaseModel):
