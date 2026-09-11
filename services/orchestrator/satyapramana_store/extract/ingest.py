@@ -18,7 +18,8 @@ from typing import Any
 
 from .grammars import (
     PATTERNS, SCAN_ORDER, VALIDATORS, parse_document_date, pan_from_gstin,
-    validate_document_date, validate_pan_date_of_birth, validate_pan_holder_name,
+    validate_claimed_business_name, validate_document_date,
+    validate_pan_date_of_birth, validate_pan_holder_name,
 )
 from .layout import Page, Word, lines, locate, read_pdf, searchable
 from .vlm import UnconfiguredVisionStage
@@ -44,6 +45,15 @@ FIELD_PATHS = {
     "pan_date_of_birth": "bidder.pan.date_of_birth",
     "gst_date_of_issue": "bidder.gst.date_of_issue",
     "gst_date_of_expiry": "bidder.gst.date_of_expiry",
+    # "claimed_" -- deliberately distinct from bidder.gst.legal_name, which
+    # is the live GST_STATUS adapter's own path for the authority's answer
+    # (adapters/sandbox_co_in.py). evidence.py folds by "later event wins";
+    # writing here into that same path would let extraction silently
+    # overwrite verification's answer, or verification silently overwrite
+    # this, with no error either way. These paths exist so a future FUSE
+    # step can compare the bidder's own claim against the authority instead.
+    "gst_claimed_legal_name": "bidder.gst.claimed_legal_name",
+    "gst_claimed_trade_name": "bidder.gst.claimed_trade_name",
 }
 
 
@@ -133,12 +143,24 @@ DOCUMENT_DATE_LABELS: dict[str, tuple[tuple[str, ...], ...]] = {
     "gst_date_of_expiry": (("DATE", "OF", "EXPIRY"), ("VALID", "UNTIL")),
 }
 
+#: label line -> (evidence-path field key, structural validator). GST
+#: REG-06 is a fixed government form with one canonical wording each -- no
+#: alternates needed, same shape as PAN_HOLDER_FIELDS. "Trade Name" is
+#: commonly blank (not every registered business trades under a different
+#: name), which _read_value_under_label already treats as a normal,
+#: recordable EXTRACTION_FAILED rather than an error.
+GST_CLAIMED_NAME_FIELDS: dict[tuple[str, ...], tuple[str, Any]] = {
+    ("LEGAL", "NAME"): ("gst_claimed_legal_name", validate_claimed_business_name),
+    ("TRADE", "NAME"): ("gst_claimed_trade_name", validate_claimed_business_name),
+}
+
 #: If the line under a label is itself one of these known label phrases, the
 #: field is blank on the card -- reading it anyway would assert a value the
 #: document does not actually state.
 _KNOWN_LABEL_LINES = (
     {" ".join(words) for words in PAN_HOLDER_FIELDS}
     | {" ".join(words) for options in DOCUMENT_DATE_LABELS.values() for words in options}
+    | {" ".join(words) for words in GST_CLAIMED_NAME_FIELDS}
     | {"PERMANENT ACCOUNT NUMBER", "FATHER'S NAME", "FATHERS NAME", "SIGNATURE"}
 )
 
@@ -221,6 +243,40 @@ def find_pan_holder_fields(pages: list[Page]) -> list[Candidate]:
                           # the first page found is authoritative, and this
                           # is what keeps one FIELD_EXTRACTED per field true
                           # (docs/EVENTS.md) even if a label is repeated
+            idx = _label_line_index(grouped, label_words)
+            if idx is None:
+                continue
+            candidates.append(_read_value_under_label(page, grouped, idx, field, validate))
+            found.add(field)
+    return candidates
+
+
+def find_gst_claimed_names(pages: list[Page]) -> list[Candidate]:
+    """Read the business name(s) a GST certificate prints for itself --
+    'Legal Name' and, if present, 'Trade Name'.
+
+    This is the bidder's own CLAIM about their name, not the authority's
+    answer -- see the comment on gst_claimed_legal_name/gst_claimed_trade_name
+    in FIELD_PATHS for why that distinction has to be a different evidence
+    path, not just a different value at the same one. Nothing here writes to
+    bidder.gst.legal_name.
+
+    Same absence/failure rules as every other label/value field in this
+    module: a label not on the page produces nothing (not itself a
+    failure); a label with no plausible value beneath it produces an
+    invalid Candidate, so the caller records EXTRACTION_FAILED with the
+    real reason, never a guess.
+    """
+    candidates: list[Candidate] = []
+    found: set[str] = set()
+    for page in pages:
+        if not page.has_text_layer:
+            continue
+        grouped = lines(page)
+        for label_words, (field, validate) in GST_CLAIMED_NAME_FIELDS.items():
+            if field in found:
+                continue  # one printed value per field, not one per page --
+                          # see the identical guard in find_pan_holder_fields
             idx = _label_line_index(grouped, label_words)
             if idx is None:
                 continue
@@ -328,11 +384,12 @@ def ingest_document(
                 "error": f"could not read as PDF: {exc}"}
 
     candidates, unreadable = find_candidates(pages)
-    # Label/value fields (name, date of birth, issue/expiry dates) are a
-    # different lookup method (layout, not grammar) but the same Candidate
-    # shape, so they join the same list and flow through the one emission
-    # loop below unchanged.
-    candidates = candidates + find_pan_holder_fields(pages) + find_document_dates(pages)
+    # Label/value fields (name, date of birth, issue/expiry dates, claimed
+    # business name) are a different lookup method (layout, not grammar) but
+    # the same Candidate shape, so they join the same list and flow through
+    # the one emission loop below unchanged.
+    candidates = (candidates + find_pan_holder_fields(pages) + find_document_dates(pages)
+                  + find_gst_claimed_names(pages))
 
     extracted, rejected = [], []
     for candidate in candidates:

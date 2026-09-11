@@ -31,6 +31,15 @@ PAN_DOB_RE = re.compile(r"[0-9]{2}/[0-9]{2}/[0-9]{4}")
 #: wrong line.
 PAN_HOLDER_NAME_RE = re.compile(r"[A-Z][A-Z .'\-]{1,98}[A-Z.]")
 
+#: A business name as printed on a government certificate: letters, digits
+#: (registered names do include them -- "3M INDIA LIMITED", "24X7 LOGISTICS"),
+#: spaces, and the punctuation that actually shows up in a registered Indian
+#: business name (& , . - ' and / for "M/S"). Deliberately more permissive
+#: than PAN_HOLDER_NAME_RE -- a business name has none of a person's name's
+#: closed shape. Printed in uppercase on the certificate, same convention as
+#: every other label/value field this module reads.
+BUSINESS_NAME_RE = re.compile(r"[A-Z0-9][A-Z0-9 &.,'/\-]{1,148}[A-Z0-9.]")
+
 #: Indian statutory documents (GST certificates included) print dates as
 #: DD/MM/YYYY -- the same convention as PAN_DOB_RE, kept as its own regex
 #: rather than shared with it because the two fields are validated by
@@ -189,6 +198,16 @@ def validate_pan_holder_name(value: str) -> Check:
             "does not look like a printed name (letters, spaces, '.', \"'\", "
             "'-' only, no digits)")
     return Check(True, "structurally plausible printed name")
+
+
+def validate_claimed_business_name(value: str) -> Check:
+    if not BUSINESS_NAME_RE.fullmatch(value):
+        return Check(False, "does not look like a printed business name")
+    if not any(ch.isalpha() for ch in value):
+        # The regex alone would accept an all-digit string, which is not a
+        # name -- something else was on the line under the label.
+        return Check(False, "contains no letters -- not a name")
+    return Check(True, "structurally plausible business name")
 
 
 def validate_gstin(value: str) -> Check:
