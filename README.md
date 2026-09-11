@@ -1,77 +1,67 @@
-# SIH26100 — AI-Powered Bid Compliance Verification Platform
+# SATYAPRAMĀṆA (SIH26100) — AI-Powered Bid Compliance Verification Platform
 
-Working prototype scaffold. Every service here has been built and smoke-tested
-in isolation with **real logic — no mock, sample, or sandbox-placeholder data
-anywhere in the code.** Where a live external check isn't wired up yet
-(Udyam; the exact GST/EPFO request shape), the code says so explicitly and
-returns `UNVERIFIED` rather than a fabricated result. See
-`SIH26100_CodeEditor_Prompts.md` for the reasoning and the exact prompts
-used to generate each service, and for what's still open.
+Read [`CLAUDE.md`](CLAUDE.md) and [`CONTRIBUTING.md`](CONTRIBUTING.md) first,
+then [`docs/STATUS.md`](docs/STATUS.md) for exactly what's built and what's
+next. This file is a map, not the source of truth — those three are.
 
-## What's built and verified
+## What this actually is now
 
-| Service | Port | Status |
+The prototype was rebuilt against the architecture charter in
+[`docs/satyapramana.md`](docs/satyapramana.md): an append-only, hash-chained
+event log; four-state verdicts (`PASS`/`FAIL`/`PARTIAL`/`UNKNOWN`, never a
+boolean); three orthogonal metrics, never blended into one score; and a
+verification adapter layer where a missing integration honestly reports
+`UNAVAILABLE` rather than faking coverage. **No mock, sample, or
+sandbox-placeholder data exists anywhere in this codebase, on purpose** — see
+`CLAUDE.md`'s non-negotiable principle.
+
+`backend/`, `services/extraction/`, `services/verification/`, and
+`services/collusion/` are the **retired** first-pass scaffold, kept for
+history. Don't build on them.
+
+## What's built and where
+
+| Path | Owner | Role |
 |---|---|---|
-| `services/extraction` (Python/FastAPI, real Tesseract OCR) | 8001 | Built + tested: real OCR correctly extracts a PAN from a clean image, correctly returns null on an unclear one. |
-| `services/collusion` (Python/FastAPI, networkx) | 8003 | Built + tested: shared-attribute matching correctly flagged two linked bidders and cleared an unrelated one. |
-| `services/verification` (Python/FastAPI) | 8002 | Built + tested for correct honest fallback behavior. Live PAN check needs a real KYC provider's credentials (see below). GST/EPFO calls are written against the portals' known public URLs but **could not be live-tested from this build environment** — its network policy blocks those domains entirely (proxy returned no response, not a real answer from the sites). Test from a normal internet connection before the demo. |
-| `backend` (Node/Express + MongoDB, orchestration + hash-chained audit log) | 4000 | Built + boots correctly; degrades gracefully (logs a clear error, doesn't crash) when MongoDB isn't reachable. Needs a real local MongoDB to exercise the DB-backed routes — not available in this build sandbox either. |
-| `frontend` (React/Vite: upload, dashboard, evidence trail, collusion graph) | 5173 (dev) | Builds cleanly with `npm run build`. Not yet run against a live backend end to end — do that first thing when you pick this up. |
-
-## What's genuinely not done yet (be upfront about these, don't fake them)
-
-- **Udyam verification**: no confirmed real public verify URL yet. Confirm one on udyamregistration.gov.in before writing this check — see `services/verification/main.py`, it's deliberately left out.
-- **GST/EPFO exact request shape**: written against the portals' known URLs, but the real request (and whether a CAPTCHA blocks programmatic access) needs confirming with browser devtools on a real network. There's a `"captcha"` string-match fallback already in place that reports this honestly as `UNVERIFIED` if it happens.
-- **Live PAN KYC provider**: pick one (Setu, Sandbox.co.in, Decentro, etc.), get a real sandbox key, put it in `services/verification/.env`.
-- **EPFO establishment code regex**: not implemented in the extraction service — the format wasn't confirmed, so it's deliberately left as `null` rather than guessed.
+| `services/core` | Anubrat, **frozen** | Pure domain layer — verdict algebra, the three metrics, risk classification, rule pack validation. No database, no framework. 182 tests. |
+| `services/orchestrator` | shared, see below | FastAPI app: the event log, projections, the verification adapters, DECIDE, and reporting. PostgreSQL is the event store, the projection store, and the queue — nothing else is added. |
+| `services/orchestrator/.../adapters` | Anubrat | Verification adapters. PAN/GST/CIN are live against Sandbox.co.in given real credentials (`services/orchestrator/.env`, gitignored); Udyam has no aggregator anywhere and EPFO/ESIC have no lawful source — both honestly `UNAVAILABLE`. |
+| `services/orchestrator/.../extract` | Suhani | Deterministic PDF-text-layer extraction — no model, structural validation, exact page/region provenance. |
+| `services/orchestrator/.../reporting` | Rishika | Bid Autopsy (why a bid would fail, with a counterfactual) and Compliance Repair (the actionable inverse). |
+| `frontend` | Anubrat | Rebuilt against the real orchestrator API: capability status, bidder registration/upload/verify, tender dashboard, bidder detail, audit log. Minimal styling by design — the charter's design-system pass (section 2.3) hasn't happened yet. |
+| `rulepacks/`, `data/` | Paridhi | Both intentionally empty — a rule pack needs a real tender to decompose, demo bidders need real consent. See each folder's README. |
+| `schemas/*.schema.json` | Anubrat, **frozen** | The contract every payload crossing a service boundary must match. |
 
 ## Running everything locally
 
 ```bash
-# Extraction service
-cd services/extraction
+# PostgreSQL must be running.
+createdb satyapramana_dev
+
+cd services/core
 python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
-./venv/bin/uvicorn main:app --port 8001
+./venv/bin/python -m pytest tests/ -q          # expect 182 passed
 
-# Collusion service (separate terminal)
-cd services/collusion
-python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
-./venv/bin/uvicorn main:app --port 8003
+cd ../orchestrator
+python3 -m venv venv
+./venv/bin/pip install -r requirements.txt -e ../core
+cp .env.example .env   # fill in real Sandbox.co.in credentials to go live; leave blank otherwise
+export DATABASE_URL=postgresql://localhost/satyapramana_dev
+./venv/bin/python -m pytest tests/ -q          # expect ~162 passed (179 once PAN/GST/CIN + reporting are both in)
+export SATYAPRAMANA_MIGRATE_ON_START=1
+./venv/bin/uvicorn satyapramana_store.app:app --port 4000
 
-# Verification service (separate terminal)
-cd services/verification
-python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
-cp .env.example .env   # fill in real PAN KYC provider credentials
-./venv/bin/uvicorn main:app --port 8002
-
-# Backend (separate terminal) -- needs MongoDB running locally
-cd backend
-npm install
-cp .env.example .env
-npm start
-
-# Frontend (separate terminal)
-cd frontend
-npm install
-npm run dev
+cd ../../frontend
+npm install && npm run dev     # http://localhost:5173
 ```
 
-Then open the frontend (usually http://localhost:5173), go to `/upload`,
-and run a real document through the whole chain.
-
-## Team ownership (matches the original 6-way split)
-
-- `services/extraction` — OCR/extraction owner
-- `services/verification` — verification/API-integration owner
-- `services/collusion` — graph owner
-- `backend` — backend owner
-- `frontend` — the two frontend owners
-- data collection, pitch, and end-to-end QA — research/pitch owner
+Open `http://localhost:4000/docs` for the live API and `GET /capabilities`
+for the honest current verification status. `http://localhost:5173` is the
+officer UI.
 
 ## Before the demo
 
-1. Confirm the Udyam verify URL and the real GST/EPFO request shape on an unrestricted network (not this build sandbox).
-2. Get real PAN KYC provider credentials into `services/verification/.env`.
-3. Collect real, consented documents and identity details for your demo bidders into `/data` (see `data/README.md`) — including two that genuinely share an attribute, for the collusion case.
-4. Run `scripts/e2e_test.js` against the full real stack with those real bidders filled in.
-5. Get MongoDB running locally (`mongodb://localhost:27017` by default) so the backend's DB-backed routes work.
+1. Get PAN holder name/DOB and CIN into extraction (`services/orchestrator/.../extract`) so PAN and CIN verification can actually fire, not just report `MALFORMED`.
+2. Collect real, consented bidder documents and identity details into `/data` (see `data/README.md`) — at least three bidders on one tender, two genuinely sharing an attribute, for the collusion case.
+3. Write a real rule pack against a real tender document into `/rulepacks` (see `rulepacks/README.md`); validate it locally with `rulepacks/validate.py` before adopting it via the API.
+4. Run the whole path end to end with that real data: register → upload → verify → adopt rule pack → evaluate → read the dashboard and provenance trail.
