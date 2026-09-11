@@ -1,0 +1,46 @@
+{
+  "rule_pack_id": "bhel.t7j1z68239.metallic-expansion-joints",
+  "semver": "1.0.0",
+  "tender_reference": {
+    "tender_id": "BHEL-T7J1Z68239",
+    "source_document_sha256": "e6396d018a1f090b30cf61870cd301b759e11276ee0be17cf47ae91a406f188d",
+    "issuing_authority": "Bharat Heavy Electricals Limited (BHEL)"
+  },
+  "constants": {
+    "partial_credit": 0.5,
+    "w_mandatory": 1.0,
+    "w_desirable": 0.3,
+    "recency_floor": 0.5,
+    "corroboration_step": 0.1,
+    "coverage_floor_high": 50,
+    "coverage_floor_medium": 80,
+    "confidence_floor": 70,
+    "freshness_days": {"GST_STATUS": 30, "PAN_STATUS": 90, "UDYAM_STATUS": 180}
+  },
+  "requirements": [
+    {
+      "id": "R1_GST",
+      "text": "Supplier/Vendor has to submit GST registration certificate of the concerned state. Supplier/Vendor also needs to ensure that the submitted GST registration certificate should be in active status during the entire contract period.",
+      "source": {"page": 26},
+      "obligation": "mandatory",
+      "operator": "LEAF",
+      "predicate": {"op": "eq", "left": {"field": "bidder.gst.status"}, "right": {"literal": "Active"}}
+    },
+    {
+      "id": "R2_PAN",
+      "text": "Mandatory documents to be submitted along with Offer: ... Copy of PAN card, GST registration certificate and Certificate of Incorporation.",
+      "source": {"page": 44},
+      "obligation": "mandatory",
+      "operator": "LEAF",
+      "predicate": {"op": "exists", "subject": {"field": "bidder.pan.pan_number"}}
+    },
+    {
+      "id": "R6_UDYAM",
+      "text": "MSE suppliers can avail the intended benefits in respect of the procurements related to the Goods and Services only ... if they submit along with the offer, attested copies of either Udyam Registration.",
+      "source": {"page": 35},
+      "obligation": "desirable",
+      "operator": "LEAF",
+      "predicate": {"op": "exists", "subject": {"field": "bidder.udyam.udyam_number"}}
+    }
+  ]
+}
