@@ -24,6 +24,7 @@ Read [`CLAUDE.md`](CLAUDE.md) and [`docs/satyapramana.md`](docs/satyapramana.md)
 | `services/core/` | Anubrat | Frozen — the algebra is exhaustively verified; changes need review |
 | `schemas/*.schema.json` | Anubrat | Frozen — these are the contract between services |
 | `docs/*.md` | Shared | Append to your own workstream's section only |
+| `render.yaml` (new) | Anubrat | New, deployment-only — see `docs/DEPLOYMENT.md` |
 | `backend/`, `services/extraction/`, `services/verification/`, `services/collusion/` | Anubrat (retiring) | Old scaffold — being replaced, don't build on it |
 
 See the [full build plan and per-workstream detail](https://claude.ai/code/artifact/19c88304-da04-42c5-8a99-7f48adb471cd) for scope, rationale, and "done when" criteria per workstream.
