@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { getBidderEvidenceGraph, getProvenance } from "../api";
 import { ErrorBox, ProvenancePanel, VerdictBadge } from "../components";
+
+const VIEWPORT_W = 940, VIEWPORT_H = 560;
+const MIN_SCALE = 0.4, MAX_SCALE = 2.5;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // satyapramana.md section 2.3: "the signature screen... requirements on one
 // axis, evidence nodes beneath, authority verifications beside, edges
@@ -46,6 +50,37 @@ export default function EvidenceGraphPage() {
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null); // { requirementId }
   const [provenance, setProvenance] = useState(null);
+
+  // Pan/zoom, hand-rolled -- this is an SVG built as a deterministic layered
+  // DAG (see the header comment), not a physics-driven force graph, so
+  // there's no charting library underneath it to inherit interactivity
+  // from. translate/scale on one wrapping <g>, nothing else.
+  const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
+  const dragRef = useRef(null);
+
+  function onWheel(e) {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    setView((v) => ({ ...v, scale: clamp(v.scale * factor, MIN_SCALE, MAX_SCALE) }));
+  }
+  function onPointerDown(e) {
+    dragRef.current = { startX: e.clientX, startY: e.clientY, origX: view.x, origY: view.y };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+  function onPointerMove(e) {
+    if (!dragRef.current) return;
+    const { startX, startY, origX, origY } = dragRef.current;
+    setView((v) => ({ ...v, x: origX + (e.clientX - startX), y: origY + (e.clientY - startY) }));
+  }
+  function onPointerUp() {
+    dragRef.current = null;
+  }
+  function zoomBy(factor) {
+    setView((v) => ({ ...v, scale: clamp(v.scale * factor, MIN_SCALE, MAX_SCALE) }));
+  }
+  function resetView() {
+    setView({ x: 0, y: 0, scale: 1 });
+  }
 
   useEffect(() => {
     if (!tenderId) return;
@@ -104,14 +139,27 @@ export default function EvidenceGraphPage() {
 
       {graph && layout && graph.requirements.length > 0 && (
         <>
+          <div className="eg-toolbar">
+            <button type="button" onClick={() => zoomBy(1.25)}>Zoom in +</button>
+            <button type="button" onClick={() => zoomBy(1 / 1.25)}>Zoom out −</button>
+            <button type="button" onClick={resetView}>Reset view</button>
+            <span className="hint mono">{Math.round(view.scale * 100)}%</span>
+            <span className="hint">Scroll or drag to pan · wheel to zoom</span>
+          </div>
           <div className="evidence-graph-scroll">
             <svg
-              className="evidence-graph-svg"
-              width={layout.width}
-              height={layout.height}
+              className="evidence-graph-svg eg-svg-viewport"
+              width={VIEWPORT_W}
+              height={VIEWPORT_H}
               role="img"
-              aria-label="Evidence graph: requirements, the evidence they consume, and the authorities verifying it"
+              aria-label="Evidence graph: requirements, the evidence they consume, and the authorities verifying it. Scroll to zoom, drag to pan."
+              onWheel={onWheel}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerLeave={onPointerUp}
             >
+            <g transform={`translate(${view.x} ${view.y}) scale(${view.scale})`}>
               <text x={X_REQ} y={28} className="eg-col-header">Requirements</text>
               <text x={X_EV} y={28} className="eg-col-header">Evidence</text>
               <text x={X_AUTH} y={28} className="eg-col-header">Authority</text>
@@ -176,7 +224,16 @@ export default function EvidenceGraphPage() {
                   </foreignObject>
                 );
               })}
+            </g>
             </svg>
+          </div>
+
+          <div className="eg-legend">
+            <span className="eg-legend-item"><span className="eg-legend-swatch" style={{ background: VERDICT_COLOR.PASS }} />PASS</span>
+            <span className="eg-legend-item"><span className="eg-legend-swatch" style={{ background: VERDICT_COLOR.FAIL }} />FAIL</span>
+            <span className="eg-legend-item"><span className="eg-legend-swatch" style={{ background: VERDICT_COLOR.PARTIAL }} />PARTIAL</span>
+            <span className="eg-legend-item"><span className="eg-legend-swatch" style={{ background: VERDICT_COLOR.UNKNOWN }} />UNKNOWN</span>
+            <span className="eg-legend-item"><span className="eg-legend-dashed" />authority not resolved</span>
           </div>
 
           {selected && (
