@@ -5,7 +5,8 @@ import {
   overrideVerdict, recordDecision,
 } from "../api";
 import {
-  ActionableBadge, ClassificationBadge, ErrorBox, Metric, RiskBadge, VerdictBadge,
+  ActionableBadge, ClassificationBadge, ErrorBox, Metric, ProvenanceStep,
+  RiskBadge, VerdictBadge,
 } from "../components";
 
 export default function BidderDetailPage() {
@@ -139,11 +140,7 @@ export default function BidderDetailPage() {
                       <tr>
                         <td colSpan={5}>
                           <ol className="audit-list">
-                            {provenance.trail.map((t) => (
-                              <li key={t.seq}>
-                                {t.event_type} (seq {t.seq}, {t.occurred_at}): {JSON.stringify(t.payload)}
-                              </li>
-                            ))}
+                            {provenance.trail.map((t) => <ProvenanceStep key={t.seq} step={t} />)}
                           </ol>
                         </td>
                       </tr>

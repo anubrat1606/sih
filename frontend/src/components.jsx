@@ -43,6 +43,30 @@ export function Metric({ label, value }) {
   );
 }
 
+// One readable line per event type in a provenance trail, instead of a raw
+// JSON dump. Falls back to JSON for any event type not listed here, so an
+// unrecognised or future event type still renders something rather than
+// nothing -- never hides a fact for lack of a formatter.
+const PROVENANCE_SUMMARY = {
+  REQUIREMENT_EVALUATED: (p) => `Verdict ${p.verdict} (${p.reason_code}) under rule pack ${p.rule_pack_version}`,
+  EVIDENCE_FUSED: (p) => `${p.path}: ${p.outcome}`,
+  VERIFICATION_REQUESTED: (p) => `Requested ${p.capability_id} (${p.lawful_basis}, by ${p.requested_by})`,
+  VERIFICATION_OBSERVED: (p) => `${p.capability_id} observed at ${p.observed_at}${p.source_asserted_at ? ` (authority asserts as of ${p.source_asserted_at})` : ""}`,
+  VERIFICATION_FAILED: (p) => `${p.capability_id} -> ${p.verdict} (${p.reason_code}): ${p.detail}`,
+  FIELD_EXTRACTED: (p) => `${p.path} = "${p.value}" (page ${p.page}, confidence ${Math.round(p.confidence * 100)}%)`,
+  EXTRACTION_FAILED: (p) => `${p.path || "document"}: ${p.detail}`,
+  DOCUMENT_INGESTED: (p) => `${p.filename} (${p.bytes} bytes, sha256 ${p.document_sha256?.slice(0, 12)}…)`,
+};
+
+export function ProvenanceStep({ step }) {
+  const summarize = PROVENANCE_SUMMARY[step.event_type];
+  return (
+    <li>
+      <strong>{step.event_type}</strong> (seq {step.seq}, {step.occurred_at}) — {summarize ? summarize(step.payload) : JSON.stringify(step.payload)}
+    </li>
+  );
+}
+
 export function ErrorBox({ error }) {
   if (!error) return null;
   return <p className="error">{String(error.message || error)}</p>;

@@ -160,6 +160,21 @@ def capabilities() -> dict[str, Any]:
     }
 
 
+@app.get("/tenders")
+def list_tenders(conn=Depends(db)) -> dict[str, Any]:
+    """Every tender_id that has at least one registered bidder.
+
+    Tenders aren't a first-class entity anywhere in this system (no Tender
+    Management module -- see docs/STATUS.md's "declined infrastructure cost").
+    A tender_id is just a string threaded through bidder_in_tender, rule_packs
+    and the event log. This is a projection over the one table that captures
+    every tender's existence, not a new source of truth.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT DISTINCT tender_id FROM bidder_in_tender ORDER BY tender_id")
+        return {"tenders": [row[0] for row in cur.fetchall()]}
+
+
 # --- ingestion ----------------------------------------------------------------
 
 @app.post("/tenders/{tender_id}/bidders", status_code=201)

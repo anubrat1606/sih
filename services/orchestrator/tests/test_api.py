@@ -120,6 +120,17 @@ def test_listing_bidders_for_an_empty_tender_is_an_empty_list_not_an_error(clien
     assert body == {"tender_id": "T-EMPTY", "bidders": []}
 
 
+def test_listing_tenders_returns_every_tender_with_a_registered_bidder(client):
+    register(client, "T-LIST-1", "A")
+    register(client, "T-LIST-2", "B")
+    tenders = client.get("/tenders").json()["tenders"]
+    assert "T-LIST-1" in tenders and "T-LIST-2" in tenders
+
+
+def test_listing_tenders_with_none_registered_is_an_empty_list(client):
+    assert client.get("/tenders").json() == {"tenders": []}
+
+
 # --- read models --------------------------------------------------------------
 
 def test_compliance_score_is_null_not_zero_when_nothing_is_determinate(client):
