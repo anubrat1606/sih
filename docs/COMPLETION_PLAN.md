@@ -52,7 +52,7 @@ just claimed):
 | 10 | GST Document Intelligence (upload → extract → page evidence → validate) | **Done** |
 | 11 | Tender document intelligence | **Done** (Tender Intelligence, human-reviewed) |
 | 12 | Bidder/document intelligence | **Done** |
-| 13 | Entity Resolution | **Partial** — PAN-embedded-in-GSTIN cross-check exists; confirm it also covers the collusion-relevant signals (shared director/address/phone/bank account) — see §3.1 |
+| 13 | Entity Resolution | **Done** — confirmed 2026-09-12 by reading the code directly, not assuming: `app.py::_link_shared_attributes` cross-checks all four collusion signals (director name, address, phone, bank account) per-bidder, independently (not all-or-nothing, unlike the old Express implementation), via normalized fingerprints (`normalise.fingerprint` — case/whitespace insensitive, tested at `test_api.py`). PAN-embedded-in-GSTIN cross-validation (`grammars.py`) is a separate, also-real, also-tested check. |
 | 14 | Evidence Fusion | **Done** — `FUSE` stage per `docs/ADAPTERS.md` |
 | 15 | Compliance Rule Engine integration | **Done** |
 | 16 | Temporal Compliance (validity/expiry/as-of) | **Done** — recency factor + freshness_days in metrics/capability manifest |
