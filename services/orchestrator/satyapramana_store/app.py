@@ -37,7 +37,7 @@ from .events import Actor, append, export_jsonl, verify_chain
 from .evidence import ProjectionResolver, rebuild_evidence
 from .explain import Unavailable
 from .extract import ingest_document, read_pdf
-from .extract.ingest import store_document
+from .extract.ingest import INGEST, store_document
 from .requirement_types import requirement_type_catalog
 from .tender_intelligence import Unavailable as DecomposeUnavailable
 from .projections import collusion_clusters, provenance_trail, rebuild_projections
@@ -615,17 +615,28 @@ async def upload_tender_document(tender_id: str, file: UploadFile = File(...),
     pack's `tender_reference.source_document_sha256` both need: a real,
     hash-addressed, retrievable document, recorded as who uploaded it and
     when -- the event log, unchanged.
+
+    `DOCUMENT_INGESTED` is not in `events.HUMAN_EVENT_TYPES` (only
+    `TENDER_CREATED`/`RULE_PACK_ADOPTED`/`VERDICT_OVERRIDDEN`/`DECISION_RECORDED`
+    may carry a HUMAN actor -- `append()` refuses the rest), the same reason
+    `POST /bidders/{id}/documents` records this event under `INGEST`
+    (`Actor("SYSTEM", ...)`) rather than the uploading officer directly. This
+    endpoint still requires authentication (`current_user` above) and still
+    records who triggered it -- just in the payload, the same place
+    `TENDER_CREATED` already puts `created_by`, not in the event's actor
+    field.
     """
     data = await file.read()
     if not data:
         raise HTTPException(400, "empty upload")
     digest, storage_ref = store_document(data, tender_id, file.filename or "tender.pdf")
     rec = append(
-        conn, event_type="DOCUMENT_INGESTED", actor=Actor("HUMAN", user.username),
+        conn, event_type="DOCUMENT_INGESTED", actor=INGEST,
         correlation_id=str(uuid.uuid4()), tender_id=tender_id,
         payload={"document_sha256": digest, "storage_ref": storage_ref,
                  "filename": os.path.basename(file.filename or "tender.pdf"),
-                 "declared_type": "TENDER_NOTICE", "bytes": len(data)})
+                 "declared_type": "TENDER_NOTICE", "bytes": len(data),
+                 "uploaded_by": user.username})
     return {"tender_id": tender_id, "document_sha256": digest,
             "seq": rec["seq"], "hash": rec["hash"]}
 

@@ -50,6 +50,12 @@ def test_tender_document_upload_is_recorded_and_retrievable(client, conn):
 
 
 def test_tender_document_upload_is_recorded_as_the_real_authenticated_officer(client, conn):
+    """DOCUMENT_INGESTED is not in events.HUMAN_EVENT_TYPES -- append()
+    refuses a HUMAN actor for it, the same reason bidder document upload
+    records it under the SYSTEM ingest actor. The authenticated officer who
+    triggered the upload is still real, just recorded in the payload
+    (`uploaded_by`), the same place TENDER_CREATED already puts
+    `created_by`."""
     data = text_pdf(["a tender notice"])
     client.post("/tenders/T1/documents", files={"file": ("notice.pdf", data)},
                headers=auth_headers(conn, username="priya"))
@@ -57,7 +63,8 @@ def test_tender_document_upload_is_recorded_as_the_real_authenticated_officer(cl
         cur.execute("SELECT actor_kind, actor_id, payload FROM events "
                     "WHERE event_type='DOCUMENT_INGESTED' AND tender_id='T1'")
         kind, actor, payload = cur.fetchone()
-    assert kind == "HUMAN" and actor == "priya"
+    assert kind == "SYSTEM"
+    assert payload["uploaded_by"] == "priya"
     assert payload["declared_type"] == "TENDER_NOTICE"
 
 
