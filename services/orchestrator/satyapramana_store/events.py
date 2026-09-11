@@ -68,10 +68,11 @@ class Actor:
             raise ValueError(f"unknown actor kind: {self.kind}")
 
 
-#: The only three event types a human may emit -- adopting rules, overriding a
-#: verdict, recording a decision. Every other HUMAN event is a bug.
+#: The only event types a human may emit -- creating a tender, adopting
+#: rules, overriding a verdict, recording a decision. Every other HUMAN
+#: event is a bug.
 HUMAN_EVENT_TYPES = frozenset({
-    "RULE_PACK_ADOPTED", "VERDICT_OVERRIDDEN", "DECISION_RECORDED",
+    "TENDER_CREATED", "RULE_PACK_ADOPTED", "VERDICT_OVERRIDDEN", "DECISION_RECORDED",
 })
 
 

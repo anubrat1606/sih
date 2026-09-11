@@ -52,6 +52,14 @@ export const createOfficerAccount = (username, password, displayName, role) =>
 
 export const listTenders = () => call("/tenders");
 
+export const createTender = (tenderId, title, issuingAuthority, bidSubmissionDeadline, description) =>
+  call("/tenders", { method: "POST", ...json({
+    tender_id: tenderId, title, issuing_authority: issuingAuthority,
+    bid_submission_deadline: bidSubmissionDeadline || null, description: description || null,
+  }) });
+
+export const getTender = (tenderId) => call(`/tenders/${encodeURIComponent(tenderId)}`);
+
 export const registerBidder = (tenderId, bidderId, attrs) =>
   call(`/tenders/${encodeURIComponent(tenderId)}/bidders`, { method: "POST", ...json({ bidder_id: bidderId, ...attrs }) });
 
