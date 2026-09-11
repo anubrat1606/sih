@@ -2,9 +2,11 @@ import { useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../authContext";
 import { ErrorBox } from "../components";
+import { useToast } from "../notifications";
 
 export default function LoginPage() {
   const { session, login } = useAuth();
+  const { notify } = useToast();
   const location = useLocation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -23,11 +25,13 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(username, password);
+      const next = await login(username, password);
+      notify(`Signed in as ${next.displayName}.`, { kind: "success" });
       // The redirect above handles getting them where they were headed --
       // this render will re-run with session set and take that branch.
     } catch (err) {
       setError(err);
+      notify("Sign in failed.", { kind: "error" });
     } finally {
       setSubmitting(false);
     }

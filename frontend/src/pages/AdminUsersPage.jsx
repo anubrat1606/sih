@@ -2,11 +2,13 @@ import { useState } from "react";
 import { createOfficerAccount } from "../api";
 import { roleAtLeast, useAuth } from "../authContext";
 import { ErrorBox } from "../components";
+import { useToast } from "../notifications";
 
 const ROLES = ["OFFICER", "SENIOR_OFFICER", "ADMIN"];
 
 export default function AdminUsersPage() {
   const { session } = useAuth();
+  const { notify } = useToast();
   const isAdmin = roleAtLeast(session.role, "ADMIN");
 
   const [form, setForm] = useState({ username: "", password: "", display_name: "", role: "OFFICER" });
@@ -34,8 +36,10 @@ export default function AdminUsersPage() {
       const user = await createOfficerAccount(form.username, form.password, form.display_name, form.role);
       setCreated(user);
       setForm({ username: "", password: "", display_name: "", role: "OFFICER" });
+      notify(`Created account for ${user.display_name}.`, { kind: "success" });
     } catch (err) {
       setError(err);
+      notify("Could not create the account.", { kind: "error" });
     } finally {
       setSubmitting(false);
     }

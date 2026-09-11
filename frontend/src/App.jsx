@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
 import { AuthProvider, RequireAuth } from "./auth";
 import { roleAtLeast, useAuth } from "./authContext";
+import { ToastProvider, useToast } from "./notifications";
 import StatusPage from "./pages/StatusPage";
 import LoginPage from "./pages/LoginPage";
 import TendersPage from "./pages/TendersPage";
@@ -57,12 +58,17 @@ function ThemeToggle() {
 // not the nav bar.
 function AccountBadge() {
   const { session, logout } = useAuth();
+  const { notify } = useToast();
   if (!session) return null;
+  function onSignOut() {
+    logout();
+    notify("Signed out.", { kind: "info" });
+  }
   return (
     <span className="account-badge">
       <span className="mono">{session.displayName}</span>
       <span className="account-role">{session.role.replace("_", " ")}</span>
-      <button type="button" className="account-logout" onClick={logout}>Sign out</button>
+      <button type="button" className="account-logout" onClick={onSignOut}>Sign out</button>
     </span>
   );
 }
@@ -109,10 +115,12 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <Nav />
-        <AppRoutes />
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <Nav />
+          <AppRoutes />
+        </AuthProvider>
+      </ToastProvider>
     </BrowserRouter>
   );
 }
