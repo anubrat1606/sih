@@ -329,6 +329,24 @@ def test_the_trail_reaches_the_source_document_with_page_and_region(client):
     assert trail[3]["payload"]["storage_ref"].endswith(".pdf")
 
 
+def test_a_document_can_be_fetched_back_by_its_hash(client):
+    """The evidence viewer's whole premise: click a verdict, get the actual
+    PDF bytes back, not a description of them."""
+    pdf = text_pdf(["Test fixture, not a certificate.", f"GSTIN: {GSTIN}"])
+    body = upload(client, pdf).json()
+    digest = body["document_sha256"]
+
+    resp = client.get(f"/documents/{digest}")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content == pdf
+
+
+def test_an_unknown_document_hash_is_a_clean_404_not_a_guess(client):
+    resp = client.get("/documents/" + "0" * 64)
+    assert resp.status_code == 404
+
+
 def test_the_trail_reaches_the_source_document_for_a_cin(client):
     """A CIN read off a company document is the input MCA verification needs and
     the claim its answer is fused against -- the trail must reach the PDF line."""

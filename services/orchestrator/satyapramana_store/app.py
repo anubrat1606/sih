@@ -17,7 +17,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from satyapramana.metrics import Constants, RequirementResult, compute
@@ -344,6 +344,31 @@ async def upload_document(bidder_id: str, tender_id: str,
                              declared_type=declared_type)
     rebuild_evidence(conn, bidder_id, REGISTRY)
     return result
+
+
+@app.get("/documents/{document_sha256}")
+def get_document(document_sha256: str, conn=Depends(db)):
+    """Serve a previously-ingested document back, for the evidence viewer --
+    click a verdict, see the actual highlighted line of the actual PDF
+    (satyapramana.md's own stated demo axiom).
+
+    Looked up by content hash, never by a client-supplied filesystem path --
+    the client can never name an arbitrary path on disk, only a hash that has
+    to match a real DOCUMENT_INGESTED event's storage_ref.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT payload->>'storage_ref' FROM events
+               WHERE event_type='DOCUMENT_INGESTED' AND payload->>'document_sha256'=%s
+               LIMIT 1""",
+            (document_sha256,))
+        row = cur.fetchone()
+    if not row or not row[0]:
+        raise HTTPException(404, "no document with that hash was ever ingested")
+    path = row[0]
+    if not os.path.isfile(path):
+        raise HTTPException(404, "the event log references this document, but it is not on disk here")
+    return FileResponse(path, media_type="application/pdf")
 
 
 # --- rule packs and decision --------------------------------------------------
