@@ -255,3 +255,28 @@ button.eg-node:hover { border-color: var(--color-border-strong); background: var
 .risk-bar-low { background: var(--risk-low-fg); }
 .risk-bar-medium { background: var(--risk-medium-fg); }
 .risk-bar-high { background: var(--risk-high-fg); }
+
+/* PdfEvidenceViewer: an inline preview plus a real lightbox. */
+.pdf-inline {
+  position: relative; display: inline-block; border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); overflow: auto; max-width: 100%; max-height: 500px;
+}
+.pdf-canvas-wrap { position: relative; display: inline-block; }
+.pdf-expand {
+  position: sticky; top: var(--space-2); float: right; margin: var(--space-2);
+  font-size: var(--text-xs); padding: 2px var(--space-2);
+}
+.pdf-lightbox-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000;
+  display: flex; align-items: center; justify-content: center; padding: var(--space-5);
+}
+.pdf-lightbox {
+  background: var(--color-surface); border-radius: var(--radius-md); box-shadow: var(--shadow-md);
+  max-width: min(1000px, 100%); max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;
+}
+.pdf-lightbox-toolbar {
+  display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3);
+  border-bottom: 1px solid var(--color-border); flex-wrap: wrap;
+}
+.pdf-lightbox-close { margin-left: auto; }
+.pdf-lightbox-body { overflow: auto; padding: var(--space-3); }
