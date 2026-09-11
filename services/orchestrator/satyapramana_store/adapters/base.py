@@ -168,4 +168,11 @@ class CapabilityManifest:
 class VerificationAdapter(Protocol):
     manifest: CapabilityManifest
 
-    def verify(self, request: VerificationRequest) -> VerificationOutcome: ...
+    def verify(
+        self, request: VerificationRequest, conn: Any = None
+    ) -> VerificationOutcome:
+        """`conn` is an optional database connection, used only by adapters that
+        make a real external call and must archive the raw exchange. Placeholder
+        adapters (Null, Unconfigured) ignore it -- there is nothing to archive
+        when no request was ever sent."""
+        ...
