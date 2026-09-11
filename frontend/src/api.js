@@ -3,8 +3,19 @@
 // value is ever generated when a call fails; callers show the real error.
 export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
-async function call(path, options) {
-  const resp = await fetch(`${BACKEND_URL}${path}`, options);
+// Set by auth.js's AuthProvider on login/logout/session restore -- kept
+// here, not in a React context, because api.js is the one place every
+// request actually leaves the browser, and a module-level value is the
+// simplest thing that can be read synchronously from a plain function.
+let authToken = null;
+export function setAuthToken(token) {
+  authToken = token;
+}
+
+async function call(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  const resp = await fetch(`${BACKEND_URL}${path}`, { ...options, headers });
   if (!resp.ok) {
     let detail;
     try {
@@ -28,6 +39,15 @@ const json = (body) => ({ headers: { "Content-Type": "application/json" }, body:
 
 export const getCapabilities = () => call("/capabilities");
 
+export const login = (username, password) =>
+  call("/auth/login", { method: "POST", ...json({ username, password }) });
+
+export const getMe = () => call("/auth/me");
+
+export const createOfficerAccount = (username, password, displayName, role) =>
+  call("/auth/users", { method: "POST",
+    ...json({ username, password, display_name: displayName, role }) });
+
 export const listTenders = () => call("/tenders");
 
 export const registerBidder = (tenderId, bidderId, attrs) =>
@@ -44,8 +64,8 @@ export const uploadDocument = (bidderId, tenderId, file, declaredType) => {
 export const verifyBidder = (bidderId, tenderId) =>
   call(`/bidders/${encodeURIComponent(bidderId)}/verify?${new URLSearchParams({ tender_id: tenderId })}`, { method: "POST" });
 
-export const adoptRulePack = (tenderId, officerId, pack) =>
-  call(`/tenders/${encodeURIComponent(tenderId)}/rule-pack`, { method: "POST", ...json({ officer_id: officerId, pack }) });
+export const adoptRulePack = (tenderId, pack) =>
+  call(`/tenders/${encodeURIComponent(tenderId)}/rule-pack`, { method: "POST", ...json({ pack }) });
 
 export const evaluateBidder = (bidderId, tenderId, bidSubmissionDate, asOf) =>
   call(`/bidders/${encodeURIComponent(bidderId)}/evaluate?${new URLSearchParams({ tender_id: tenderId })}`, {
@@ -67,15 +87,15 @@ export const getTenderCollusion = (tenderId) =>
 export const getCollusionEdges = (tenderId) =>
   call(`/tenders/${encodeURIComponent(tenderId)}/collusion/edges`);
 
-export const recordDecision = (bidderId, tenderId, officerId, decision, note) =>
+export const recordDecision = (bidderId, tenderId, decision, note) =>
   call(`/bidders/${encodeURIComponent(bidderId)}/decision?${new URLSearchParams({ tender_id: tenderId })}`, {
-    method: "POST", ...json({ officer_id: officerId, decision, note: note || null }),
+    method: "POST", ...json({ decision, note: note || null }),
   });
 
-export const overrideVerdict = (bidderId, tenderId, officerId, requirementId, verdictAfter, justification) =>
+export const overrideVerdict = (bidderId, tenderId, requirementId, verdictAfter, justification) =>
   call(`/bidders/${encodeURIComponent(bidderId)}/override?${new URLSearchParams({ tender_id: tenderId })}`, {
     method: "POST",
-    ...json({ officer_id: officerId, requirement_id: requirementId, verdict_after: verdictAfter, justification }),
+    ...json({ requirement_id: requirementId, verdict_after: verdictAfter, justification }),
   });
 
 export const getAutopsy = (bidderId, tenderId) =>

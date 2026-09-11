@@ -2,16 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import ForceGraph2D from "react-force-graph-2d";
 import { adoptRulePack, getCollusionEdges, getTenderCollusion, listTenderBidders } from "../api";
+import { roleAtLeast, useAuth } from "../authContext";
 import { ErrorBox, Metric, RiskBadge } from "../components";
 import { cssVar } from "../theme";
 
 export default function TenderDashboardPage() {
   const { tenderId } = useParams();
+  const { session } = useAuth();
+  const canAdopt = roleAtLeast(session.role, "SENIOR_OFFICER");
   const [bidders, setBidders] = useState(null);
   const [collusion, setCollusion] = useState(null);
   const [edges, setEdges] = useState(null);
   const [error, setError] = useState(null);
-  const [officerId, setOfficerId] = useState("officer_demo");
   const [packText, setPackText] = useState("");
   const [adoptResult, setAdoptResult] = useState(null);
   const [violations, setViolations] = useState(null);
@@ -36,7 +38,7 @@ export default function TenderDashboardPage() {
       } catch {
         throw new Error("rule pack must be valid JSON -- see schemas/rule_pack.schema.json");
       }
-      setAdoptResult(await adoptRulePack(tenderId, officerId, pack));
+      setAdoptResult(await adoptRulePack(tenderId, pack));
     } catch (err) {
       if (err.detail?.violations) setViolations(err.detail.violations);
       else setError(err);
@@ -121,23 +123,29 @@ export default function TenderDashboardPage() {
         paste one matching /schemas/rule_pack.schema.json. Adopting a new version never
         mutates a past verdict.
       </p>
-      <form className="form" onSubmit={onAdopt}>
-        <label>Officer ID<input value={officerId} onChange={(e) => setOfficerId(e.target.value)} required /></label>
-        <label>Rule pack JSON
-          <textarea rows={10} value={packText} onChange={(e) => setPackText(e.target.value)} placeholder='{"rule_pack_id": "...", "semver": "1.0.0", "requirements": [...]}' required />
-        </label>
-        <button type="submit">Adopt</button>
-      </form>
-      {adoptResult && <p className="status">Adopted rule pack version {adoptResult.rule_pack_version}.</p>}
-      {violations && (
-        <div className="error">
-          <p>Rule pack refused -- {violations.length} violation(s):</p>
-          <ul>
-            {violations.map((v, i) => (
-              <li key={i}>[{v.rule}] {v.requirement_id ? `${v.requirement_id}: ` : ""}{v.message}</li>
-            ))}
-          </ul>
-        </div>
+      {canAdopt ? (
+        <>
+          <p className="hint">Adopted as {session.displayName} ({session.role.replace("_", " ")}).</p>
+          <form className="form" onSubmit={onAdopt}>
+            <label>Rule pack JSON
+              <textarea rows={10} value={packText} onChange={(e) => setPackText(e.target.value)} placeholder='{"rule_pack_id": "...", "semver": "1.0.0", "requirements": [...]}' required />
+            </label>
+            <button type="submit">Adopt</button>
+          </form>
+          {adoptResult && <p className="status">Adopted rule pack version {adoptResult.rule_pack_version}.</p>}
+          {violations && (
+            <div className="error">
+              <p>Rule pack refused -- {violations.length} violation(s):</p>
+              <ul>
+                {violations.map((v, i) => (
+                  <li key={i}>[{v.rule}] {v.requirement_id ? `${v.requirement_id}: ` : ""}{v.message}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="hint">Adopting a rule pack requires SENIOR_OFFICER or higher — you're signed in as {session.role.replace("_", " ")}.</p>
       )}
     </div>
   );

@@ -4,6 +4,7 @@ import {
   evaluateBidder, getAutopsy, getBidder, getBidderEvidence, getExplanation,
   getProvenance, getRepairPlan, overrideVerdict, recordDecision,
 } from "../api";
+import { roleAtLeast, useAuth } from "../authContext";
 import {
   ClassificationBadge, ConflictCard, CoverageMeter, ErrorBox, EvidenceChip,
   Metric, ProvenancePanel, RepairAction, RiskBadge, VerdictBadge,
@@ -13,6 +14,8 @@ export default function BidderDetailPage() {
   const { bidderId } = useParams();
   const [params] = useSearchParams();
   const tenderId = params.get("tender_id");
+  const { session } = useAuth();
+  const canOverride = roleAtLeast(session.role, "SENIOR_OFFICER");
 
   const [bidder, setBidder] = useState(null);
   const [error, setError] = useState(null);
@@ -25,7 +28,6 @@ export default function BidderDetailPage() {
   const [explaining, setExplaining] = useState(false);
 
   const [bidSubmissionDate, setBidSubmissionDate] = useState("");
-  const [officerId, setOfficerId] = useState("officer_demo");
   const [decisionNote, setDecisionNote] = useState("");
   const [lastDecision, setLastDecision] = useState(null);
 
@@ -72,7 +74,7 @@ export default function BidderDetailPage() {
   async function onDecision(decision) {
     setError(null);
     try {
-      setLastDecision(await recordDecision(bidderId, tenderId, officerId, decision, decisionNote));
+      setLastDecision(await recordDecision(bidderId, tenderId, decision, decisionNote));
     } catch (err) {
       setError(err);
     }
@@ -82,7 +84,7 @@ export default function BidderDetailPage() {
     e.preventDefault();
     setError(null);
     try {
-      await overrideVerdict(bidderId, tenderId, officerId, overrideForm.requirement_id, overrideForm.verdict_after, overrideForm.justification);
+      await overrideVerdict(bidderId, tenderId, overrideForm.requirement_id, overrideForm.verdict_after, overrideForm.justification);
       setOverrideForm({ requirement_id: "", verdict_after: "PASS", justification: "" });
       load();
     } catch (err) {
@@ -247,8 +249,8 @@ export default function BidderDetailPage() {
           </form>
 
           <h2>Officer decision</h2>
+          <p className="hint">Recorded as {session.displayName} ({session.role.replace("_", " ")}).</p>
           <form className="form" onSubmit={(e) => e.preventDefault()}>
-            <label>Officer ID<input value={officerId} onChange={(e) => setOfficerId(e.target.value)} /></label>
             <label>Note (optional)<input value={decisionNote} onChange={(e) => setDecisionNote(e.target.value)} /></label>
             <div className="actions">
               <button onClick={() => onDecision("QUALIFY")}>Qualify</button>
@@ -259,16 +261,20 @@ export default function BidderDetailPage() {
 
           <h2>Override a verdict</h2>
           <p className="hint">A human may overrule the system. The system remembers that they did, and keeps its own conclusion alongside theirs.</p>
-          <form className="form" onSubmit={onOverride}>
-            <label>Requirement ID<input value={overrideForm.requirement_id} onChange={(e) => setOverrideForm({ ...overrideForm, requirement_id: e.target.value })} required /></label>
-            <label>New verdict
-              <select value={overrideForm.verdict_after} onChange={(e) => setOverrideForm({ ...overrideForm, verdict_after: e.target.value })}>
-                {["PASS", "FAIL", "PARTIAL", "UNKNOWN"].map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-            </label>
-            <label>Justification<input value={overrideForm.justification} onChange={(e) => setOverrideForm({ ...overrideForm, justification: e.target.value })} required /></label>
-            <button type="submit">Override</button>
-          </form>
+          {canOverride ? (
+            <form className="form" onSubmit={onOverride}>
+              <label>Requirement ID<input value={overrideForm.requirement_id} onChange={(e) => setOverrideForm({ ...overrideForm, requirement_id: e.target.value })} required /></label>
+              <label>New verdict
+                <select value={overrideForm.verdict_after} onChange={(e) => setOverrideForm({ ...overrideForm, verdict_after: e.target.value })}>
+                  {["PASS", "FAIL", "PARTIAL", "UNKNOWN"].map((v) => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </label>
+              <label>Justification<input value={overrideForm.justification} onChange={(e) => setOverrideForm({ ...overrideForm, justification: e.target.value })} required /></label>
+              <button type="submit">Override</button>
+            </form>
+          ) : (
+            <p className="hint">Overriding a verdict requires SENIOR_OFFICER or higher — you're signed in as {session.role.replace("_", " ")}.</p>
+          )}
         </>
       )}
     </div>
