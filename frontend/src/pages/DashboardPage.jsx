@@ -44,24 +44,26 @@ export default function DashboardPage() {
           {body.recent_decisions.length === 0 ? (
             <p className="hint">No decisions recorded yet.</p>
           ) : (
-            <table className="evidence-table">
-              <thead><tr><th>When</th><th>Tender</th><th>Bidder</th><th>Decision</th><th>Officer</th></tr></thead>
-              <tbody>
-                {body.recent_decisions.map((d, i) => (
-                  <tr key={i}>
-                    <td className="mono">{new Date(d.occurred_at).toLocaleString()}</td>
-                    <td><Link to={`/tenders/${encodeURIComponent(d.tender_id)}`}>{d.tender_id}</Link></td>
-                    <td>
-                      <Link to={`/bidders/${encodeURIComponent(d.bidder_id)}?tender_id=${encodeURIComponent(d.tender_id)}`} className="mono">
-                        {d.bidder_id}
-                      </Link>
-                    </td>
-                    <td className={d.decision === "QUALIFY" ? "status" : "error"}>{d.decision}</td>
-                    <td className="mono">{d.officer}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="evidence-table">
+                <thead><tr><th>When</th><th>Tender</th><th>Bidder</th><th>Decision</th><th>Officer</th></tr></thead>
+                <tbody>
+                  {body.recent_decisions.map((d, i) => (
+                    <tr key={i}>
+                      <td className="mono">{new Date(d.occurred_at).toLocaleString()}</td>
+                      <td><Link to={`/tenders/${encodeURIComponent(d.tender_id)}`}>{d.tender_id}</Link></td>
+                      <td>
+                        <Link to={`/bidders/${encodeURIComponent(d.bidder_id)}?tender_id=${encodeURIComponent(d.tender_id)}`} className="mono">
+                          {d.bidder_id}
+                        </Link>
+                      </td>
+                      <td className={d.decision === "QUALIFY" ? "status" : "error"}>{d.decision}</td>
+                      <td className="mono">{d.officer}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
 
           <h2>Verification capabilities</h2>

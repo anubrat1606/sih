@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, RequireAuth } from "./auth";
-import { roleAtLeast, useAuth } from "./authContext";
-import { ToastProvider, useToast } from "./notifications";
+import { ToastProvider } from "./notifications";
+import AppShell from "./AppShell";
 import StatusPage from "./pages/StatusPage";
 import LoginPage from "./pages/LoginPage";
 import TendersPage from "./pages/TendersPage";
@@ -14,87 +13,6 @@ import AuditPage from "./pages/AuditPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import DashboardPage from "./pages/DashboardPage";
 import "./App.css";
-
-// Light is the default; dark is not a filter over it -- both are first-class
-// (satyapramana.md 2.3). "system" defers to prefers-color-scheme entirely
-// (no data-theme attribute at all); an explicit choice sets data-theme and
-// persists it, so a returning officer's choice sticks across sessions.
-function useTheme() {
-  const [theme, setTheme] = useState(() => {
-    try {
-      return localStorage.getItem("satyapramana-theme") || "system";
-    } catch {
-      return "system";
-    }
-  });
-
-  useEffect(() => {
-    if (theme === "system") delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = theme;
-    try {
-      localStorage.setItem("satyapramana-theme", theme);
-    } catch {
-      // Private browsing / storage blocked -- the toggle still works for
-      // this page view, it just won't persist. Not worth failing over.
-    }
-  }, [theme]);
-
-  return [theme, setTheme];
-}
-
-function ThemeToggle() {
-  const [theme, setTheme] = useTheme();
-  const next = { system: "light", light: "dark", dark: "system" };
-  const label = { system: "Theme: system", light: "Theme: light", dark: "Theme: dark" };
-  return (
-    <button className="theme-toggle" onClick={() => setTheme(next[theme])}>
-      {label[theme]}
-    </button>
-  );
-}
-
-// Identity + sign-out, shown in the topnav once a session exists. Signed
-// out, this renders nothing here -- LoginPage is where signing in happens,
-// not the nav bar.
-function AccountBadge() {
-  const { session, logout } = useAuth();
-  const { notify } = useToast();
-  if (!session) return null;
-  function onSignOut() {
-    logout();
-    notify("Signed out.", { kind: "info" });
-  }
-  return (
-    <span className="account-badge">
-      <span className="mono">{session.displayName}</span>
-      <span className="account-role">{session.role.replace("_", " ")}</span>
-      <button type="button" className="account-logout" onClick={onSignOut}>Sign out</button>
-    </span>
-  );
-}
-
-function Nav() {
-  const { session } = useAuth();
-  return (
-    <nav className="topnav">
-      <Link to="/">Status</Link>
-      {session ? (
-        <>
-          <Link to="/dashboard">Dashboard</Link>
-          <Link to="/tenders">Tenders</Link>
-          <Link to="/register">Register bidder</Link>
-          <Link to="/audit">Audit log</Link>
-          {roleAtLeast(session.role, "ADMIN") && <Link to="/admin/users">Officer accounts</Link>}
-        </>
-      ) : (
-        <Link to="/login">Sign in</Link>
-      )}
-      <span className="topnav-note">SATYAPRAMĀṆA — real data only, no simulated authority response</span>
-      <AccountBadge />
-      <ThemeToggle />
-    </nav>
-  );
-}
 
 function AppRoutes() {
   return (
@@ -119,8 +37,9 @@ export default function App() {
     <BrowserRouter>
       <ToastProvider>
         <AuthProvider>
-          <Nav />
-          <AppRoutes />
+          <AppShell>
+            <AppRoutes />
+          </AppShell>
         </AuthProvider>
       </ToastProvider>
     </BrowserRouter>

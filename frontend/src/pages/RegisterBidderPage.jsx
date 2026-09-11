@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { registerBidder, uploadDocument, verifyBidder } from "../api";
 import { ErrorBox } from "../components";
 import { useToast } from "../notifications";
@@ -9,7 +9,13 @@ const DOC_TYPES = ["PAN", "GST", "UDYAM", "CIN", "EPFO"];
 export default function RegisterBidderPage() {
   const navigate = useNavigate();
   const { notify } = useToast();
-  const [tenderId, setTenderId] = useState("");
+  const [params] = useSearchParams();
+  // Arriving from a specific tender's own page (e.g. its "Register a
+  // bidder" empty-state action) carries that tender's id forward so the
+  // officer isn't retyping an id they were just looking at -- prefilled,
+  // not locked, since coming here from the nav directly with no context is
+  // still a fully valid way to register on any tender.
+  const [tenderId, setTenderId] = useState(params.get("tender_id") || "");
   const [bidderId, setBidderId] = useState("");
   const [attrs, setAttrs] = useState({ director_name: "", address: "", phone: "", bank_account: "" });
   const [registered, setRegistered] = useState(null);
@@ -119,19 +125,21 @@ export default function RegisterBidderPage() {
           </div>
 
           {verifyResult && (
-            <table className="evidence-table">
-              <thead><tr><th>Capability</th><th>Result</th><th>Reason</th><th>Detail</th></tr></thead>
-              <tbody>
-                {verifyResult.outcomes.map((o) => (
-                  <tr key={o.capability_id}>
-                    <td>{o.capability_id}</td>
-                    <td>{o.verdict}</td>
-                    <td>{o.reason_code || "—"}</td>
-                    <td className="details">{o.detail || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="evidence-table">
+                <thead><tr><th>Capability</th><th>Result</th><th>Reason</th><th>Detail</th></tr></thead>
+                <tbody>
+                  {verifyResult.outcomes.map((o) => (
+                    <tr key={o.capability_id}>
+                      <td>{o.capability_id}</td>
+                      <td>{o.verdict}</td>
+                      <td>{o.reason_code || "—"}</td>
+                      <td className="details">{o.detail || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </>
       )}

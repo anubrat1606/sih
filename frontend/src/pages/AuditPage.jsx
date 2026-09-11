@@ -95,12 +95,14 @@ export default function AuditPage() {
             {verifiedAt && ` Verified live at ${verifiedAt.toLocaleTimeString()}.`}
           </p>
           {report.breaks.length > 0 && (
-            <table className="evidence-table">
-              <thead><tr><th>Seq</th><th>Detail</th></tr></thead>
-              <tbody>
-                {report.breaks.map((b) => <tr key={b.seq}><td>{b.seq}</td><td>{b.detail}</td></tr>)}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="evidence-table">
+                <thead><tr><th>Seq</th><th>Detail</th></tr></thead>
+                <tbody>
+                  {report.breaks.map((b) => <tr key={b.seq}><td>{b.seq}</td><td>{b.detail}</td></tr>)}
+                </tbody>
+              </table>
+            </div>
           )}
         </>
       )}

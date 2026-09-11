@@ -1,0 +1,113 @@
+/* Application shell -- left sidebar for every authenticated page. Built on
+ * the same tokens as everything else (tokens.css); no new colours invented
+ * here, just layout. Institutional, not decorative: a hairline border
+ * between sidebar and content, no shadow, no gradient. */
+
+.shell { display: flex; min-height: 100vh; }
+
+.shell-brand {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--space-4) var(--space-4) var(--space-3);
+}
+.shell-brand-name {
+  font-family: var(--font-display); font-weight: 700; font-size: var(--text-md);
+  letter-spacing: 0.02em;
+}
+.shell-brand-sub { font-size: var(--text-xs); color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
+
+.shell-sidebar {
+  width: 240px; flex: 0 0 240px;
+  background: var(--color-surface); border-right: 1px solid var(--color-border);
+  display: flex; flex-direction: column; justify-content: space-between;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+}
+
+.shell-nav { display: flex; flex-direction: column; padding: var(--space-2); gap: 2px; }
+.shell-nav-item {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm);
+  color: var(--color-text); text-decoration: none; font-size: var(--text-base); font-weight: 500;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.shell-nav-item:hover { background: var(--color-accent-bg); }
+.shell-nav-item-active { background: var(--color-accent-bg); color: var(--color-accent); font-weight: 700; }
+.shell-nav-icon { width: 1.25em; text-align: center; opacity: 0.8; }
+
+.shell-sidebar-footer {
+  padding: var(--space-3); border-top: 1px solid var(--color-border);
+  display: flex; flex-direction: column; gap: var(--space-2);
+}
+.shell-theme-toggle {
+  background: transparent; border: 1px solid var(--color-border); color: var(--color-text);
+  padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm);
+  font-size: var(--text-sm); font-weight: 600; cursor: pointer; align-self: flex-start;
+}
+.shell-theme-toggle:hover { background: var(--color-accent-bg); }
+
+.shell-account { display: flex; flex-direction: column; gap: 1px; }
+.shell-account-name { font-size: var(--text-sm); font-weight: 600; }
+.shell-account-role {
+  font-size: var(--text-xs); color: var(--color-text-secondary);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.shell-signout {
+  background: transparent; border: 1px solid var(--color-border); color: var(--color-text);
+  padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm);
+  font-size: var(--text-sm); font-weight: 600; cursor: pointer; align-self: flex-start;
+}
+.shell-signout:hover { background: var(--status-fail-bg); border-color: var(--status-fail-fg); color: var(--status-fail-fg); }
+
+.shell-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+
+.shell-topbar {
+  padding: var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--color-border); background: var(--color-bg);
+  font-size: var(--text-sm); color: var(--color-text-secondary);
+}
+.shell-topbar-crumb { display: inline-flex; gap: var(--space-1); align-items: baseline; flex-wrap: wrap; }
+
+.shell-main { flex: 1 1 auto; }
+
+.shell-mobile-toggle { display: none; }
+.shell-mobile-backdrop { display: none; }
+
+/* Signed-out shell: no sidebar to navigate with -- minimal header only. */
+.shell-signed-out-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-accent); color: var(--color-text-on-accent);
+}
+.shell-signed-out-header .shell-brand-sub { color: var(--color-text-on-accent); opacity: 0.75; }
+.shell-signin-link { color: var(--color-text-on-accent); font-weight: 600; text-decoration: none; }
+.shell-signin-link:hover { text-decoration: underline; }
+
+.shell-trust-note { font-size: var(--text-xs); opacity: 0.85; margin: 0; }
+.shell-trust-note-sidebar { padding: 0 var(--space-4) var(--space-3); color: var(--color-text-secondary); }
+
+/* Responsive: below 900px the sidebar becomes an off-canvas panel toggled
+ * by a top-left menu button, rather than shrinking a procurement officer's
+ * working table view down to something unusable at desktop width. */
+@media (max-width: 900px) {
+  .shell { display: block; }
+  .shell-mobile-toggle {
+    display: flex; align-items: center; gap: var(--space-2);
+    position: sticky; top: 0; z-index: 50; width: 100%;
+    background: var(--color-accent); color: var(--color-text-on-accent);
+    border: none; padding: var(--space-3) var(--space-4);
+    font-size: var(--text-base); font-weight: 600; cursor: pointer;
+  }
+  .shell-sidebar {
+    position: fixed; top: 0; left: 0; height: 100vh; z-index: 100;
+    transform: translateX(-100%);
+    transition: transform var(--duration-base) var(--ease-standard);
+    box-shadow: var(--shadow-md);
+  }
+  .shell-sidebar-open { transform: translateX(0); }
+  .shell-mobile-backdrop {
+    display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 90;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-sidebar { transition: none; }
+}

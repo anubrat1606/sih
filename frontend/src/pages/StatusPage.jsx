@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { getCapabilities } from "../api";
 import { useAuth } from "../authContext";
 import { ErrorBox } from "../components";
+import { SkeletonLine, SkeletonTable } from "../Skeleton";
 
 export default function StatusPage() {
   const { session } = useAuth();
@@ -27,40 +28,48 @@ export default function StatusPage() {
         </p>
       )}
       <ErrorBox error={error} />
+      {!body && !error && (
+        <div className="stack">
+          <SkeletonLine width="50%" />
+          <SkeletonTable rows={6} columns={6} />
+        </div>
+      )}
       {body && (
         <>
           <p className={body.live_count > 0 ? "status" : "hint"}>
             {body.live_count} of {body.capabilities.filter((c) => c.capability_id).length} capabilities LIVE.
             {body.note ? ` ${body.note}` : ""}
           </p>
-          <table className="evidence-table">
-            <thead>
-              <tr>
-                <th>Authority</th>
-                <th>Capability</th>
-                <th>Status</th>
-                <th>Tier</th>
-                <th>Channel</th>
-                <th>Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {body.capabilities.map((c) => (
-                <tr key={c.adapter_id}>
-                  <td>{c.authority}</td>
-                  <td>{c.capability_id || "—"}</td>
-                  <td>
-                    <span className={`badge ${c.status === "LIVE" ? "v-pass" : c.status === "UNAVAILABLE" ? "v-fail" : "v-unknown"}`}>
-                      {c.status}
-                    </span>
-                  </td>
-                  <td>{c.tier || "—"}</td>
-                  <td>{c.channel || "—"}</td>
-                  <td className="details">{c.detail || "—"}</td>
+          <div className="table-scroll">
+            <table className="evidence-table">
+              <thead>
+                <tr>
+                  <th>Authority</th>
+                  <th>Capability</th>
+                  <th>Status</th>
+                  <th>Tier</th>
+                  <th>Channel</th>
+                  <th>Detail</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {body.capabilities.map((c) => (
+                  <tr key={c.adapter_id}>
+                    <td>{c.authority}</td>
+                    <td>{c.capability_id || "—"}</td>
+                    <td>
+                      <span className={`badge ${c.status === "LIVE" ? "v-pass" : c.status === "UNAVAILABLE" ? "v-fail" : "v-unknown"}`}>
+                        {c.status}
+                      </span>
+                    </td>
+                    <td>{c.tier || "—"}</td>
+                    <td>{c.channel || "—"}</td>
+                    <td className="details">{c.detail || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </div>

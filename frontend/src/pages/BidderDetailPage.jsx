@@ -186,31 +186,33 @@ export default function BidderDetailPage() {
           {bidder.verdicts.length === 0 ? (
             <p className="hint">No rule pack has been evaluated for this bidder yet.</p>
           ) : (
-            <table className="evidence-table">
-              <thead><tr><th>Requirement</th><th>Verdict</th><th>Reason</th><th>Overridden by</th><th></th></tr></thead>
-              <tbody>
-                {bidder.verdicts.map((v) => (
-                  <Fragment key={v.requirement_id}>
-                    <tr>
-                      <td className="mono">{v.requirement_id}</td>
-                      <td><VerdictBadge verdict={v.verdict_effective} /></td>
-                      <td>{v.reason_effective}</td>
-                      <td>{v.overridden_by || "—"}</td>
-                      <td><EvidenceChip
-                        value={openProvenance === v.requirement_id ? "Hide" : "Why?"}
-                        open={openProvenance === v.requirement_id}
-                        onReveal={() => toggleProvenance(v.requirement_id)}
-                      /></td>
-                    </tr>
-                    {openProvenance === v.requirement_id && provenance && (
+            <div className="table-scroll">
+              <table className="evidence-table">
+                <thead><tr><th>Requirement</th><th>Verdict</th><th>Reason</th><th>Overridden by</th><th></th></tr></thead>
+                <tbody>
+                  {bidder.verdicts.map((v) => (
+                    <Fragment key={v.requirement_id}>
                       <tr>
-                        <td colSpan={5}><ProvenancePanel trail={provenance.trail} /></td>
+                        <td className="mono">{v.requirement_id}</td>
+                        <td><VerdictBadge verdict={v.verdict_effective} /></td>
+                        <td>{v.reason_effective}</td>
+                        <td>{v.overridden_by || "—"}</td>
+                        <td><EvidenceChip
+                          value={openProvenance === v.requirement_id ? "Hide" : "Why?"}
+                          open={openProvenance === v.requirement_id}
+                          onReveal={() => toggleProvenance(v.requirement_id)}
+                        /></td>
                       </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
+                      {openProvenance === v.requirement_id && provenance && (
+                        <tr>
+                          <td colSpan={5}><ProvenancePanel trail={provenance.trail} /></td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
 
           <h2>Bid Autopsy</h2>
@@ -221,19 +223,21 @@ export default function BidderDetailPage() {
             <p className="status">Every mandatory requirement is satisfied -- nothing is blocking qualification.</p>
           ) : (
             <>
-              <table className="evidence-table">
-                <thead><tr><th>Requirement</th><th>Text</th><th>Verdict</th><th>Classification</th></tr></thead>
-                <tbody>
-                  {autopsy.blocking_requirements.map((b) => (
-                    <tr key={b.requirement_id}>
-                      <td className="mono">{b.requirement_id}</td>
-                      <td>{b.text}</td>
-                      <td><VerdictBadge verdict={b.verdict} /></td>
-                      <td><ClassificationBadge classification={b.classification} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="table-scroll">
+                <table className="evidence-table">
+                  <thead><tr><th>Requirement</th><th>Text</th><th>Verdict</th><th>Classification</th></tr></thead>
+                  <tbody>
+                    {autopsy.blocking_requirements.map((b) => (
+                      <tr key={b.requirement_id}>
+                        <td className="mono">{b.requirement_id}</td>
+                        <td>{b.text}</td>
+                        <td><VerdictBadge verdict={b.verdict} /></td>
+                        <td><ClassificationBadge classification={b.classification} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               {autopsy.counterfactual && (
                 <p className="hint">
                   {autopsy.counterfactual.would_qualify_if_cured

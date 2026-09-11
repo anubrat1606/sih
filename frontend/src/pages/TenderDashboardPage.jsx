@@ -150,7 +150,8 @@ export default function TenderDashboardPage() {
         </div>
       )}
       {bidders && bidders.length === 0 && (
-        <EmptyState message="No bidders registered yet." actionLabel="Register a bidder" actionTo="/register" />
+        <EmptyState message="No bidders registered yet." actionLabel="Register a bidder"
+                    actionTo={`/register?tender_id=${encodeURIComponent(tenderId)}`} />
       )}
       {bidders && bidders.length > 0 && (
         <>
@@ -243,14 +244,16 @@ export default function TenderDashboardPage() {
       )}
 
       {collusion && collusion.some((b) => b.flagged) && (
-        <table className="evidence-table">
-          <thead><tr><th>Bidder A</th><th>Bidder B</th><th>Shared attribute</th></tr></thead>
-          <tbody>
-            {(edges || []).map((e, i) => (
-              <tr key={i}><td className="mono">{e.bidder_a}</td><td className="mono">{e.bidder_b}</td><td>{e.attribute}</td></tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table className="evidence-table">
+            <thead><tr><th>Bidder A</th><th>Bidder B</th><th>Shared attribute</th></tr></thead>
+            <tbody>
+              {(edges || []).map((e, i) => (
+                <tr key={i}><td className="mono">{e.bidder_a}</td><td className="mono">{e.bidder_b}</td><td>{e.attribute}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <h2>Adopt a rule pack</h2>
