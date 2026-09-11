@@ -32,6 +32,17 @@ loading state between "nothing" and "the answer," a tender list that's a
 bare `<ul>`, and an audit log that's a raw JSON dump. This round builds the
 reusable pieces that fix that.
 
+## Merge approval — read this before your first PR
+
+**Neither of you merges anything, ever, under any circumstance.** Open your
+PR against `main`, make sure CI is green, and then stop — Anubrat reviews
+and merges every PR himself, the same way it's worked every round so far.
+A green CI run is not approval; it's a necessary condition for review, not
+a substitute for it. If a PR sits unreviewed for a while, say so — don't
+merge it to unblock yourself. This applies to all nine phases, including
+the ones that are "just" new, self-contained files with no conflict risk:
+approval is about reviewing what you built, not about conflict risk.
+
 ---
 
 ## Phase map
@@ -732,8 +743,9 @@ independently reviewable; R1 alone, R2 alone, R3 alone, R4 alone, R5 alone
 at the end). Each PR description states which acceptance-criteria checklist
 it satisfies, copied in with boxes checked. CI
 (`.github/workflows/ci.yml`) runs the frontend build+lint job automatically
-on every PR — it must be green before anyone reviews it, and neither of you
-merges your own PR.
+on every PR — it must be green before anyone reviews it. Then wait: per the
+"Merge approval" section above, Anubrat merges every PR himself once he's
+reviewed it. Green CI plus an open PR is where your part ends.
 
 **Definition of done, every single task in Phases 2–5:**
 ```bash
