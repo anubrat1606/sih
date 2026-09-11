@@ -2,6 +2,9 @@
 then a couple of tests through the real API to confirm the wiring."""
 from __future__ import annotations
 
+import csv
+import io
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,6 +15,8 @@ from satyapramana_store.reporting.bid_autopsy import autopsy, classify
 from satyapramana_store.reporting.compliance_repair import repair_plan
 from satyapramana_store.reporting.dossier import build_dossier, render_dossier_text
 from satyapramana_store.reporting.tender_report import tender_report, render_tender_report_text
+from satyapramana_store.reporting.csv_export import bidders_to_csv
+from satyapramana_store.reporting.blocker_summary import blocker_summary
 
 _SOURCE = {"page": 1, "region": [0, 0, 100, 20]}
 
@@ -507,3 +512,106 @@ def test_render_tender_report_text_shows_the_right_facts_without_fabricating_a_z
     assert "Flagged bidders: 2" in text
     assert "B -> cluster_B_C" in text
     assert "1 determined, 2 not yet determined" in text
+
+
+# --- CSV export -----------------------------------------------------------
+# Pure-function tests only, no database: bidders_to_csv() takes the same
+# plain bidder-list shape the tender report tests above already use.
+
+def test_bidders_to_csv_on_an_empty_list_is_a_header_row_only():
+    text = bidders_to_csv([])
+    reader = csv.DictReader(io.StringIO(text))
+    assert reader.fieldnames == ["bidder_id", "risk_level", "compliance_score",
+                                  "verification_coverage", "evidence_confidence",
+                                  "collusion_flagged", "collusion_cluster_id"]
+    assert list(reader) == []
+
+
+def test_bidders_to_csv_round_trips_real_values_and_a_flagged_cluster():
+    bidders = [
+        bidder_fixture("A", score=80.0, coverage=60.0, confidence=70.0, risk_level="LOW"),
+        bidder_fixture("B", risk_level="HIGH",
+                        collusion={"flagged": True, "cluster_id": "cluster_B_C", "members": ["B", "C"]}),
+    ]
+    rows = list(csv.DictReader(io.StringIO(bidders_to_csv(bidders))))
+    assert rows[0]["bidder_id"] == "A"
+    assert rows[0]["risk_level"] == "LOW"
+    assert rows[0]["compliance_score"] == "80.0"
+    assert rows[0]["collusion_flagged"] == "False"
+    assert rows[0]["collusion_cluster_id"] == ""
+    assert rows[1]["bidder_id"] == "B"
+    assert rows[1]["collusion_flagged"] == "True"
+    assert rows[1]["collusion_cluster_id"] == "cluster_B_C"
+
+
+def test_bidders_to_csv_never_writes_none_or_a_fabricated_zero_for_a_null_metric():
+    bidders = [bidder_fixture("A")]  # every metric None by default
+    rows = list(csv.DictReader(io.StringIO(bidders_to_csv(bidders))))
+    assert rows[0]["compliance_score"] == ""
+    assert rows[0]["verification_coverage"] == ""
+    assert rows[0]["evidence_confidence"] == ""
+    text = bidders_to_csv(bidders)
+    assert "None" not in text
+    assert "null" not in text.lower()
+
+
+def test_bidders_to_csv_an_unflagged_tracked_bidder_shows_no_cluster_id():
+    """A tracked-but-isolated node (collusion present, flagged False) is not a
+    cluster membership worth a column -- same rule tender_report.py follows."""
+    bidders = [bidder_fixture("A", collusion={"flagged": False, "cluster_id": "cluster_A",
+                                               "members": ["A"]})]
+    rows = list(csv.DictReader(io.StringIO(bidders_to_csv(bidders))))
+    assert rows[0]["collusion_flagged"] == "False"
+    assert rows[0]["collusion_cluster_id"] == ""
+
+
+# --- tender-wide blocker summary --------------------------------------------
+
+def _blocked_autopsy(*blocking):
+    return {"would_qualify": False, "blocking_requirements": list(blocking),
+            "counterfactual": None, "note": None}
+
+
+def _blocking_row(rid, classification):
+    return {"requirement_id": rid, "text": "irrelevant here", "verdict": "FAIL",
+            "reason_code": "AUTHORITY_CONTRADICTED", "classification": classification,
+            "overridden_by": None}
+
+
+def test_blocker_summary_counts_and_sorts_by_how_many_bidders_are_blocked():
+    autopsies = [
+        _blocked_autopsy(_blocking_row("L1", "FATAL")),
+        _blocked_autopsy(_blocking_row("L1", "FATAL"), _blocking_row("L2", "CURABLE")),
+        _blocked_autopsy(_blocking_row("L2", "CURABLE")),
+    ]
+    assert blocker_summary(autopsies) == [
+        {"requirement_id": "L1", "blocked_bidder_count": 2, "classifications": ["FATAL"]},
+        {"requirement_id": "L2", "blocked_bidder_count": 2, "classifications": ["CURABLE"]},
+    ]
+
+
+def test_blocker_summary_skips_bidders_never_evaluated_or_already_qualifying():
+    autopsies = [
+        {"would_qualify": None, "blocking_requirements": [], "counterfactual": None,
+         "note": "not yet evaluated"},
+        {"would_qualify": True, "blocking_requirements": [], "counterfactual": None, "note": None},
+        _blocked_autopsy(_blocking_row("L1", "FATAL")),
+    ]
+    assert blocker_summary(autopsies) == [
+        {"requirement_id": "L1", "blocked_bidder_count": 1, "classifications": ["FATAL"]}]
+
+
+def test_blocker_summary_on_no_autopsies_is_an_empty_list():
+    assert blocker_summary([]) == []
+
+
+def test_blocker_summary_records_every_classification_seen_for_a_requirement():
+    """The same requirement can be FATAL for one bidder and CURABLE for
+    another -- different bidders can hit the same leaf via different reason
+    codes."""
+    autopsies = [
+        _blocked_autopsy(_blocking_row("L1", "FATAL")),
+        _blocked_autopsy(_blocking_row("L1", "CURABLE")),
+    ]
+    assert blocker_summary(autopsies) == [
+        {"requirement_id": "L1", "blocked_bidder_count": 2, "classifications": ["CURABLE", "FATAL"]}]
