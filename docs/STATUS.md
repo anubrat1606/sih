@@ -1,252 +1,169 @@
 # STATUS — where the project is and what to do next
 
-Last reviewed: 2026-09-11. Read `../CLAUDE.md` first for architecture and conventions.
+Last reviewed: 2026-09-12. Read `../CLAUDE.md` first for architecture and conventions,
+then `CONTRIBUTING.md` for who owns what and how a change ships.
 
-## Architecture direction — added 2026-09-10
+## Architecture direction — decided 2026-09-10, still in force
 
 The team has a second, more ambitious spec (`satyapramana.md`, the architecture
-charter). It is **not** compatible with the prompts file that built this repo:
-it locks the stack to Next.js / FastAPI / PostgreSQL and forbids MongoDB and
+charter). It is **not** compatible with the prompts file that originally built
+this repo: it locks the stack to FastAPI / PostgreSQL and forbids MongoDB and
 graph databases.
 
 Adopted position: **charter integrity, prototype infrastructure.** Take the
 charter's evidentiary properties (four-state verdicts, evidence tiers, three
-orthogonal metrics, rule packs as data, honest `UNAVAILABLE`); decline its
-infrastructure cost (full event sourcing/CQRS, Next.js migration, 13 of the 17
-modules). One migration only: the Node/Express + Mongo backend becomes
-FastAPI + PostgreSQL, so the audit log is append-only at the database level.
+orthogonal metrics, rule packs as data, honest `UNAVAILABLE`); decline unneeded
+infrastructure cost (a Next.js migration was explicitly declined — Vite stays).
+The Node/Express + Mongo backend was retired; the audit log is a real,
+append-only, hash-chained PostgreSQL table. Collusion detection stays in
+scope: edges become events, clusters are a PostgreSQL recursive-CTE
+projection, so a flag survives a restart and can be audited.
 
-Collusion detection stays in scope, as an 18th module: edges become events,
-clusters become a PostgreSQL recursive-CTE projection instead of an in-memory
-networkx graph, so a flag survives restart and can be audited.
-
-New specs, both verified:
-
-- `VERDICT_ALGEBRA.md` — four-state algebra, one composition function covering
-  `ALL_OF` / `ANY_OF` / `K_OF_N`, the Tier A/B/C ceiling, reason codes, and the
-  three metric formulas. Algebraic properties checked exhaustively.
-- `RULE_PACKS.md` + `/schemas/rule_pack.schema.json` — declarative,
-  content-addressed rule packs and the closed predicate language. Meta-schema is
-  draft-07 valid; the worked example validates; 20 malformed variants rejected.
-- `ADAPTERS.md` + `/schemas/capability_manifest.schema.json` +
-  `/schemas/capability_registry.json` — the verification adapter interface,
-  capability manifests, the failure taxonomy (no row maps to `PASS`), the raw
-  response archive, lawful basis, freshness and temporal-query handling.
-  Meta-schema draft-07 valid; all 6 registry adapters validate; 11 malformed
-  variants rejected; the rule-pack operand grammar and the registry's evidence
-  paths cross-check.
-
-- `EVENTS.md` — the append-only hash-chained event log, the event catalogue,
-  projections, the collusion recursive CTE, the "why does this say PASS"
-  provenance query, and independent chain verification. **Every SQL statement in
-  it was executed against PostgreSQL 14.20**, which surfaced three defects in the
-  first draft: a row-level trigger does not fire on `TRUNCATE` (the log was
-  wipeable), `char(64)` blank-pads the genesis sentinel (our own check passes
-  while an independent verifier sees a broken chain), and `ORDER BY`/`LIMIT` is
-  illegal in a recursive CTE anchor member (the provenance query was a syntax
-  error). All three are fixed and re-verified: 0 chain forks across 8 concurrent
-  writers, 200/200 events verified by an external script, tampering detected at
-  the successor event.
-
-The registry records the honest current state: four capabilities
-(`PAN_STATUS`, `GST_STATUS`, `CIN_STATUS`, `UDYAM_STATUS`) sit at
-`AWAITING_CREDENTIALS`, and EPFO/ESIC are registered null adapters with no
-lawful programmatic source. Verification Coverage is therefore honestly 0%
-until one aggregator account exists — still the highest-value errand outstanding.
-
-**Implementation has begun.** `services/core` is the domain layer: pure,
-deterministic, framework-free, 182 passing tests. It implements the verdict
-algebra, the three metrics, risk classification, the predicate evaluator and
-rule pack validation. It is the layer charter section 5's tell-tale test is
-about -- remove every model and this package still produces correct verdicts on
-already-extracted evidence. `tests/test_rulepack.py` reads the real schema and
-capability registry, so package, schemas and registry are checked against each
-other rather than in isolation.
-
-`services/orchestrator` is the persistence layer: the append-only hash-chained
-`events` table, `append()` with canonical hashing, the JSON Lines export and its
-independent verifier, and the projections -- collusion clusters via recursive
-CTE, the provenance walk, and rebuild-from-genesis with time travel. 27 tests,
-all against a real PostgreSQL; they skip rather than fall back to a stub when
-`DATABASE_URL` is unset. `/backend` (Node/Mongo) stays running until this has
-passed the same end-to-end path.
-
-The adapter layer and the FastAPI orchestrator are in. `GET /capabilities`
-reports the honest position (no capability LIVE, so Coverage is 0%);
-`POST /bidders/{id}/verify` returns `UNKNOWN` with a machine-readable reason for
-every capability; `GET /bidders/{id}/requirements/{rid}/provenance` is the
-two-click demo path. Raw responses are archived with credentials redacted
-*before* storage. 96 orchestrator tests and 182 core tests pass.
-
-Two behaviours deliberately differ from the services being replaced, both
-recorded in `services/orchestrator/README.md`: collusion registration is no
-longer all-or-nothing across the four attributes, and attributes are normalised
-per type so `+91 98765 43210` and `9876543210` are recognised as one phone
-number.
-
-**The loop is closed.** Rule pack adoption, the evidence projection, and the
-DECIDE stage are in, so the system now produces real verdicts with a walkable
-provenance chain: adopt -> register -> verify -> evaluate -> read metrics ->
-walk provenance. 117 orchestrator tests and 182 core tests pass.
-
-With no credentials configured the end-to-end result is: every verdict
-`UNKNOWN` with a machine-readable reason, `compliance_score: null` (not zero),
-coverage 0%, risk HIGH on "mandatory requirement unverified", and a four-hop
-provenance trail ending at the verification attempt. Extraction and the source
-document are the two hops still missing from that trail; they appear when there
-is a real document to read, and nothing is faked to fill them in.
-
-**Extraction works without a model.** For a PDF with a text layer, identifiers
-are located by grammar, validated structurally (GSTIN check digit, state code,
-embedded PAN), and recorded with the exact page and region -- so the provenance
-trail now reaches the source document and a click lands on the right line, with
-no AI anywhere in the path. 145 orchestrator tests and 182 core tests pass.
-
-**Verification is live for three of four capabilities.** `services/orchestrator/satyapramana_store/adapters/sandbox_co_in.py`
-wires `PAN_STATUS`, `GST_STATUS` and `CIN_STATUS` against real Sandbox.co.in
-endpoints (contracts read from their docs, not guessed), gated entirely by
-`SATYAPRAMANA_SANDBOX_API_KEY` / `_SECRET` / `_ENV` in `services/orchestrator/.env`
-(gitignored, real key pair configured locally). With no key set, behaviour is
-unchanged from before. With one set, `GET /capabilities` reports `live_count: 3`
-and the two remaining registry rows are both correctly justified:
-`UDYAM_STATUS` stays `AWAITING_CREDENTIALS` (checked Sandbox's full API
-catalogue -- no Udyam endpoint exists anywhere on the platform, confirming the
-earlier call to cut it from scope) and EPFO/ESIC stay `UNAVAILABLE`. Sandbox
-also exposes MCA director data as discontinued, so `CIN_STATUS`'s live
-`provides` is narrower than the registry placeholder -- it never claims
-`bidder.entity.directors`.
-
-Two real gaps stand between "live" and "actually fires for a bidder," both in
-`extract/` (Suhani's, not touched here): PAN verification needs the holder's
-name and date of birth, and extraction currently only captures the PAN
-*number*; CIN isn't extracted at all yet, though its grammar
-(`^[LU]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}$`) fits the same deterministic
-regex-and-structural-check approach already used for PAN/GSTIN/Udyam. Until
-either lands, those two capabilities honestly refuse with `MALFORMED` rather
-than skip silently -- the adapter code needs no further change when they do.
-
-**Frontend rebuilt, functional-first.** The whole `frontend/` was still wired
-to the retired Mongo/Express backend and had never rendered a real response
-from the orchestrator. Rewritten end to end -- five pages (status, register +
-upload + verify, tender dashboard, bidder detail, audit log) against the
-actual endpoints, no design system yet (charter section 2.3's tokens and
-evidence-native primitives are a deliberate later pass, not skipped by
-accident). Needed one new backend read model, `GET /tenders/{tender_id}/bidders`
-(list), which didn't exist. 147 orchestrator tests pass. Verified against a
-real running instance with a 24-assertion integration script exercising every
-request the frontend makes; a real browser screenshot pass was attempted but
-blocked by a sandboxed Chromium download timing out -- still worth a manual
-click-through before calling this visually confirmed.
-
-Three PRs open against `main`, none merged yet as of this writing:
-CONTRIBUTING ownership (frontend/ -> Anubrat, Kevindeep was never an actual
-team member), the Sandbox.co.in adapters, and the frontend rebuild. The
-adapters and frontend PRs are independent of each other -- a checkout with
-only one merged will show the other half missing.
-
-**Two approvals were taken as granted after three explicit go-aheads.** Both are
-recorded here because both are reversible and neither has been confirmed in
-writing:
-
-1. **v2 schemas.** The four-state algebra replaces
-   `PASS | FAIL | MISMATCH | UNVERIFIED`, and the three metrics replace
-   `final_score.compliance_score`. `CLAUDE.md` freezes the five original
-   schemas, so this needs an explicit yes. Nothing in `/schemas` has been
-   modified; `rule_pack.schema.json` is purely additive.
-2. **Charter section 8 amendment** — keep Vite, drop the Next.js requirement.
-   Justification: no SSR, no file-based routing and no server components are
-   needed; the charter's UI value is in design tokens and the seven evidence
-   primitives, all framework-agnostic. Migrating costs days and gains nothing
-   demonstrable.
-
-The priorities below still stand and are unaffected by either approval.
+Two amendments approved since, both still in force:
+- **Auth was explicitly out of scope for the prototype through round 4.**
+  Reversed after round 4 shipped, building toward a real officer-usable
+  product rather than only a panel demo — see "Built and merged" below.
+- **Tender Management** ("declined infrastructure cost" in the original
+  scoping) was reconsidered for the same reason and built — see below.
 
 ---
 
-## Verdict by component
+## Built and merged, as of this review
 
-| Component | State | Action |
-|---|---|---|
-| `services/collusion` | Complete, tested, honest | Ship as-is. Only touch it to add persistence (JSON dump on shutdown) if the demo needs restart-survival. |
-| `services/extraction` | Real OCR works; returns `null` instead of guessing | Keep. Add EPFO regex once a real format is confirmed. Improve name/date extraction if time allows. |
-| `backend` | Complete. Orchestrator + insert-only hash-chained audit log | Keep. Just needs a real MongoDB. |
-| `frontend` | Builds clean; wired to the real API | Keep. Has never rendered a live backend response — do that. |
-| `services/verification` | Portal URLs are unconfirmed guesses, CAPTCHA-walled, no public API; Udyam omitted; PAN needs a paid key | **The risk. Pick a data-source strategy before writing more.** |
+**Zero open PRs. 547 backend tests passing** (365 `services/orchestrator` +
+182 `services/core`), plus a clean `npm run build` / `npm run lint` on the
+frontend. Every PR that landed this project went through the same cycle:
+built with real tests, reviewed in an isolated worktree, live-verified
+against a real running stack, then merged — nothing here is asserted without
+having been run for real at least once.
 
-The overall architecture and the schema-first contract are sound — do not
-redesign. The "`UNVERIFIED` beats a fabricated `PASS`" stance is a genuine
-strength; make it explicit in the pitch.
+**Core domain layer** — the four-state verdict algebra (`PASS` / `FAIL` /
+`PARTIAL` / `UNKNOWN`), the three orthogonal metrics (never blended), risk
+classification, the predicate evaluator, rule-pack validation. Pure,
+deterministic, framework-free, frozen.
 
-## Priorities, in order
+**Document pipeline** — deterministic extraction (no OCR, no model) for
+GSTIN / PAN / UDYAM / CIN, PAN holder name + date of birth, GST issue/expiry
+dates, and the GST certificate's *claimed* business name
+(`bidder.gst.claimed_legal_name` / `claimed_trade_name`, deliberately kept
+separate from the verification-sourced `bidder.gst.legal_name` so one can
+never silently overwrite the other). Every extracted field carries its real
+page and pixel region through to the rendered UI.
 
-### 1. Make verification real — mostly done as of 2026-09-11, see the paragraph above
+**Verification** — live for `PAN_STATUS`, `GST_STATUS`, `CIN_STATUS` via
+Sandbox.co.in, gated entirely by `SATYAPRAMANA_SANDBOX_API_KEY`/`_SECRET` in
+`services/orchestrator/.env` (gitignored, per-developer — see gap 2 below).
+`UDYAM_STATUS` stays `AWAITING_CREDENTIALS` (confirmed: no Udyam endpoint
+exists anywhere on Sandbox.co.in's platform); EPFO/ESIC are registered null
+adapters with no lawful programmatic source anywhere — both are **confirmed
+cut from scope**, not outstanding work.
 
-Superseded by the current architecture: this originally pointed at
-`services/verification` (the retired Mongo-era scaffold, `pan_live_kyc_check()`
-etc.), which no longer exists. What actually happened instead:
-`services/orchestrator/satyapramana_store/adapters/sandbox_co_in.py` wires PAN,
-GST and CIN against Sandbox.co.in for real. Left to do: PAN holder name/DOB and
-CIN extraction (Suhani, `extract/`), and a real consented document to push
-through the whole path end to end — see priority 3.
+**Auth** — real login, `hashlib.scrypt` password hashing (stdlib, no new
+dependency), signed JWT sessions, three roles totally ordered
+(`OFFICER` < `SENIOR_OFFICER` < `ADMIN`). Every write endpoint derives the
+acting officer's identity from the authenticated session, never a
+client-supplied string. No self-signup — the first `ADMIN` bootstraps from
+env vars at startup; every account after that is created by an admin.
+Frontend: a real login screen, protected routes, role-gated UI (a junior
+officer sees an explanation instead of a form that would 403 anyway).
 
-- **Udyam and EPFO** — confirmed cut from scope; Sandbox.co.in's full API
-  catalogue has no Udyam endpoint, and EPFO/ESIC have no lawful programmatic
-  source anywhere. Not worth re-checking unless a new aggregator turns up.
+**Tender Management** — `POST /tenders` (title, issuing authority, bid
+deadline, description), backed by a real `TENDER_CREATED` event and a
+`proj_tenders` projection. Additive: a tender can still come into existence
+implicitly the moment a bidder registers on a new tender ID, exactly as
+before; a tender that was never explicitly created just returns honest null
+metadata rather than a guess.
 
-### 2. Stand up the whole stack once, locally — done for the plumbing, not for real data
+**The AI-assisted stages, both provider-agnostic (Gemini) and both strictly
+bounded** — the model proposes, a human decides, and neither has a code path
+into a verdict or an adopted rule pack that skips a person:
+- **EXPLAIN** — narrates an already-final dossier into officer-readable
+  prose. Unavailable with no key configured degrades to `available: false`,
+  never a fabricated narrative.
+- **Tender Intelligence** — reads a tender PDF's real text and proposes
+  candidate requirements (text, page, an obligation guess, an optional
+  suggested evidence path) for an officer to hand-review and re-enter
+  through the rule pack builder. Same honest-unavailable degrade.
 
-PostgreSQL + the orchestrator + the rebuilt frontend all run together and were
-exercised live (registration, verification, dashboard, audit log) — see the
-frontend paragraph above. What's still missing is exactly priority 3: nobody
-has pushed a real consented document through `/bidders/{id}/documents` yet, so
-extraction, and therefore the PAN/GST/CIN adapters, have never fired for real.
+**Reporting** — Bid Autopsy (why a bid would fail today, with a real
+counterfactual), Compliance Repair (a specific, executable action per
+curable gap), the Compliance Dossier, the Tender Compliance Report, CSV
+export, and a tender-wide blocker summary.
 
-### 3. Collect demo data
+**Frontend** — design tokens and dual theme (light default, dark
+first-class), the seven evidence-native primitives from charter section 2.3,
+the Evidence Graph (the signature screen — a deterministic three-column DAG,
+not a force-directed layout, with real pan/zoom), a PDF viewer that's a real
+lightbox with page navigation, a Mission Control dashboard, an admin
+officer-accounts screen, a guided rule-pack builder (replacing the old
+raw-JSON textarea, with an advanced-JSON escape hatch for anything the
+guided form doesn't cover), and a full round-4 interactivity pass — toast
+confirmations, loading skeletons, search/filter, confirmation dialogs before
+Disqualify/Override, empty states, a real audit timeline, and CSV/blocker
+report actions — all wired into the real pages, not sitting unused.
 
-Real people/businesses who have consented to appear in the demo, into
-`data/consented_bidders/` (gitignored). See `data/README.md`. Need at least
-three bidders on one tender, two of them sharing an attribute.
+---
 
-### 4. Extraction polish (only after 1–3)
+## Outstanding — in priority order
 
-- EPFO establishment-code regex, once a real format is confirmed — or drop EPFO.
-- Populate `date_of_issue` / `date_of_expiry` so the expiry check in
-  verification actually has something to test.
+The first three need real-world input that no Claude Code session, working
+alone, can supply — they were never really "buildable" tasks in the
+scoping sense, and fabricating any of them would violate the one rule this
+whole project refuses to break.
 
-## Known code issues
+### 1. No real demo data
 
-- **Collusion registration is all-or-nothing.** `backend`
-  `/bidders/:bidderId/verify` only POSTs to the collusion service when
-  `director_name`, `address`, `phone`, and `bank_account` are *all* in the
-  request body. Loosen it to register with whatever subset is present, or
-  collusion detection silently won't run in real use.
-- **EPFO check is decorative.** `epfo_public_portal_check()` returns
-  `UNVERIFIED` even on a successful HTTP response ("parsing not implemented").
-  Either wire a real source or remove the branch so it's not misleading.
+`data/consented_bidders/` does not exist yet. Nobody has pushed a real,
+consented document through the live pipeline end to end. This has been the
+single biggest gap between "the pieces all individually work" and "we can
+actually demo it" since round 2. Need: real people/businesses who have
+consented to appear in the demo, at least three bidders on one tender, two
+of them genuinely sharing an attribute (director name, address, phone, or
+bank account) for the collusion case to fire on real data. See
+`data/README.md`.
 
-## Explicitly deferred / out of scope
+### 2. Live credentials are per-developer, not shared
 
-- Neo4j for the collusion graph — networkx is sufficient; correct call.
-- Real S3 upload — local path in `source_s3_key` is fine for the demo.
-- Udyam verification — no confirmed public verify URL.
+`services/orchestrator/.env` is gitignored by design — real Sandbox.co.in
+and Gemini keys live only on whichever machine configured them, never in the
+repo. This is correct, not a bug: without a key, every dependent feature
+degrades to an honest `UNKNOWN`/unavailable state, which is itself part of
+the pitch. Worth deciding, once real demo data exists: does the panel demo
+run from one specific machine with keys already configured, or does whoever
+demos it need their own `.env` set up beforehand?
 
-## Authentication — reversed 2026-09-11, no longer out of scope
+### 3. No rule pack built from a real tender
 
-The decision above ("not in scope for the prototype") held through round 4.
-Building toward a real officer-usable product (not just a panel demo)
-changed that. `services/orchestrator/satyapramana_store/auth/` implements
-real login: `hashlib.scrypt` password hashing (stdlib, no new dependency),
-signed JWT sessions (`PyJWT`, the one new dependency this added), and a
-three-tier role scale (`OFFICER < SENIOR_OFFICER < ADMIN`). Every write
-endpoint that used to trust a client-supplied `officer_id` string now
-derives the real identity from the authenticated session instead —
-`adopt_rule_pack` and `override` additionally require `SENIOR_OFFICER`.
-There is no self-signup; the first `ADMIN` account is created from
-`SATYAPRAMANA_BOOTSTRAP_ADMIN_USERNAME`/`_PASSWORD` env vars at startup
-(deployment-friendly on a managed platform with no shell access), and every
-account after that is provisioned by an admin via `POST /auth/users`.
+`rulepacks/` still only has the round-2 scaffold (`README.md`,
+`validate.py`) — no rule pack decomposed from an actual GeM tender PDF.
+Tender Intelligence (above) should make this faster once a real tender PDF
+and gap 2's credentials exist, but an officer still has to run it and
+review/adopt the result for real.
 
-341 orchestrator tests pass (up from 313), all against a real database, no
-test ever calling the real login endpoint's underlying crypto with a fake
-result. Frontend login UI, protected routes, and a real deployment are the
-next round — this pass is backend-only.
+### 4. Everything else
+
+No other gap is currently open. If a new one turns up, it goes here with
+the same rigor as 1–3: what's missing, why, and what real-world input (if
+any) it needs before it's buildable.
+
+---
+
+## How to verify this snapshot yourself
+
+```bash
+# core — no database needed
+cd services/core && ./venv/bin/python -m pytest tests/ -q   # expect 182 passed
+
+# orchestrator — needs PostgreSQL
+cd services/orchestrator
+export DATABASE_URL=postgresql://localhost/satyapramana_test
+./venv/bin/python -m pytest tests/ -q                        # expect 365 passed
+
+# frontend
+cd frontend && npm run build && npm run lint                 # both clean
+```
+
+`gh pr list --state merged` and `gh pr list --state open` are the ground
+truth for what's actually landed versus what this file claims — trust those
+over this document if they ever disagree, and update this file rather than
+letting that gap grow.
