@@ -16,6 +16,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
@@ -56,6 +57,25 @@ app = FastAPI(
         "simulated response."
     ),
     version="0.1.0",
+)
+
+# The frontend (Vite dev server, a different origin) calls this API directly
+# from the browser -- without this, every request is blocked by the browser's
+# CORS policy before it ever reaches a route, which no server-side test using
+# a plain HTTP client (curl, node fetch, the FastAPI TestClient) would ever
+# catch, since none of them enforce CORS the way a real browser does. No auth
+# exists in this prototype (out of scope, CLAUDE.md), so a permissive origin
+# list costs nothing beyond what already holds; allow_credentials stays False
+# since there are no cookies or sessions to protect.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        os.environ.get("SATYAPRAMANA_FRONTEND_ORIGIN", "http://localhost:5173"),
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 SYSTEM = Actor("SYSTEM", "orchestrator")
