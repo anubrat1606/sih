@@ -117,3 +117,9 @@ export const getExplanation = (bidderId, tenderId) =>
 
 export const getAuditExport = () => call("/audit/export");
 export const getAuditVerify = () => call("/audit/verify");
+
+export const getTenderReportCsv = (tenderId) =>
+  call(`/tenders/${encodeURIComponent(tenderId)}/report/csv`);
+
+export const getTenderBlockers = (tenderId) =>
+  call(`/tenders/${encodeURIComponent(tenderId)}/blockers`);
