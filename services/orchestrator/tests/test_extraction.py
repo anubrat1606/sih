@@ -3,17 +3,23 @@
 The whole path exercised here runs with no model involved. That is the charter's
 tell-tale test made concrete.
 """
+from datetime import date
+
 import pytest
 from fastapi.testclient import TestClient
 
 from satyapramana_store.app import app, db
 from satyapramana_store.extract import (
-    find_candidates, find_pan_holder_fields, gstin_check_digit, pan_from_gstin,
-    read_pdf, validate_cin, validate_gstin, validate_pan,
+    find_candidates, find_document_dates, find_pan_holder_fields,
+    gstin_check_digit, pan_from_gstin, read_pdf, validate_cin,
+    validate_document_date, validate_gstin, validate_pan,
     validate_pan_date_of_birth, validate_pan_holder_name, validate_udyam,
 )
 
-from .conftest_pdf import imageless_pdf, pan_card_lines, text_pdf, valid_cin, valid_gstin
+from .conftest_pdf import (
+    gst_certificate_lines, imageless_pdf, pan_card_lines, text_pdf, valid_cin,
+    valid_gstin,
+)
 
 GSTIN = valid_gstin()
 PAN = pan_from_gstin(GSTIN)
@@ -121,6 +127,23 @@ def test_a_well_formed_holder_name_validates():
 ])
 def test_malformed_holder_names_are_rejected(bad, why):
     assert not validate_pan_holder_name(bad).ok, why
+
+
+def test_a_well_formed_document_date_validates():
+    check = validate_document_date("01/04/2023")
+    assert check.ok and "2023" in check.detail
+    assert validate_document_date("29/02/2024").ok, "2024 is a leap year"
+
+
+@pytest.mark.parametrize("bad,why", [
+    ("2023-04-01", "wrong format (ISO, not DD/MM/YYYY)"),
+    ("01-04-2023", "wrong separator"),
+    ("31/04/2023", "April has no 31st"),
+    ("29/02/2023", "2023 is not a leap year"),
+    ("", "empty"),
+])
+def test_malformed_document_dates_are_rejected(bad, why):
+    assert not validate_document_date(bad).ok, why
 
 
 def test_a_gstin_carries_its_holders_pan():
@@ -306,6 +329,90 @@ def test_no_pan_holder_labels_means_no_candidates_at_all():
     assert find_pan_holder_fields(read_pdf(pdf)) == []
 
 
+def test_a_label_repeated_across_pages_produces_only_one_candidate():
+    """A document has one printed name, not one per page that happens to
+    repeat the label. Two candidates for the same field would mean two
+    FIELD_EXTRACTED events for the same path, which docs/EVENTS.md says
+    never happens."""
+    pdf = text_pdf(["Name", "RAHUL KUMAR SHARMA"], pages=3)
+    found = [c for c in find_pan_holder_fields(read_pdf(pdf)) if c.field == "pan_holder_name"]
+    assert len(found) == 1
+    assert found[0].page == 1  # the first page found is authoritative
+
+
+def test_document_dates_are_located_with_their_boxes():
+    pdf = text_pdf(["Test fixture, not a certificate.", *gst_certificate_lines()])
+    found = {c.field: c for c in find_document_dates(read_pdf(pdf))}
+    assert set(found) == {"gst_date_of_issue", "gst_date_of_expiry"}
+    issue, expiry = found["gst_date_of_issue"], found["gst_date_of_expiry"]
+    assert issue.valid and issue.value == "01/04/2023" and issue.page == 1
+    assert expiry.valid and expiry.value == "31/03/2028"
+    for field in (issue, expiry):
+        x0, top, x1, bottom = field.region
+        assert x1 > x0 and bottom > top, "a real, non-degenerate rectangle"
+
+
+def test_an_alternate_label_wording_is_also_recognised():
+    """A GST certificate might say 'Date of Issue'; another document type
+    might say 'Issued on' -- both must resolve to the same field."""
+    pdf = text_pdf(gst_certificate_lines(issue_label="Issued on",
+                                          expiry_label="Valid until"))
+    found = {c.field: c for c in find_document_dates(read_pdf(pdf))}
+    assert found["gst_date_of_issue"].valid
+    assert found["gst_date_of_expiry"].valid
+
+
+def test_a_blank_issue_date_field_is_not_read_as_a_guess():
+    pdf = text_pdf(gst_certificate_lines(issue=None))
+    found = {c.field: c for c in find_document_dates(read_pdf(pdf))}
+    assert not found["gst_date_of_issue"].valid
+    assert "itself a printed label" in found["gst_date_of_issue"].detail
+    assert found["gst_date_of_expiry"].valid
+
+
+def test_a_malformed_document_date_is_reported_as_invalid_not_guessed():
+    pdf = text_pdf(gst_certificate_lines(issue="2023-04-01"))
+    found = [c for c in find_document_dates(read_pdf(pdf)) if c.field == "gst_date_of_issue"]
+    assert found and not found[0].valid
+    assert "DD/MM/YYYY" in found[0].detail
+
+
+def test_no_document_date_labels_means_no_candidates_at_all():
+    pdf = text_pdf([f"GSTIN: {GSTIN}"])
+    assert find_document_dates(read_pdf(pdf)) == []
+
+
+def test_a_document_date_label_repeated_across_pages_produces_only_one_candidate():
+    pdf = text_pdf(["Date of Issue", "01/04/2023"], pages=3)
+    found = [c for c in find_document_dates(read_pdf(pdf)) if c.field == "gst_date_of_issue"]
+    assert len(found) == 1
+    assert found[0].page == 1
+
+
+def test_an_issue_date_in_the_future_is_rejected():
+    """Pinning `today` keeps this deterministic regardless of when the suite
+    actually runs -- the fixture's issue date is always "the future" relative
+    to the pinned reference, never relative to the real calendar."""
+    pdf = text_pdf(gst_certificate_lines(issue="01/04/2023", expiry=None))
+    found = {c.field: c for c in find_document_dates(read_pdf(pdf), today=date(2020, 1, 1))}
+    assert not found["gst_date_of_issue"].valid
+    assert "in the future" in found["gst_date_of_issue"].detail
+
+
+def test_an_expiry_before_issue_is_rejected():
+    pdf = text_pdf(gst_certificate_lines(issue="01/04/2023", expiry="01/01/2023"))
+    found = {c.field: c for c in find_document_dates(read_pdf(pdf), today=date(2025, 1, 1))}
+    assert found["gst_date_of_issue"].valid  # the issue date itself is fine on its own
+    assert not found["gst_date_of_expiry"].valid
+    assert "before this document's own issue date" in found["gst_date_of_expiry"].detail
+
+
+def test_an_expiry_equal_to_the_issue_date_is_not_treated_as_before_it():
+    pdf = text_pdf(gst_certificate_lines(issue="01/04/2023", expiry="01/04/2023"))
+    found = {c.field: c for c in find_document_dates(read_pdf(pdf), today=date(2025, 1, 1))}
+    assert found["gst_date_of_issue"].valid and found["gst_date_of_expiry"].valid
+
+
 # --- through the API ----------------------------------------------------------
 
 def test_uploading_a_document_extracts_and_records_it(client):
@@ -427,6 +534,30 @@ def test_a_pan_card_with_a_blank_name_field_reports_it_as_rejected(client, conn)
         assert cur.fetchone()[0] == 0
 
 
+def test_uploading_a_gst_certificate_extracts_issue_and_expiry(client):
+    pdf = text_pdf(["GST Registration Certificate (test fixture).",
+                    *gst_certificate_lines()])
+    body = upload(client, pdf).json()
+    by_path = {e["path"]: e for e in body["extracted"]}
+    assert by_path["bidder.gst.date_of_issue"]["value"] == "01/04/2023"
+    assert by_path["bidder.gst.date_of_expiry"]["value"] == "31/03/2028"
+    for path in ("bidder.gst.date_of_issue", "bidder.gst.date_of_expiry"):
+        assert len(by_path[path]["region"]) == 4
+
+
+def test_an_expiry_before_issue_is_rejected_through_the_api(client, conn):
+    pdf = text_pdf(gst_certificate_lines(issue="01/04/2023", expiry="01/01/2023"))
+    body = upload(client, pdf).json()
+    assert "bidder.gst.date_of_expiry" not in {e["path"] for e in body["extracted"]}
+    rejected = {r["path"]: r for r in body["rejected"]}
+    assert "before this document's own issue date" in rejected["bidder.gst.date_of_expiry"]["detail"]
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM events WHERE event_type='FIELD_EXTRACTED' "
+            "AND payload->>'path'='bidder.gst.date_of_expiry'")
+        assert cur.fetchone()[0] == 0
+
+
 def test_a_non_pdf_upload_fails_honestly(client):
     body = upload(client, b"this is not a pdf", name="notes.txt").json()
     assert body["extracted"] == [] and "could not read as PDF" in body["error"]
@@ -539,6 +670,34 @@ def test_the_trail_reaches_the_source_document_for_the_holder_name(client):
     extraction = trail[2]["payload"]
     assert extraction["value"] == "RAHUL KUMAR SHARMA"
     assert extraction["path"] == "bidder.pan.holder_name"
+    assert len(extraction["region"]) == 4
+
+
+def test_the_trail_reaches_the_source_document_for_the_gst_expiry_date(client):
+    """This is the date a bid-submission-date `date_before`/`active_on`
+    check would compare against -- the trail must reach the real line on
+    the real certificate, same as every other extracted field."""
+    pdf = text_pdf(["Test fixture, not a certificate.", *gst_certificate_lines()])
+    upload(client, pdf)
+
+    from .test_decide import EVAL, PACK
+    pack = {**PACK, "requirements": [
+        {"id": "R1", "text": "Bidder shall state the GST certificate's expiry date.",
+         "source": {"page": 14, "region": [72, 470, 523, 494]},
+         "obligation": "mandatory", "operator": "LEAF",
+         "predicate": {"op": "exists", "subject": {"field": "bidder.gst.date_of_expiry"}}}]}
+    client.post("/tenders/T1/rule-pack",
+                json={"officer_id": "officer_1", "pack": pack})
+    client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL)
+
+    trail = client.get("/bidders/A/requirements/R1/provenance").json()["trail"]
+    kinds = [t["event_type"] for t in trail]
+    assert kinds == ["REQUIREMENT_EVALUATED", "EVIDENCE_FUSED",
+                     "FIELD_EXTRACTED", "DOCUMENT_INGESTED"]
+
+    extraction = trail[2]["payload"]
+    assert extraction["value"] == "31/03/2028"
+    assert extraction["path"] == "bidder.gst.date_of_expiry"
     assert len(extraction["region"]) == 4
 
 

@@ -31,6 +31,14 @@ PAN_DOB_RE = re.compile(r"[0-9]{2}/[0-9]{2}/[0-9]{4}")
 #: wrong line.
 PAN_HOLDER_NAME_RE = re.compile(r"[A-Z][A-Z .'\-]{1,98}[A-Z.]")
 
+#: Indian statutory documents (GST certificates included) print dates as
+#: DD/MM/YYYY -- the same convention as PAN_DOB_RE, kept as its own regex
+#: rather than shared with it because the two fields are validated by
+#: different rules (a birth date has no "must not be in the future" check; a
+#: document date does -- see validate_document_date's docstring for why that
+#: check lives in ingest.py instead of here).
+DOCUMENT_DATE_RE = re.compile(r"[0-9]{2}/[0-9]{2}/[0-9]{4}")
+
 #: A CIN is 21 characters: listing status (L or U), a 5-digit industry code, a
 #: 2-letter Registrar-of-Companies state code, the 4-digit year of
 #: incorporation, a 3-letter ownership class, and a 6-digit registration number.
@@ -138,6 +146,39 @@ def validate_pan_date_of_birth(value: str) -> Check:
         date(year, month, day)
     except ValueError:
         return Check(False, f"{value} is not a real calendar date")
+    return Check(True, f"parses as {value} (DD/MM/YYYY)")
+
+
+def parse_document_date(value: str) -> date | None:
+    """DD/MM/YYYY -> a real calendar date, or None if the string is not one.
+
+    Shared by validate_document_date and the issue/expiry plausibility check
+    in ingest.py, which needs the parsed value, not just a yes/no.
+    """
+    from datetime import date
+    if not DOCUMENT_DATE_RE.fullmatch(value):
+        return None
+    day, month, year = (int(part) for part in value.split("/"))
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def validate_document_date(value: str) -> Check:
+    """Grammar and real-calendar-date only. Deliberately does NOT check
+    whether the date is a *plausible* one to find here (not in the future,
+    not before another related date) -- that needs the wall clock and, for
+    an issue/expiry pair, the sibling field this function is never given.
+    Baking either into a structural validator would make it give a
+    different answer depending on when it happens to run, which a
+    directly-unit-tested, reusable validator must not do. That check lives
+    in ingest.py's _cross_check_document_dates instead, once both of a
+    document's dates (if any) are known, with the reference date taken as a
+    parameter rather than reached for internally.
+    """
+    if parse_document_date(value) is None:
+        return Check(False, "does not match DD/MM/YYYY, or is not a real calendar date")
     return Check(True, f"parses as {value} (DD/MM/YYYY)")
 
 

@@ -12,12 +12,13 @@ import hashlib
 import os
 import uuid
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from .grammars import (
-    PATTERNS, SCAN_ORDER, VALIDATORS, pan_from_gstin, validate_pan_date_of_birth,
-    validate_pan_holder_name,
+    PATTERNS, SCAN_ORDER, VALIDATORS, parse_document_date, pan_from_gstin,
+    validate_document_date, validate_pan_date_of_birth, validate_pan_holder_name,
 )
 from .layout import Page, Word, lines, locate, read_pdf, searchable
 from .vlm import UnconfiguredVisionStage
@@ -41,6 +42,8 @@ FIELD_PATHS = {
     "cin": "bidder.entity.cin",
     "pan_holder_name": "bidder.pan.holder_name",
     "pan_date_of_birth": "bidder.pan.date_of_birth",
+    "gst_date_of_issue": "bidder.gst.date_of_issue",
+    "gst_date_of_expiry": "bidder.gst.date_of_expiry",
 }
 
 
@@ -118,12 +121,26 @@ PAN_HOLDER_FIELDS: dict[tuple[str, ...], tuple[str, Any]] = {
     ("DATE", "OF", "BIRTH"): ("pan_date_of_birth", validate_pan_date_of_birth),
 }
 
+#: Evidence field key -> the label lines that might precede its value,
+#: tried in order (first one found on the page wins). A field can be printed
+#: under more than one wording depending on document type -- a GST
+#: certificate might say "Date of Issue", something else "Issued on" -- the
+#: same reason "Name" and "Date of Birth" needed two separate label lookups
+#: on the PAN card, just now more than one label can point at the same
+#: field.
+DOCUMENT_DATE_LABELS: dict[str, tuple[tuple[str, ...], ...]] = {
+    "gst_date_of_issue": (("DATE", "OF", "ISSUE"), ("ISSUED", "ON")),
+    "gst_date_of_expiry": (("DATE", "OF", "EXPIRY"), ("VALID", "UNTIL")),
+}
+
 #: If the line under a label is itself one of these known label phrases, the
 #: field is blank on the card -- reading it anyway would assert a value the
 #: document does not actually state.
-_KNOWN_LABEL_LINES = {" ".join(words) for words in PAN_HOLDER_FIELDS} | {
-    "PERMANENT ACCOUNT NUMBER", "FATHER'S NAME", "FATHERS NAME", "SIGNATURE",
-}
+_KNOWN_LABEL_LINES = (
+    {" ".join(words) for words in PAN_HOLDER_FIELDS}
+    | {" ".join(words) for options in DOCUMENT_DATE_LABELS.values() for words in options}
+    | {"PERMANENT ACCOUNT NUMBER", "FATHER'S NAME", "FATHERS NAME", "SIGNATURE"}
+)
 
 
 def _line_text(line: list[Word]) -> str:
@@ -143,6 +160,44 @@ def _label_line_index(grouped: list[list[Word]], label_words: tuple[str, ...]) -
     return None
 
 
+def _first_label_line_index(
+    grouped: list[list[Word]], label_options: tuple[tuple[str, ...], ...],
+) -> int | None:
+    """The first of several acceptable label wordings that is actually on
+    the page. Order is a tie-break, not a preference -- a document prints at
+    most one wording of any given label."""
+    for label_words in label_options:
+        idx = _label_line_index(grouped, label_words)
+        if idx is not None:
+            return idx
+    return None
+
+
+def _read_value_under_label(
+    page: Page, grouped: list[list[Word]], idx: int, field: str, validate: Any,
+) -> Candidate:
+    """`idx` is a confirmed label line. Read the line beneath it and
+    validate it; a blank line or a line that is itself another known label
+    is reported as an invalid Candidate (the field is blank on the
+    document), never as a guessed value."""
+    if idx + 1 >= len(grouped):
+        return Candidate(
+            field, "", page.number, _line_region(grouped[idx]), False,
+            "the label is the last line on the page; no value line follows it")
+    value_line = grouped[idx + 1]
+    text = _line_text(value_line)
+    region = _line_region(value_line)
+    if not text:
+        return Candidate(field, text, page.number, region, False,
+                          "the line under the label is blank")
+    if text.rstrip(":").upper() in _KNOWN_LABEL_LINES:
+        return Candidate(
+            field, text, page.number, region, False,
+            "the line under the label is itself a printed label -- the field is blank")
+    check = validate(text)
+    return Candidate(field, text, page.number, region, check.ok, check.detail)
+
+
 def find_pan_holder_fields(pages: list[Page]) -> list[Candidate]:
     """Read the PAN cardholder's printed name and date of birth.
 
@@ -154,37 +209,95 @@ def find_pan_holder_fields(pages: list[Page]) -> list[Candidate]:
     caller records EXTRACTION_FAILED with the real reason instead of a guess.
     """
     candidates: list[Candidate] = []
+    found: set[str] = set()
     for page in pages:
         if not page.has_text_layer:
             continue  # find_candidates already records this page as unreadable
         grouped = lines(page)
         for label_words, (field, validate) in PAN_HOLDER_FIELDS.items():
+            if field in found:
+                continue  # a document has one printed value per field, not
+                          # one per page that happens to repeat the label --
+                          # the first page found is authoritative, and this
+                          # is what keeps one FIELD_EXTRACTED per field true
+                          # (docs/EVENTS.md) even if a label is repeated
             idx = _label_line_index(grouped, label_words)
             if idx is None:
                 continue
-            if idx + 1 >= len(grouped):
-                candidates.append(Candidate(
-                    field, "", page.number, _line_region(grouped[idx]), False,
-                    "the label is the last line on the page; no value line follows it"))
-                continue
-            value_line = grouped[idx + 1]
-            text = _line_text(value_line)
-            region = _line_region(value_line)
-            if not text:
-                candidates.append(Candidate(
-                    field, text, page.number, region, False,
-                    "the line under the label is blank"))
-                continue
-            if text.rstrip(":").upper() in _KNOWN_LABEL_LINES:
-                candidates.append(Candidate(
-                    field, text, page.number, region, False,
-                    "the line under the label is itself a printed label -- "
-                    "the field is blank"))
-                continue
-            check = validate(text)
-            candidates.append(Candidate(field, text, page.number, region,
-                                        check.ok, check.detail))
+            candidates.append(_read_value_under_label(page, grouped, idx, field, validate))
+            found.add(field)
     return candidates
+
+
+def find_document_dates(pages: list[Page], *, today: date | None = None) -> list[Candidate]:
+    """Read a document's printed issue/expiry dates: label on one line
+    (tried under each of its known alternate wordings), value on the line
+    beneath -- the same label/value technique as find_pan_holder_fields.
+
+    Validation happens in two passes. Each date is checked on its own as it
+    is found (real calendar date, DD/MM/YYYY -- grammars.validate_document_date).
+    Once both of a document's dates are known, a second pass
+    (_cross_check_document_dates) checks they make sense together: an issue
+    date in the future, or an expiry before the document's own issue date,
+    is a value the first pass cannot catch on its own but is still not one
+    to accept silently.
+
+    `today` defaults to the real current date in production
+    (ingest_document never passes it) and exists as a parameter so a test
+    can pin the reference date instead of depending on when the suite
+    happens to run.
+    """
+    candidates: list[Candidate] = []
+    found: set[str] = set()
+    for page in pages:
+        if not page.has_text_layer:
+            continue
+        grouped = lines(page)
+        for field, label_options in DOCUMENT_DATE_LABELS.items():
+            if field in found:
+                continue  # one printed value per field, not one per page --
+                          # see the identical guard in find_pan_holder_fields
+            idx = _first_label_line_index(grouped, label_options)
+            if idx is None:
+                continue
+            candidates.append(
+                _read_value_under_label(page, grouped, idx, field, validate_document_date))
+            found.add(field)
+    return _cross_check_document_dates(candidates, today=today)
+
+
+def _cross_check_document_dates(
+    candidates: list[Candidate], *, today: date | None = None,
+) -> list[Candidate]:
+    """A grammatically valid date can still be an implausible one in
+    context: an issue date after today, or an expiry date before this same
+    document's own issue date. Neither check is possible inside
+    validate_document_date, which sees one string at a time and must not
+    reach for the wall clock itself (see its docstring) -- so both run here,
+    once, after both fields (if present) have already passed the grammar
+    check on their own.
+    """
+    by_field = {c.field: c for c in candidates if c.valid}
+    issue = by_field.get("gst_date_of_issue")
+    expiry = by_field.get("gst_date_of_expiry")
+    issue_date = parse_document_date(issue.value) if issue else None
+    expiry_date = parse_document_date(expiry.value) if expiry else None
+    reference = today or date.today()
+
+    def revise(candidate: Candidate) -> Candidate:
+        if candidate is issue and issue_date is not None and issue_date > reference:
+            return Candidate(
+                candidate.field, candidate.value, candidate.page, candidate.region, False,
+                f"{candidate.value} is an issue date in the future")
+        if (candidate is expiry and issue_date is not None and expiry_date is not None
+                and expiry_date < issue_date):
+            return Candidate(
+                candidate.field, candidate.value, candidate.page, candidate.region, False,
+                f"expiry {candidate.value} is before this document's own issue date "
+                f"{issue.value}")
+        return candidate
+
+    return [revise(c) for c in candidates]
 
 
 def ingest_document(
@@ -215,10 +328,11 @@ def ingest_document(
                 "error": f"could not read as PDF: {exc}"}
 
     candidates, unreadable = find_candidates(pages)
-    # Label/value fields (name, date of birth) are a different lookup method
-    # (layout, not grammar) but the same Candidate shape, so they join the
-    # same list and flow through the one emission loop below unchanged.
-    candidates = candidates + find_pan_holder_fields(pages)
+    # Label/value fields (name, date of birth, issue/expiry dates) are a
+    # different lookup method (layout, not grammar) but the same Candidate
+    # shape, so they join the same list and flow through the one emission
+    # loop below unchanged.
+    candidates = candidates + find_pan_holder_fields(pages) + find_document_dates(pages)
 
     extracted, rejected = [], []
     for candidate in candidates:
