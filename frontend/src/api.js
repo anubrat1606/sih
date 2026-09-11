@@ -90,5 +90,8 @@ export const getBidderEvidenceGraph = (bidderId, tenderId) =>
 export const getRepairPlan = (bidderId, tenderId) =>
   call(`/bidders/${encodeURIComponent(bidderId)}/repair-plan?${new URLSearchParams({ tender_id: tenderId })}`);
 
+export const getExplanation = (bidderId, tenderId) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/explain?${new URLSearchParams({ tender_id: tenderId })}`);
+
 export const getAuditExport = () => call("/audit/export");
 export const getAuditVerify = () => call("/audit/verify");

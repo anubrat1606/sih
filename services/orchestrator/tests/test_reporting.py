@@ -272,6 +272,80 @@ def test_dossier_endpoint_refuses_without_an_adopted_pack(client):
     assert client.get("/bidders/A/dossier", params={"tender_id": "T1"}).status_code == 409
 
 
+# --- EXPLAIN --------------------------------------------------------------
+# satyapramana.md 2.2: a narrator, never a judge. No test here makes a real
+# call to a provider -- see test_explain.py's own docstring for why.
+
+def test_explain_endpoint_refuses_without_an_adopted_pack(client):
+    client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
+    assert client.get("/bidders/A/explain", params={"tender_id": "T1"}).status_code == 409
+
+
+def test_explain_endpoint_is_honestly_unavailable_without_a_configured_provider(client):
+    """The test environment has no SATYAPRAMANA_GEMINI_API_KEY -- the same
+    honest-degrade shape as every unconfigured verification capability."""
+    client.post("/tenders/T1/rule-pack", json={"officer_id": "officer_1", "pack": {
+        "rule_pack_id": "test.explain", "semver": "1.0.0",
+        "tender_reference": {"tender_id": "T1", "source_document_sha256": "a" * 64,
+                             "issuing_authority": "Test Authority"},
+        "constants": {"partial_credit": 0.5, "w_mandatory": 1.0, "w_desirable": 0.3,
+                     "recency_floor": 0.5, "corroboration_step": 0.1,
+                     "coverage_floor_high": 50, "coverage_floor_medium": 80,
+                     "confidence_floor": 70, "freshness_days": {"GST_STATUS": 30}},
+        "requirements": PACK["requirements"],
+    }})
+    client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
+    client.post("/bidders/A/verify", params={"tender_id": "T1"})
+    client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
+               json={"bid_submission_date": "2026-09-22"})
+
+    body = client.get("/bidders/A/explain", params={"tender_id": "T1"}).json()
+    assert body["bidder_id"] == "A" and body["tender_id"] == "T1"
+    assert body["available"] is False
+    assert body["narrative"] is None
+    assert "not configured" in body["reason"]
+    assert body["model"] is None and body["generated_at"] is None
+
+
+def test_explain_endpoint_returns_a_narrative_from_a_configured_provider(client, monkeypatch):
+    """Swaps in a fake Explainer, structurally identical to GeminiExplainer,
+    to prove the endpoint's wiring end-to-end without a real provider call."""
+    from datetime import datetime, timezone
+
+    from satyapramana_store import app as app_module
+    from satyapramana_store.explain import Narrated
+
+    class _FakeExplainer:
+        def narrate(self, dossier_text):
+            assert "COMPLIANCE DOSSIER" in dossier_text  # the real dossier, not a stub
+            return Narrated(narrative="A fake but real narrative.",
+                            model="fake-model", generated_at=datetime.now(timezone.utc))
+
+    monkeypatch.setattr(app_module, "EXPLAINER", _FakeExplainer())
+
+    client.post("/tenders/T1/rule-pack", json={"officer_id": "officer_1", "pack": {
+        "rule_pack_id": "test.explain2", "semver": "1.0.0",
+        "tender_reference": {"tender_id": "T1", "source_document_sha256": "a" * 64,
+                             "issuing_authority": "Test Authority"},
+        "constants": {"partial_credit": 0.5, "w_mandatory": 1.0, "w_desirable": 0.3,
+                     "recency_floor": 0.5, "corroboration_step": 0.1,
+                     "coverage_floor_high": 50, "coverage_floor_medium": 80,
+                     "confidence_floor": 70, "freshness_days": {"GST_STATUS": 30}},
+        "requirements": PACK["requirements"],
+    }})
+    client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
+    client.post("/bidders/A/verify", params={"tender_id": "T1"})
+    client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
+               json={"bid_submission_date": "2026-09-22"})
+
+    body = client.get("/bidders/A/explain", params={"tender_id": "T1"}).json()
+    assert body["available"] is True
+    assert body["narrative"] == "A fake but real narrative."
+    assert body["model"] == "fake-model"
+    assert body["reason"] is None
+    assert body["generated_at"] is not None
+
+
 def test_tender_report_endpoint_aggregates_the_real_bidder_list(client):
     client.post("/tenders/T1/bidders", json={"bidder_id": "A", "phone": "1111111111"})
     client.post("/tenders/T1/bidders", json={"bidder_id": "B", "phone": "1111111111"})

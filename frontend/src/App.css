@@ -36,6 +36,14 @@ h2 { font-size: var(--text-lg); margin-top: var(--space-6); }
 .page { max-width: 900px; margin: 0 auto; padding: var(--space-5) var(--space-4); }
 .hint { color: var(--color-text-secondary); font-size: var(--text-base); }
 
+/* EXPLAIN stage output -- a presentation layer, styled to read as prose, not
+ * as another data row: no mono, no badge, no table. */
+.explain-narrative {
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent); border-radius: var(--radius-sm);
+  padding: var(--space-4); line-height: 1.6; white-space: pre-wrap;
+}
+
 .form { display: flex; flex-direction: column; gap: var(--space-3); max-width: 480px; }
 .form label { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-base); font-weight: 600; }
 .form input, .form select, textarea {
