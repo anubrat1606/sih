@@ -73,5 +73,11 @@ export const overrideVerdict = (bidderId, tenderId, officerId, requirementId, ve
     ...json({ officer_id: officerId, requirement_id: requirementId, verdict_after: verdictAfter, justification }),
   });
 
+export const getAutopsy = (bidderId, tenderId) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/autopsy?${new URLSearchParams({ tender_id: tenderId })}`);
+
+export const getRepairPlan = (bidderId, tenderId) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/repair-plan?${new URLSearchParams({ tender_id: tenderId })}`);
+
 export const getAuditExport = () => call("/audit/export");
 export const getAuditVerify = () => call("/audit/verify");
