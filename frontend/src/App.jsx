@@ -78,7 +78,7 @@ function Nav() {
   return (
     <nav className="topnav">
       <Link to="/">Status</Link>
-      {session && (
+      {session ? (
         <>
           <Link to="/dashboard">Dashboard</Link>
           <Link to="/tenders">Tenders</Link>
@@ -86,6 +86,8 @@ function Nav() {
           <Link to="/audit">Audit log</Link>
           {roleAtLeast(session.role, "ADMIN") && <Link to="/admin/users">Officer accounts</Link>}
         </>
+      ) : (
+        <Link to="/login">Sign in</Link>
       )}
       <span className="topnav-note">SATYAPRAMĀṆA — real data only, no simulated authority response</span>
       <AccountBadge />

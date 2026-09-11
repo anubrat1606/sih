@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { getCapabilities } from "../api";
+import { useAuth } from "../authContext";
 import { ErrorBox } from "../components";
 
 export default function StatusPage() {
+  const { session } = useAuth();
   const [body, setBody] = useState(null);
   const [error, setError] = useState(null);
 
@@ -18,6 +21,11 @@ export default function StatusPage() {
         Nothing here is simulated -- a row with no status is a capability
         nobody has configured yet, not one that silently passes.
       </p>
+      {!session && (
+        <p className="actions">
+          <Link to="/login">Sign in →</Link> to register bidders, verify documents, and review tenders.
+        </p>
+      )}
       <ErrorBox error={error} />
       {body && (
         <>
