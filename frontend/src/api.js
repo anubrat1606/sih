@@ -28,6 +28,8 @@ const json = (body) => ({ headers: { "Content-Type": "application/json" }, body:
 
 export const getCapabilities = () => call("/capabilities");
 
+export const listTenders = () => call("/tenders");
+
 export const registerBidder = (tenderId, bidderId, attrs) =>
   call(`/tenders/${encodeURIComponent(tenderId)}/bidders`, { method: "POST", ...json({ bidder_id: bidderId, ...attrs }) });
 
