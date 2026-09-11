@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { adoptRulePack, listTenderBidders } from "../api";
+import { adoptRulePack, getTenderCollusion, listTenderBidders } from "../api";
 import { ErrorBox, Metric, RiskBadge } from "../components";
 
 export default function TenderDashboardPage() {
   const { tenderId } = useParams();
   const [bidders, setBidders] = useState(null);
+  const [collusion, setCollusion] = useState(null);
   const [error, setError] = useState(null);
   const [officerId, setOfficerId] = useState("officer_demo");
   const [packText, setPackText] = useState("");
@@ -14,6 +15,7 @@ export default function TenderDashboardPage() {
 
   function load() {
     listTenderBidders(tenderId).then((body) => setBidders(body.bidders)).catch(setError);
+    getTenderCollusion(tenderId).then((body) => setCollusion(body.bidders)).catch(setError);
   }
 
   useEffect(load, [tenderId]);
@@ -57,6 +59,31 @@ export default function TenderDashboardPage() {
           </Link>
         ))}
       </div>
+
+      <h2>Collusion clusters</h2>
+      <p className="hint">Edges are a shared director name, address, phone, or bank account across bidders on this tender.</p>
+      {(() => {
+        const flagged = (collusion || []).filter((b) => b.flagged);
+        if (!collusion) return null;
+        if (flagged.length === 0) return <p className="hint">No collusion links found among registered bidders.</p>;
+        const clusters = new Map();
+        for (const b of flagged) {
+          if (!clusters.has(b.cluster_id)) clusters.set(b.cluster_id, b.members);
+        }
+        return (
+          <table className="evidence-table">
+            <thead><tr><th>Cluster</th><th>Members</th></tr></thead>
+            <tbody>
+              {[...clusters.entries()].map(([clusterId, members]) => (
+                <tr key={clusterId}>
+                  <td>{clusterId}</td>
+                  <td>{members.join(", ")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+      })()}
 
       <h2>Adopt a rule pack</h2>
       <p className="hint">
