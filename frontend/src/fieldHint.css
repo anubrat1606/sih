@@ -1,0 +1,10 @@
+.field-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  margin-top: var(--space-1);
+}
+.field-hint-neutral { color: var(--color-text-secondary); }
+.field-hint-positive { color: var(--status-pass-fg); }
+.field-hint-negative { color: var(--status-fail-fg); }
