@@ -19,12 +19,38 @@ append-only, hash-chained PostgreSQL table. Collusion detection stays in
 scope: edges become events, clusters are a PostgreSQL recursive-CTE
 projection, so a flag survives a restart and can be audited.
 
-Two amendments approved since, both still in force:
+Three amendments approved since, all still in force:
 - **Auth was explicitly out of scope for the prototype through round 4.**
   Reversed after round 4 shipped, building toward a real officer-usable
   product rather than only a panel demo — see "Built and merged" below.
 - **Tender Management** ("declined infrastructure cost" in the original
   scoping) was reconsidered for the same reason and built — see below.
+- **Decided 2026-09-12: no Docker.** Round 5's task list proposed a
+  `Dockerfile` per service plus a `docker-compose.yml`. Declined —
+  unneeded infrastructure cost for a hackathon prototype, same reasoning as
+  the Next.js decline above. If a later round genuinely needs a
+  one-command reproducible environment, revisit then; nobody should build
+  this speculatively in the meantime.
+
+## Database access — decided 2026-09-12
+
+Not everyone can get a local PostgreSQL running (no admin rights, an
+unfamiliar OS, a locked-down sandbox — this is exactly what blocked Kevin
+from live-verifying PR #56 before opening it). Rather than Docker, the
+team uses **one shared Neon Postgres project** (neon.tech, free tier,
+standard Postgres wire protocol) as the simplest fix that needs no local
+install and works from any machine:
+
+- Ask Anubrat for the connection string — shared over a private channel,
+  **never committed** — and paste it as `DATABASE_URL` in your own
+  `services/orchestrator/.env`, keeping its `?sslmode=require` suffix.
+- A local Postgres still works exactly as before for anyone who has one;
+  the shared project is only for whoever doesn't. Nothing about how the
+  app runs changes either way — see `CONTRIBUTING.md`'s Setup section.
+- Free-tier Neon auto-suspends after inactivity; the first request after
+  a while just takes a couple of seconds to wake it back up. Not a bug.
+- This resolves the *database* half of gap 2 below. The Sandbox.co.in /
+  Gemini credentials half is still an open, separate decision.
 
 ---
 
