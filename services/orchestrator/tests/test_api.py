@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from satyapramana_store import app as app_module
 from satyapramana_store.app import app, db
 
+from .conftest import auth_headers
+
 
 @pytest.fixture()
 def client(conn):
@@ -172,36 +174,55 @@ def test_a_collusion_link_drives_risk_to_high(client):
 
 # --- officer actions ----------------------------------------------------------
 
-def test_a_decision_is_recorded_with_a_hash(client):
+def test_a_decision_is_recorded_with_a_hash(client, conn):
     register(client, "T1", "A")
     body = client.post("/bidders/A/decision", params={"tender_id": "T1"},
-                       json={"officer_id": "officer_1", "decision": "DISQUALIFY"}).json()
+                       json={"decision": "DISQUALIFY"},
+                       headers=auth_headers(conn)).json()
     assert len(body["hash"]) == 64 and body["decision"] == "DISQUALIFY"
 
 
-def test_an_invalid_decision_is_refused(client):
+def test_an_invalid_decision_is_refused(client, conn):
     register(client, "T1", "A")
     r = client.post("/bidders/A/decision", params={"tender_id": "T1"},
-                    json={"officer_id": "officer_1", "decision": "MAYBE"})
+                    json={"decision": "MAYBE"}, headers=auth_headers(conn))
     assert r.status_code == 422
 
 
-def test_an_override_without_a_justification_is_refused(client):
+def test_an_override_without_a_justification_is_refused(client, conn):
     register(client, "T1", "A")
     r = client.post("/bidders/A/override", params={"tender_id": "T1"},
-                    json={"officer_id": "officer_1", "requirement_id": "R4.1",
-                          "verdict_after": "PASS", "justification": ""})
+                    json={"requirement_id": "R4.1",
+                          "verdict_after": "PASS", "justification": ""},
+                    headers=auth_headers(conn))
     assert r.status_code == 422
+
+
+def test_a_decision_without_a_token_is_refused(client):
+    register(client, "T1", "A")
+    r = client.post("/bidders/A/decision", params={"tender_id": "T1"},
+                    json={"decision": "QUALIFY"})
+    assert r.status_code == 401
+
+
+def test_a_base_officer_cannot_override_a_verdict(client, conn):
+    register(client, "T1", "A")
+    from satyapramana_store.auth.models import Role
+    r = client.post("/bidders/A/override", params={"tender_id": "T1"},
+                    json={"requirement_id": "R4.1", "verdict_after": "PASS",
+                          "justification": "manual review"},
+                    headers=auth_headers(conn, username="junior_officer", role=Role.OFFICER))
+    assert r.status_code == 403
 
 
 # --- audit --------------------------------------------------------------------
 
-def test_the_exported_chain_verifies(client):
+def test_the_exported_chain_verifies(client, conn):
     register(client, "T1", "A", phone="1111111111")
     register(client, "T1", "B", phone="1111111111")
     client.post("/bidders/A/verify", params={"tender_id": "T1"})
     client.post("/bidders/A/decision", params={"tender_id": "T1"},
-                json={"officer_id": "officer_1", "decision": "DISQUALIFY"})
+                json={"decision": "DISQUALIFY"}, headers=auth_headers(conn))
 
     report = client.get("/audit/verify").json()
     assert report["intact"] is True
@@ -216,10 +237,10 @@ def test_the_export_is_json_lines_a_third_party_can_check(client):
     assert all("prev_hash" in l and "hash" in l for l in lines[1:])
 
 
-def test_the_officer_decision_appears_in_the_chain(client):
+def test_the_officer_decision_appears_in_the_chain(client, conn):
     register(client, "T1", "A")
     client.post("/bidders/A/decision", params={"tender_id": "T1"},
-                json={"officer_id": "officer_1", "decision": "QUALIFY"})
+                json={"decision": "QUALIFY"}, headers=auth_headers(conn))
     lines = [json.loads(l) for l in client.get("/audit/export").text.splitlines()
              if l.strip()][1:]
     decisions = [l for l in lines if l["event_type"] == "DECISION_RECORDED"]

@@ -17,6 +17,7 @@ from satyapramana_store.extract import (
     validate_pan_holder_name, validate_udyam,
 )
 
+from .conftest import auth_headers
 from .conftest_pdf import (
     gst_certificate_lines, gst_claimed_name_lines, imageless_pdf, pan_card_lines,
     text_pdf, valid_cin, valid_gstin,
@@ -694,7 +695,7 @@ def test_an_empty_upload_is_refused(client):
 
 # --- the provenance chain now reaches the document ----------------------------
 
-def test_the_trail_reaches_the_source_document_with_page_and_region(client):
+def test_the_trail_reaches_the_source_document_with_page_and_region(client, conn):
     """The demo axiom: click a verdict, land on the exact line of the PDF."""
     pdf = text_pdf(["Test fixture, not a certificate.", f"GSTIN: {GSTIN}"])
     upload(client, pdf)
@@ -706,7 +707,7 @@ def test_the_trail_reaches_the_source_document_with_page_and_region(client):
          "obligation": "mandatory", "operator": "LEAF",
          "predicate": {"op": "exists", "subject": {"field": "bidder.gst.gstin"}}}]}
     client.post("/tenders/T1/rule-pack",
-                json={"officer_id": "officer_1", "pack": pack})
+                json={"pack": pack}, headers=auth_headers(conn))
     client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL)
 
     trail = client.get("/bidders/A/requirements/R1/provenance").json()["trail"]
@@ -739,7 +740,7 @@ def test_an_unknown_document_hash_is_a_clean_404_not_a_guess(client):
     assert resp.status_code == 404
 
 
-def test_the_trail_reaches_the_source_document_for_a_cin(client):
+def test_the_trail_reaches_the_source_document_for_a_cin(client, conn):
     """A CIN read off a company document is the input MCA verification needs and
     the claim its answer is fused against -- the trail must reach the PDF line."""
     pdf = text_pdf(["Test fixture, not a certificate.", f"CIN: {CIN}"])
@@ -752,7 +753,7 @@ def test_the_trail_reaches_the_source_document_for_a_cin(client):
          "obligation": "mandatory", "operator": "LEAF",
          "predicate": {"op": "exists", "subject": {"field": "bidder.entity.cin"}}}]}
     client.post("/tenders/T1/rule-pack",
-                json={"officer_id": "officer_1", "pack": pack})
+                json={"pack": pack}, headers=auth_headers(conn))
     client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL)
 
     trail = client.get("/bidders/A/requirements/R1/provenance").json()["trail"]
@@ -767,7 +768,7 @@ def test_the_trail_reaches_the_source_document_for_a_cin(client):
     assert extraction["path"] == "bidder.entity.cin"
 
 
-def test_the_trail_reaches_the_source_document_for_the_holder_name(client):
+def test_the_trail_reaches_the_source_document_for_the_holder_name(client, conn):
     """This is the field PanStatusAdapter needs as `pan_holder_name` -- the
     trail proves it, like every other extracted field, comes from a real
     line on a real uploaded document."""
@@ -781,7 +782,7 @@ def test_the_trail_reaches_the_source_document_for_the_holder_name(client):
          "obligation": "mandatory", "operator": "LEAF",
          "predicate": {"op": "exists", "subject": {"field": "bidder.pan.holder_name"}}}]}
     client.post("/tenders/T1/rule-pack",
-                json={"officer_id": "officer_1", "pack": pack})
+                json={"pack": pack}, headers=auth_headers(conn))
     client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL)
 
     trail = client.get("/bidders/A/requirements/R1/provenance").json()["trail"]
@@ -795,7 +796,7 @@ def test_the_trail_reaches_the_source_document_for_the_holder_name(client):
     assert len(extraction["region"]) == 4
 
 
-def test_the_trail_reaches_the_source_document_for_the_gst_expiry_date(client):
+def test_the_trail_reaches_the_source_document_for_the_gst_expiry_date(client, conn):
     """This is the date a bid-submission-date `date_before`/`active_on`
     check would compare against -- the trail must reach the real line on
     the real certificate, same as every other extracted field."""
@@ -809,7 +810,7 @@ def test_the_trail_reaches_the_source_document_for_the_gst_expiry_date(client):
          "obligation": "mandatory", "operator": "LEAF",
          "predicate": {"op": "exists", "subject": {"field": "bidder.gst.date_of_expiry"}}}]}
     client.post("/tenders/T1/rule-pack",
-                json={"officer_id": "officer_1", "pack": pack})
+                json={"pack": pack}, headers=auth_headers(conn))
     client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL)
 
     trail = client.get("/bidders/A/requirements/R1/provenance").json()["trail"]
@@ -823,7 +824,7 @@ def test_the_trail_reaches_the_source_document_for_the_gst_expiry_date(client):
     assert len(extraction["region"]) == 4
 
 
-def test_the_trail_reaches_the_source_document_for_the_claimed_legal_name(client):
+def test_the_trail_reaches_the_source_document_for_the_claimed_legal_name(client, conn):
     """A future FUSE-stage comparison against bidder.gst.legal_name needs
     this to be a real, provenanced claim -- not just a value in a response
     body -- exactly like every other extracted field."""
@@ -838,7 +839,7 @@ def test_the_trail_reaches_the_source_document_for_the_claimed_legal_name(client
          "predicate": {"op": "exists",
                        "subject": {"field": "bidder.gst.claimed_legal_name"}}}]}
     client.post("/tenders/T1/rule-pack",
-                json={"officer_id": "officer_1", "pack": pack})
+                json={"pack": pack}, headers=auth_headers(conn))
     client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL)
 
     trail = client.get("/bidders/A/requirements/R1/provenance").json()["trail"]
@@ -852,7 +853,7 @@ def test_the_trail_reaches_the_source_document_for_the_claimed_legal_name(client
     assert len(extraction["region"]) == 4
 
 
-def test_a_date_predicate_actually_evaluates_against_an_extracted_expiry_date(client):
+def test_a_date_predicate_actually_evaluates_against_an_extracted_expiry_date(client, conn):
     """Found live, not by review: a date_after predicate against a real
     extracted DD/MM/YYYY expiry date came back UNKNOWN/EXTRACTION_FAILED
     instead of FAIL, because satyapramana.predicates._as_date only parses
@@ -870,7 +871,7 @@ def test_a_date_predicate_actually_evaluates_against_an_extracted_expiry_date(cl
          "obligation": "mandatory", "operator": "LEAF",
          "predicate": {"op": "date_after", "left": {"field": "bidder.gst.date_of_expiry"},
                        "right": {"context": "bid_submission_date"}}}]}
-    client.post("/tenders/T1/rule-pack", json={"officer_id": "officer_1", "pack": pack})
+    client.post("/tenders/T1/rule-pack", json={"pack": pack}, headers=auth_headers(conn))
     # gst_certificate_lines()'s expiry is 31/03/2028 -- submitting in 2029 is
     # genuinely past it.
     client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
@@ -882,7 +883,7 @@ def test_a_date_predicate_actually_evaluates_against_an_extracted_expiry_date(cl
     assert r1["reason_effective"] == "DOCUMENT_EXPIRED"
 
 
-def test_a_desirable_requirement_can_pass_with_no_model_in_the_path(client):
+def test_a_desirable_requirement_can_pass_with_no_model_in_the_path(client, conn):
     """Remove every model from this system and it still produces correct
     verdicts on already-extracted evidence.
 
@@ -899,13 +900,13 @@ def test_a_desirable_requirement_can_pass_with_no_model_in_the_path(client):
          "source": {"page": 14}, "obligation": "desirable", "operator": "LEAF",
          "predicate": {"op": "exists", "subject": {"field": "bidder.gst.gstin"}}}]}
     client.post("/tenders/T1/rule-pack",
-                json={"officer_id": "officer_1", "pack": pack})
+                json={"pack": pack}, headers=auth_headers(conn))
     verdicts = client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
                            json=EVAL).json()["verdicts"]
     assert verdicts["R1"]["verdict"] == "PASS"
 
 
-def test_but_a_self_declared_pass_is_capped_at_partial(client):
+def test_but_a_self_declared_pass_is_capped_at_partial(client, conn):
     """An extracted field is the bidder's own document -- Tier C. A mandatory
     requirement resting solely on it can never reach PASS."""
     pdf = text_pdf([f"GSTIN: {GSTIN}"])
@@ -917,14 +918,14 @@ def test_but_a_self_declared_pass_is_capped_at_partial(client):
          "predicate": {"op": "matches", "left": {"field": "bidder.gst.gstin"},
                        "pattern": "[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]"}}]}
     client.post("/tenders/T1/rule-pack",
-                json={"officer_id": "officer_1", "pack": pack})
+                json={"pack": pack}, headers=auth_headers(conn))
     verdicts = client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
                            json=EVAL).json()["verdicts"]
     assert verdicts["R1"]["verdict"] == "PARTIAL"
     assert verdicts["R1"]["reason"] == "SELF_DECLARED_CEILING"
 
 
-def test_extracted_evidence_is_labelled_a_claim_not_an_authority_answer(client):
+def test_extracted_evidence_is_labelled_a_claim_not_an_authority_answer(client, conn):
     """Calling a value read off the bidder's own document AUTHORITY_ONLY would
     overstate the evidence -- the exact failure this system exists to avoid."""
     pdf = text_pdf([f"GSTIN: {GSTIN}"])
@@ -935,7 +936,7 @@ def test_extracted_evidence_is_labelled_a_claim_not_an_authority_answer(client):
          "source": {"page": 14}, "obligation": "desirable", "operator": "LEAF",
          "predicate": {"op": "exists", "subject": {"field": "bidder.gst.gstin"}}}]}
     client.post("/tenders/T1/rule-pack",
-                json={"officer_id": "officer_1", "pack": pack})
+                json={"pack": pack}, headers=auth_headers(conn))
     client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL)
     trail = client.get("/bidders/A/requirements/R1/provenance").json()["trail"]
     fused = next(t for t in trail if t["event_type"] == "EVIDENCE_FUSED")

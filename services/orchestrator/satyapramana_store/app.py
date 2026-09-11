@@ -15,7 +15,8 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+import jwt as _jwt
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
@@ -28,6 +29,8 @@ from satyapramana.verdicts import Obligation, Tier, Verdict
 
 from .adapters import Registry, VerificationRequest, failure_to_judgement
 from .adapters.base import Basis, LawfulBasis
+from .auth import Role, User, decode_token, issue_token, role_at_least
+from .auth import store as auth_store
 from .db import connect, migrate
 from .decide import fuse_and_evaluate
 from .events import Actor, append, export_jsonl, verify_chain
@@ -49,6 +52,10 @@ async def lifespan(_: FastAPI):
     if os.environ.get("SATYAPRAMANA_MIGRATE_ON_START") == "1":
         conn = connect()
         migrate(conn)
+        # Deployment-friendly bootstrap: creates the first ADMIN account from
+        # env vars if one doesn't exist yet and both are set. A no-op
+        # everywhere neither is configured -- see auth/store.py.
+        auth_store.bootstrap_admin(conn)
         conn.close()
     yield
 
@@ -69,10 +76,11 @@ app = FastAPI(
 # from the browser -- without this, every request is blocked by the browser's
 # CORS policy before it ever reaches a route, which no server-side test using
 # a plain HTTP client (curl, node fetch, the FastAPI TestClient) would ever
-# catch, since none of them enforce CORS the way a real browser does. No auth
-# exists in this prototype (out of scope, CLAUDE.md), so a permissive origin
-# list costs nothing beyond what already holds; allow_credentials stays False
-# since there are no cookies or sessions to protect.
+# catch, since none of them enforce CORS the way a real browser does.
+# allow_credentials stays False even now that real auth exists: a session
+# token travels in an Authorization header, set explicitly by the frontend's
+# own fetch call, never an automatically-sent cookie -- there is nothing here
+# for a credentialed CORS policy to protect against.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -87,6 +95,12 @@ app.add_middleware(
 SYSTEM = Actor("SYSTEM", "orchestrator")
 REGISTRY = Registry.from_file()
 CONSTANTS = Constants()
+
+# Unset in an unconfigured deployment -- same honesty pattern as every other
+# credential in this system (Sandbox.co.in, Gemini): auth endpoints stay up
+# and answer 503 rather than the app either refusing to start or, worse,
+# signing tokens with a fabricated fallback secret.
+JWT_SECRET = os.environ.get("SATYAPRAMANA_JWT_SECRET")
 
 # The whole plug-in point (docs/ADAPTERS.md): a real adapter takes over the
 # capabilities its manifest declares, and nothing else changes. With no
@@ -123,7 +137,6 @@ class BidderIn(BaseModel):
 
 
 class RulePackIn(BaseModel):
-    officer_id: str
     pack: dict
 
 
@@ -133,16 +146,97 @@ class EvaluateIn(BaseModel):
 
 
 class DecisionIn(BaseModel):
-    officer_id: str
     decision: str = Field(pattern="^(QUALIFY|DISQUALIFY)$")
     note: str | None = None
 
 
 class OverrideIn(BaseModel):
-    officer_id: str
     requirement_id: str
     verdict_after: str = Field(pattern="^(PASS|FAIL|PARTIAL|UNKNOWN)$")
     justification: str = Field(min_length=1)
+
+
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class CreateUserIn(BaseModel):
+    username: str
+    password: str = Field(min_length=8)
+    display_name: str
+    role: str = Field(pattern="^(OFFICER|SENIOR_OFFICER|ADMIN)$")
+
+
+# --- authentication -------------------------------------------------------
+#
+# A session token is a signed JWT (Authorization: Bearer <token>), never a
+# cookie -- see the CORS comment above for why. current_user() is the one
+# place a token is verified; every endpoint below that needs a real officer
+# identity depends on it (or on require_role(), which depends on it in
+# turn), rather than trusting a client-supplied officer_id string the way
+# every write endpoint used to.
+
+def current_user(authorization: str | None = Header(default=None),
+                 conn=Depends(db)) -> User:
+    if not JWT_SECRET:
+        raise HTTPException(503, "authentication is not configured on this "
+                                  "deployment (SATYAPRAMANA_JWT_SECRET is unset)")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "missing bearer token")
+    token = authorization.removeprefix("Bearer ").strip()
+    try:
+        claims = decode_token(token, JWT_SECRET)
+    except _jwt.PyJWTError as exc:
+        raise HTTPException(401, f"invalid or expired token: {exc}") from exc
+    user = auth_store.get_user_by_username(conn, claims["sub"])
+    if not user or user.disabled:
+        raise HTTPException(401, "account no longer valid")
+    return user
+
+
+def require_role(minimum: Role):
+    """A dependency factory, not a dependency -- `Depends(require_role(Role.SENIOR_OFFICER))`
+    reads as what it is: this endpoint requires at least that role."""
+    def _dependency(user: User = Depends(current_user)) -> User:
+        if not role_at_least(user.role, minimum):
+            raise HTTPException(403, f"this action requires {minimum.value} or higher; "
+                                      f"you are {user.role.value}")
+        return user
+    return _dependency
+
+
+@app.post("/auth/login")
+def login(body: LoginIn, conn=Depends(db)) -> dict[str, Any]:
+    if not JWT_SECRET:
+        raise HTTPException(503, "authentication is not configured on this deployment")
+    user = auth_store.verify_login(conn, body.username, body.password)
+    if not user:
+        # Deliberately identical for "no such user" and "wrong password" --
+        # see auth/store.py's verify_login docstring.
+        raise HTTPException(401, "invalid username or password")
+    token = issue_token(user, JWT_SECRET)
+    return {"token": token, "username": user.username,
+            "display_name": user.display_name, "role": user.role.value}
+
+
+@app.get("/auth/me")
+def me(user: User = Depends(current_user)) -> dict[str, Any]:
+    return {"username": user.username, "display_name": user.display_name,
+            "role": user.role.value}
+
+
+@app.post("/auth/users", status_code=201)
+def create_officer_account(body: CreateUserIn, conn=Depends(db),
+                           admin: User = Depends(require_role(Role.ADMIN))) -> dict[str, Any]:
+    """ADMIN-only. There is no self-signup for a closed government system --
+    an administrator provisions every account."""
+    if auth_store.get_user_by_username(conn, body.username):
+        raise HTTPException(409, f"username {body.username!r} already exists")
+    user = auth_store.create_user(conn, body.username, body.password,
+                                  body.display_name, Role(body.role))
+    return {"username": user.username, "display_name": user.display_name,
+            "role": user.role.value}
 
 
 # --- health and honest capability reporting -----------------------------------
@@ -390,9 +484,13 @@ def get_document(document_sha256: str, conn=Depends(db)):
 # --- rule packs and decision --------------------------------------------------
 
 @app.post("/tenders/{tender_id}/rule-pack", status_code=201)
-def adopt_rule_pack(tender_id: str, body: RulePackIn, conn=Depends(db)) -> dict[str, Any]:
+def adopt_rule_pack(tender_id: str, body: RulePackIn, conn=Depends(db),
+                    user: User = Depends(require_role(Role.SENIOR_OFFICER))) -> dict[str, Any]:
     """Adoption is a human act, recorded with the officer's identity, the
-    content hash and a timestamp.
+    content hash and a timestamp. Requires SENIOR_OFFICER or higher -- a
+    rule pack governs every bidder's evaluation on a tender, not a single
+    bidder's record, so adopting one is deliberately not a base-OFFICER
+    action.
 
     Validation gates it. A pack whose predicates reference evidence paths no
     registered capability can produce is refused here rather than becoming a
@@ -401,7 +499,7 @@ def adopt_rule_pack(tender_id: str, body: RulePackIn, conn=Depends(db)) -> dict[
     """
     try:
         return adopt(conn, body.pack, tender_id=tender_id,
-                     officer_id=body.officer_id, registry=REGISTRY)
+                     officer_id=user.username, registry=REGISTRY)
     except NotAdoptable as exc:
         raise HTTPException(422, {
             "error": "rule pack cannot be adopted",
@@ -733,31 +831,35 @@ def collusion_edges(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
 # --- officer actions ----------------------------------------------------------
 
 @app.post("/bidders/{bidder_id}/decision", status_code=201)
-def record_decision(bidder_id: str, tender_id: str, body: DecisionIn,
-                    conn=Depends(db)) -> dict[str, Any]:
+def record_decision(bidder_id: str, tender_id: str, body: DecisionIn, conn=Depends(db),
+                    user: User = Depends(current_user)) -> dict[str, Any]:
     """The officer decides. The system never disqualifies anyone -- it hands
-    over a defensible dossier and records what the human did with it."""
+    over a defensible dossier and records what the human did with it. Any
+    authenticated officer may record a decision -- unlike overriding a
+    verdict or adopting a rule pack, this isn't gated to SENIOR_OFFICER."""
     snapshot = get_bidder(bidder_id, tender_id, conn)
     rec = append(conn, event_type="DECISION_RECORDED",
-                 actor=Actor("HUMAN", body.officer_id), correlation_id=str(uuid.uuid4()),
+                 actor=Actor("HUMAN", user.username), correlation_id=str(uuid.uuid4()),
                  tender_id=tender_id, bidder_id=bidder_id,
-                 payload={"decision": body.decision, "officer_id": body.officer_id,
+                 payload={"decision": body.decision, "officer_id": user.username,
                           "note": body.note, "metrics": snapshot["metrics"],
                           "risk": snapshot["risk"]})
     return {"seq": rec["seq"], "hash": rec["hash"], "decision": body.decision}
 
 
 @app.post("/bidders/{bidder_id}/override", status_code=201)
-def override(bidder_id: str, tender_id: str, body: OverrideIn,
-             conn=Depends(db)) -> dict[str, Any]:
+def override(bidder_id: str, tender_id: str, body: OverrideIn, conn=Depends(db),
+            user: User = Depends(require_role(Role.SENIOR_OFFICER))) -> dict[str, Any]:
     """An officer may overrule the system. The system remembers that they did,
-    and keeps its own conclusion alongside theirs."""
+    and keeps its own conclusion alongside theirs. Requires SENIOR_OFFICER or
+    higher -- overruling the deterministic core is deliberately not a base-
+    OFFICER action."""
     rec = append(conn, event_type="VERDICT_OVERRIDDEN",
-                 actor=Actor("HUMAN", body.officer_id), correlation_id=str(uuid.uuid4()),
+                 actor=Actor("HUMAN", user.username), correlation_id=str(uuid.uuid4()),
                  tender_id=tender_id, bidder_id=bidder_id,
                  payload={"requirement_id": body.requirement_id,
                           "verdict_after": body.verdict_after,
-                          "officer_id": body.officer_id,
+                          "officer_id": user.username,
                           "justification": body.justification})
     rebuild_projections(conn)
     return {"seq": rec["seq"], "hash": rec["hash"]}
