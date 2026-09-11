@@ -8,6 +8,7 @@ import {
   ActionableBadge, ClassificationBadge, ErrorBox, Metric, ProvenanceStep,
   RiskBadge, VerdictBadge,
 } from "../components";
+import PdfEvidenceViewer from "../PdfEvidenceViewer";
 
 export default function BidderDetailPage() {
   const { bidderId } = useParams();
@@ -142,6 +143,25 @@ export default function BidderDetailPage() {
                           <ol className="audit-list">
                             {provenance.trail.map((t) => <ProvenanceStep key={t.seq} step={t} />)}
                           </ol>
+                          {(() => {
+                            // The demo axiom: click a verdict, land on the exact
+                            // highlighted line of the actual PDF. Only possible
+                            // when the trail reaches both an extracted field
+                            // (page + region) and the document it came from
+                            // (its content hash) -- a verification-sourced fact
+                            // never reaches a document, and that's correct, not
+                            // a bug (see PROVENANCE_SUMMARY's own comment).
+                            const extracted = provenance.trail.find((t) => t.event_type === "FIELD_EXTRACTED");
+                            const document = provenance.trail.find((t) => t.event_type === "DOCUMENT_INGESTED");
+                            if (!extracted || !document) return null;
+                            return (
+                              <PdfEvidenceViewer
+                                documentSha256={document.payload.document_sha256}
+                                page={extracted.payload.page}
+                                region={extracted.payload.region}
+                              />
+                            );
+                          })()}
                         </td>
                       </tr>
                     )}
