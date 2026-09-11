@@ -1,0 +1,16 @@
+/* <SearchFilterBar> -- round 4, R1. All colours/spacing from tokens.css. */
+.sfb-bar {
+  display: flex; gap: var(--space-3); flex-wrap: wrap; margin: var(--space-3) 0;
+}
+.sfb-search {
+  flex: 1 1 220px; min-width: 160px;
+  padding: var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  font-size: var(--text-base); background: var(--color-surface); color: var(--color-text);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+.sfb-search:focus { outline: none; border-color: var(--color-accent); }
+.sfb-sort {
+  padding: var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  font-size: var(--text-base); background: var(--color-surface); color: var(--color-text);
+}
+.sfb-sort:focus { outline: none; border-color: var(--color-accent); }
