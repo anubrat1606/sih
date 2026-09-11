@@ -52,6 +52,30 @@ def pan_card_lines(
     return result
 
 
+def gst_certificate_lines(
+    issue: str | None = "01/04/2023",
+    expiry: str | None = "31/03/2028",
+    *, issue_label: str = "Date of Issue", expiry_label: str = "Date of Expiry",
+) -> list[str]:
+    """The 'Date of Issue' / 'Date of Expiry' label-then-value lines as
+    printed on a GST registration certificate, for composing into a
+    text_pdf() fixture -- e.g. text_pdf(["not a certificate", *gst_certificate_lines()]).
+
+    Not a real certificate -- synthetic dates, arranged the way the
+    document actually prints them (label on one line, value on the next).
+    Pass None for either to simulate that field being blank; pass
+    issue_label/expiry_label to exercise an alternate wording ("Issued on",
+    "Valid until") instead of the default one.
+    """
+    result = [issue_label]
+    if issue is not None:
+        result.append(issue)
+    result.append(expiry_label)
+    if expiry is not None:
+        result.append(expiry)
+    return result
+
+
 def text_pdf(lines: list[str], pages: int = 1) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
