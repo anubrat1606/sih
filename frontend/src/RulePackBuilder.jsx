@@ -113,6 +113,12 @@ export default function RulePackBuilder({ tenderId, onAdopt, onValidate, submitt
   // calling onAdopt itself -- so "AI suggests, official approves" stays
   // true even at the wiring level: this only ever creates a new *draft*
   // row for the officer to review, edit, and explicitly keep or delete.
+  // This is a real effect (not state derivable from render): it's reacting
+  // to a one-shot external event (a proposal accepted elsewhere) and must
+  // also notify the parent (onPrefillConsumed) so the same prefill doesn't
+  // re-apply on the next render -- matching the convention already used for
+  // this exact class of warning elsewhere in the app (see AuditPage.jsx).
+  // eslint-disable-next-line react/set-state-in-effect
   useEffect(() => {
     if (!prefill) return;
     setRequirements((rs) => [...rs, newRequirement({
@@ -125,7 +131,12 @@ export default function RulePackBuilder({ tenderId, onAdopt, onValidate, submitt
         + (prefill.note ? ` Model note: ${prefill.note}` : ""),
     })]);
     onPrefillConsumed?.();
-  }, [prefill]); // eslint-disable-line react-hooks/exhaustive-deps
+    // onPrefillConsumed is a fresh function each render on the caller's side
+    // (not useCallback-wrapped like ToastProvider's notify); including it in
+    // the deps array below would re-fire this on every unrelated re-render,
+    // defeating the "runs once per new prefill" intent.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
 
   const pack = useMemo(() => {
     try {
