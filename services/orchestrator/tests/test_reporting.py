@@ -266,6 +266,21 @@ def test_dossier_endpoint_refuses_without_an_adopted_pack(client):
     assert client.get("/bidders/A/dossier", params={"tender_id": "T1"}).status_code == 409
 
 
+def test_tender_report_endpoint_aggregates_the_real_bidder_list(client):
+    client.post("/tenders/T1/bidders", json={"bidder_id": "A", "phone": "1111111111"})
+    client.post("/tenders/T1/bidders", json={"bidder_id": "B", "phone": "1111111111"})
+    client.post("/tenders/T1/bidders", json={"bidder_id": "C"})
+
+    body = client.get("/tenders/T1/report").json()
+    assert body["tender_id"] == "T1" and body["bidder_count"] == 3
+    assert body["collusion"]["cluster_count"] == 1
+    assert body["collusion"]["flagged_bidder_count"] == 2
+    assert set(body["collusion"]["bidder_clusters"]) == {"A", "B"}
+
+    text = client.get("/tenders/T1/report", params={"as_text": "true"}).text
+    assert "TENDER COMPLIANCE REPORT" in text and "Bidders: 3" in text
+
+
 # --- Compliance Dossier -------------------------------------------------------
 # Pure-function tests only, no database: build_dossier() and render_dossier_text()
 # take plain dicts shaped exactly like GET /bidders/{id}, GET /bidders/{id}/autopsy,

@@ -37,6 +37,7 @@ from .projections import collusion_clusters, provenance_trail, rebuild_projectio
 from .reporting.bid_autopsy import autopsy
 from .reporting.compliance_repair import repair_plan
 from .reporting.dossier import build_dossier, render_dossier_text
+from .reporting.tender_report import render_tender_report_text, tender_report
 from .rulepacks import NotAdoptable, active_pack, adopt
 
 @asynccontextmanager
@@ -449,6 +450,18 @@ def list_tender_bidders(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
         bidder_ids = [row[0] for row in cur.fetchall()]
     return {"tender_id": tender_id,
             "bidders": [get_bidder(bidder_id, tender_id, conn) for bidder_id in bidder_ids]}
+
+
+@app.get("/tenders/{tender_id}/report")
+def tender_compliance_report(tender_id: str, as_text: bool = False, conn=Depends(db)):
+    """Of everyone who bid, where do we stand overall -- the aggregate
+    counterpart to a single bidder's Dossier. `?as_text=true` for the
+    plain-text rendering."""
+    body = list_tender_bidders(tender_id, conn)
+    report = tender_report(tender_id, body["bidders"])
+    if as_text:
+        return PlainTextResponse(render_tender_report_text(report))
+    return report
 
 
 @app.get("/bidders/{bidder_id}")
