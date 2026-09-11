@@ -9,13 +9,20 @@ import {
   ClassificationBadge, ConflictCard, CoverageMeter, ErrorBox, EvidenceChip,
   Metric, ProvenancePanel, RepairAction, RiskBadge, VerdictBadge,
 } from "../components";
+import { ConfirmDialog } from "../ConfirmDialog";
+import { useToast } from "../notifications";
+import { SkeletonLine, SkeletonTable } from "../Skeleton";
 
 export default function BidderDetailPage() {
   const { bidderId } = useParams();
   const [params] = useSearchParams();
   const tenderId = params.get("tender_id");
   const { session } = useAuth();
+  const { notify } = useToast();
   const canOverride = roleAtLeast(session.role, "SENIOR_OFFICER");
+
+  const [confirmDisqualify, setConfirmDisqualify] = useState(false);
+  const [confirmOverride, setConfirmOverride] = useState(false);
 
   const [bidder, setBidder] = useState(null);
   const [error, setError] = useState(null);
@@ -54,8 +61,10 @@ export default function BidderDetailPage() {
     try {
       await evaluateBidder(bidderId, tenderId, bidSubmissionDate);
       load();
+      notify("Evaluation complete.", { kind: "success" });
     } catch (err) {
       setError(err);
+      notify("Evaluation failed.", { kind: "error" });
     }
   }
 
@@ -63,9 +72,12 @@ export default function BidderDetailPage() {
     setError(null);
     setExplaining(true);
     try {
-      setExplanation(await getExplanation(bidderId, tenderId));
+      const result = await getExplanation(bidderId, tenderId);
+      setExplanation(result);
+      if (!result.available) notify(`Summary unavailable: ${result.reason}`, { kind: "info" });
     } catch (err) {
       setError(err);
+      notify("Could not generate a summary.", { kind: "error" });
     } finally {
       setExplaining(false);
     }
@@ -74,21 +86,40 @@ export default function BidderDetailPage() {
   async function onDecision(decision) {
     setError(null);
     try {
-      setLastDecision(await recordDecision(bidderId, tenderId, decision, decisionNote));
+      const result = await recordDecision(bidderId, tenderId, decision, decisionNote);
+      setLastDecision(result);
+      notify(`Recorded: ${decision}.`, { kind: decision === "QUALIFY" ? "success" : "info" });
     } catch (err) {
       setError(err);
+      notify("Could not record the decision.", { kind: "error" });
     }
   }
 
-  async function onOverride(e) {
+  function onDisqualifyClick() {
+    setConfirmDisqualify(true);
+  }
+
+  function confirmDisqualifyNow() {
+    setConfirmDisqualify(false);
+    onDecision("DISQUALIFY");
+  }
+
+  function onOverrideSubmit(e) {
     e.preventDefault();
+    setConfirmOverride(true);
+  }
+
+  async function confirmOverrideNow() {
+    setConfirmOverride(false);
     setError(null);
     try {
       await overrideVerdict(bidderId, tenderId, overrideForm.requirement_id, overrideForm.verdict_after, overrideForm.justification);
       setOverrideForm({ requirement_id: "", verdict_after: "PASS", justification: "" });
       load();
+      notify(`Overrode ${overrideForm.requirement_id} to ${overrideForm.verdict_after}.`, { kind: "success" });
     } catch (err) {
       setError(err);
+      notify("Override failed.", { kind: "error" });
     }
   }
 
@@ -254,15 +285,24 @@ export default function BidderDetailPage() {
             <label>Note (optional)<input value={decisionNote} onChange={(e) => setDecisionNote(e.target.value)} /></label>
             <div className="actions">
               <button onClick={() => onDecision("QUALIFY")}>Qualify</button>
-              <button className="danger" onClick={() => onDecision("DISQUALIFY")}>Disqualify</button>
+              <button className="danger" onClick={onDisqualifyClick}>Disqualify</button>
             </div>
           </form>
           {lastDecision && <p className="status">Recorded: {lastDecision.decision} (seq {lastDecision.seq}, hash <span className="mono">{lastDecision.hash.slice(0, 16)}…</span>)</p>}
+          <ConfirmDialog
+            open={confirmDisqualify}
+            title="Disqualify this bidder?"
+            body={`This records a DISQUALIFY decision for ${bidderId} on ${tenderId}, attributed to ${session.displayName}. The system's own dossier is never overwritten -- this is a separate, permanent event.`}
+            confirmLabel="Disqualify"
+            danger
+            onConfirm={confirmDisqualifyNow}
+            onCancel={() => setConfirmDisqualify(false)}
+          />
 
           <h2>Override a verdict</h2>
           <p className="hint">A human may overrule the system. The system remembers that they did, and keeps its own conclusion alongside theirs.</p>
           {canOverride ? (
-            <form className="form" onSubmit={onOverride}>
+            <form className="form" onSubmit={onOverrideSubmit}>
               <label>Requirement ID<input value={overrideForm.requirement_id} onChange={(e) => setOverrideForm({ ...overrideForm, requirement_id: e.target.value })} required /></label>
               <label>New verdict
                 <select value={overrideForm.verdict_after} onChange={(e) => setOverrideForm({ ...overrideForm, verdict_after: e.target.value })}>
@@ -275,7 +315,22 @@ export default function BidderDetailPage() {
           ) : (
             <p className="hint">Overriding a verdict requires SENIOR_OFFICER or higher — you're signed in as {session.role.replace("_", " ")}.</p>
           )}
+          <ConfirmDialog
+            open={confirmOverride}
+            title="Override this verdict?"
+            body={`This sets ${overrideForm.requirement_id || "the requirement"} to ${overrideForm.verdict_after} for ${bidderId}, attributed to ${session.displayName}. The system's own original conclusion stays visible alongside your override -- it is never erased.`}
+            confirmLabel="Override"
+            danger
+            onConfirm={confirmOverrideNow}
+            onCancel={() => setConfirmOverride(false)}
+          />
         </>
+      )}
+      {!bidder && !error && (
+        <div className="stack">
+          <SkeletonLine width="30%" />
+          <SkeletonTable rows={3} columns={5} />
+        </div>
       )}
     </div>
   );

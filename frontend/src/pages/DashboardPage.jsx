@@ -1,31 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getDashboard } from "../api";
+import { RiskDistributionBar, StatTile } from "../charts";
 import { ErrorBox } from "../components";
-
-const RISK_ORDER = ["LOW", "MEDIUM", "HIGH"];
-
-// Horizontal stacked bar, segment widths genuinely proportional to counts --
-// a tender with 0 MEDIUM must render a 0-width segment, never an evenly
-// split third. Self-contained here on purpose: round 4's chart primitives
-// (Rishika, R2) will replace this once they land, without this page's data
-// logic changing at all.
-function RiskDistributionBar({ counts }) {
-  const total = RISK_ORDER.reduce((sum, level) => sum + counts[level], 0);
-  if (total === 0) return <p className="hint">No bidders registered yet.</p>;
-  return (
-    <div className="risk-bar">
-      {RISK_ORDER.map((level) => {
-        const pct = (counts[level] / total) * 100;
-        if (pct === 0) return null;
-        return (
-          <div key={level} className={`risk-bar-segment risk-bar-${level.toLowerCase()}`}
-               style={{ width: `${pct}%` }} title={`${level}: ${counts[level]}`} />
-        );
-      })}
-    </div>
-  );
-}
+import { SkeletonLine, SkeletonTable } from "../Skeleton";
 
 export default function DashboardPage() {
   const [body, setBody] = useState(null);
@@ -40,23 +18,27 @@ export default function DashboardPage() {
       <h1>Mission Control</h1>
       <p className="hint">Every tender and bidder in the system, at a glance.</p>
       <ErrorBox error={error} />
+      {!body && !error && (
+        <div className="stack">
+          <SkeletonLine width="80%" />
+          <SkeletonTable rows={3} columns={5} />
+        </div>
+      )}
       {body && (
         <>
           <div className="stat-tiles">
-            <div className="stat-tile"><div className="stat-tile-value mono">{body.tender_count}</div><div className="stat-tile-label">Tenders</div></div>
-            <div className="stat-tile"><div className="stat-tile-value mono">{body.bidder_count}</div><div className="stat-tile-label">Bidders</div></div>
-            <div className="stat-tile"><div className="stat-tile-value mono">{body.flagged_bidder_count}</div><div className="stat-tile-label">Collusion-flagged</div></div>
-            <div className="stat-tile">
-              <div className="stat-tile-value mono">{body.capabilities.live_count}</div>
-              <div className="stat-tile-label">Authorities live</div>
-            </div>
+            <StatTile label="Tenders" value={body.tender_count} />
+            <StatTile label="Bidders" value={body.bidder_count} />
+            <StatTile label="Collusion-flagged" value={body.flagged_bidder_count} />
+            <StatTile label="Authorities live" value={body.capabilities.live_count} />
           </div>
 
           <h2>Risk distribution</h2>
-          <RiskDistributionBar counts={body.risk_distribution} />
-          <p className="hint">
-            {RISK_ORDER.map((level) => `${level} ${body.risk_distribution[level]}`).join(" · ")}
-          </p>
+          <RiskDistributionBar
+            low={body.risk_distribution.LOW}
+            medium={body.risk_distribution.MEDIUM}
+            high={body.risk_distribution.HIGH}
+          />
 
           <h2>Recent decisions</h2>
           {body.recent_decisions.length === 0 ? (

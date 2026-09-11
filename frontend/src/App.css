@@ -289,6 +289,10 @@ button.eg-node:hover { border-color: var(--color-border-strong); background: var
 }
 .tender-intelligence summary { cursor: pointer; font-weight: 600; }
 
+/* Generic vertical stack, used to lay out a handful of loading-state
+ * skeleton placeholders without a one-off flex block at every call site. */
+.stack { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-3) 0; }
+
 /* PdfEvidenceViewer: an inline preview plus a real lightbox. */
 .pdf-inline {
   position: relative; display: inline-block; border: 1px solid var(--color-border);

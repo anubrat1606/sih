@@ -2,11 +2,13 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { registerBidder, uploadDocument, verifyBidder } from "../api";
 import { ErrorBox } from "../components";
+import { useToast } from "../notifications";
 
 const DOC_TYPES = ["PAN", "GST", "UDYAM", "CIN", "EPFO"];
 
 export default function RegisterBidderPage() {
   const navigate = useNavigate();
+  const { notify } = useToast();
   const [tenderId, setTenderId] = useState("");
   const [bidderId, setBidderId] = useState("");
   const [attrs, setAttrs] = useState({ director_name: "", address: "", phone: "", bank_account: "" });
@@ -25,8 +27,10 @@ export default function RegisterBidderPage() {
       const present = Object.fromEntries(Object.entries(attrs).filter(([, v]) => v.trim()));
       const result = await registerBidder(tenderId, bidderId, present);
       setRegistered(result);
+      notify(`Registered ${bidderId} on ${tenderId}.`, { kind: "success" });
     } catch (err) {
       setError(err);
+      notify("Registration failed.", { kind: "error" });
     } finally {
       setBusy(false);
     }
@@ -41,8 +45,10 @@ export default function RegisterBidderPage() {
       await uploadDocument(bidderId, tenderId, file, docType);
       setFile(null);
       e.target.reset();
+      notify("Document uploaded and extracted.", { kind: "success" });
     } catch (err) {
       setError(err);
+      notify("Upload failed.", { kind: "error" });
     } finally {
       setBusy(false);
     }
@@ -53,8 +59,10 @@ export default function RegisterBidderPage() {
     setBusy(true);
     try {
       setVerifyResult(await verifyBidder(bidderId, tenderId));
+      notify("Verification complete.", { kind: "success" });
     } catch (err) {
       setError(err);
+      notify("Verification failed.", { kind: "error" });
     } finally {
       setBusy(false);
     }
