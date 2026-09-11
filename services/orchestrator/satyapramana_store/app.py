@@ -36,6 +36,7 @@ from .extract import ingest_document
 from .projections import collusion_clusters, provenance_trail, rebuild_projections
 from .reporting.bid_autopsy import autopsy
 from .reporting.compliance_repair import repair_plan
+from .reporting.dossier import build_dossier, render_dossier_text
 from .rulepacks import NotAdoptable, active_pack, adopt
 
 @asynccontextmanager
@@ -268,10 +269,13 @@ def verify(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
     subject = {"bidder_id": bidder_id}
     for key, path in (("pan_number", "bidder.pan.pan_number"),
                        ("gstin", "bidder.gst.gstin"),
-                       # Nothing extracts this yet (extract/ is Suhani's,
-                       # per CONTRIBUTING.md) -- harmless to resolve early,
-                       # CIN_STATUS goes live the moment it exists.
-                       ("cin", "bidder.entity.cin")):
+                       ("cin", "bidder.entity.cin"),
+                       # Extraction landed (Suhani, feat/suhani-pan-holder-fields)
+                       # -- PanStatusAdapter reads these two exact subject keys;
+                       # PAN_STATUS goes from a standing MALFORMED refusal to a
+                       # real live call the moment both resolve for a bidder.
+                       ("pan_holder_name", "bidder.pan.holder_name"),
+                       ("pan_date_of_birth", "bidder.pan.date_of_birth")):
         resolved = resolver.field(path)
         if resolved.ok:
             subject[key] = resolved.value
@@ -532,6 +536,23 @@ def bidder_repair_plan(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict
     verdicts = _fetch_verdict_rows(conn, bidder_id)
     return {"bidder_id": bidder_id, "tender_id": tender_id,
             **repair_plan(pack, verdicts, REGISTRY)}
+
+
+@app.get("/bidders/{bidder_id}/dossier")
+def bidder_dossier(bidder_id: str, tender_id: str, as_text: bool = False,
+                   conn=Depends(db)):
+    """The single artifact an officer would print, attach to a decision file,
+    or hand to a supervisor -- score, risk, verdicts, the autopsy and the
+    repair plan, combined. `?as_text=true` for the plain-text rendering
+    instead of JSON. Composes the three real endpoints above rather than
+    recomputing anything -- see reporting/dossier.py."""
+    bidder = get_bidder(bidder_id, tender_id, conn)
+    autopsy_report = bidder_autopsy(bidder_id, tender_id, conn)
+    repair_report = bidder_repair_plan(bidder_id, tender_id, conn)
+    dossier = build_dossier(bidder, autopsy_report, repair_report)
+    if as_text:
+        return PlainTextResponse(render_dossier_text(dossier))
+    return dossier
 
 
 @app.get("/bidders/{bidder_id}/requirements/{requirement_id}/provenance")
