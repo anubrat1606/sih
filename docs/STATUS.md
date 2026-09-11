@@ -228,5 +228,25 @@ three bidders on one tender, two of them sharing an attribute.
 
 - Neo4j for the collusion graph — networkx is sufficient; correct call.
 - Real S3 upload — local path in `source_s3_key` is fine for the demo.
-- Auth — not in scope for the prototype.
 - Udyam verification — no confirmed public verify URL.
+
+## Authentication — reversed 2026-09-11, no longer out of scope
+
+The decision above ("not in scope for the prototype") held through round 4.
+Building toward a real officer-usable product (not just a panel demo)
+changed that. `services/orchestrator/satyapramana_store/auth/` implements
+real login: `hashlib.scrypt` password hashing (stdlib, no new dependency),
+signed JWT sessions (`PyJWT`, the one new dependency this added), and a
+three-tier role scale (`OFFICER < SENIOR_OFFICER < ADMIN`). Every write
+endpoint that used to trust a client-supplied `officer_id` string now
+derives the real identity from the authenticated session instead —
+`adopt_rule_pack` and `override` additionally require `SENIOR_OFFICER`.
+There is no self-signup; the first `ADMIN` account is created from
+`SATYAPRAMANA_BOOTSTRAP_ADMIN_USERNAME`/`_PASSWORD` env vars at startup
+(deployment-friendly on a managed platform with no shell access), and every
+account after that is provisioned by an admin via `POST /auth/users`.
+
+341 orchestrator tests pass (up from 313), all against a real database, no
+test ever calling the real login endpoint's underlying crypto with a fake
+result. Frontend login UI, protected routes, and a real deployment are the
+next round — this pass is backend-only.

@@ -19,6 +19,8 @@ from satyapramana_store.reporting.csv_export import bidders_to_csv
 from satyapramana_store.reporting.blocker_summary import blocker_summary
 from satyapramana_store.reporting.evidence_graph import build_evidence_graph
 
+from .conftest import auth_headers
+
 _SOURCE = {"page": 1, "region": [0, 0, 100, 20]}
 
 PACK = {
@@ -211,8 +213,8 @@ def test_autopsy_endpoint_refuses_without_an_adopted_pack(client):
     assert r.status_code == 409
 
 
-def test_autopsy_and_repair_plan_endpoints_after_a_real_evaluation(client):
-    client.post("/tenders/T1/rule-pack", json={"officer_id": "officer_1", "pack": {
+def test_autopsy_and_repair_plan_endpoints_after_a_real_evaluation(client, conn):
+    client.post("/tenders/T1/rule-pack", json={"pack": {
         "rule_pack_id": "test.autopsy", "semver": "1.0.0",
         "tender_reference": {"tender_id": "T1", "source_document_sha256": "a" * 64,
                              "issuing_authority": "Test Authority"},
@@ -221,7 +223,7 @@ def test_autopsy_and_repair_plan_endpoints_after_a_real_evaluation(client):
                      "coverage_floor_high": 50, "coverage_floor_medium": 80,
                      "confidence_floor": 70, "freshness_days": {"GST_STATUS": 30}},
         "requirements": PACK["requirements"],
-    }})
+    }}, headers=auth_headers(conn))
     client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
     client.post("/bidders/A/verify", params={"tender_id": "T1"})
     client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
@@ -240,8 +242,8 @@ def test_autopsy_and_repair_plan_endpoints_after_a_real_evaluation(client):
     assert all(a["actionable_by"] == "SYSTEM" for a in repair_body["actions"])
 
 
-def test_dossier_endpoint_composes_the_other_three_real_endpoints(client):
-    client.post("/tenders/T1/rule-pack", json={"officer_id": "officer_1", "pack": {
+def test_dossier_endpoint_composes_the_other_three_real_endpoints(client, conn):
+    client.post("/tenders/T1/rule-pack", json={"pack": {
         "rule_pack_id": "test.dossier", "semver": "1.0.0",
         "tender_reference": {"tender_id": "T1", "source_document_sha256": "a" * 64,
                              "issuing_authority": "Test Authority"},
@@ -250,7 +252,7 @@ def test_dossier_endpoint_composes_the_other_three_real_endpoints(client):
                      "coverage_floor_high": 50, "coverage_floor_medium": 80,
                      "confidence_floor": 70, "freshness_days": {"GST_STATUS": 30}},
         "requirements": PACK["requirements"],
-    }})
+    }}, headers=auth_headers(conn))
     client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
     client.post("/bidders/A/verify", params={"tender_id": "T1"})
     client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
@@ -281,10 +283,10 @@ def test_explain_endpoint_refuses_without_an_adopted_pack(client):
     assert client.get("/bidders/A/explain", params={"tender_id": "T1"}).status_code == 409
 
 
-def test_explain_endpoint_is_honestly_unavailable_without_a_configured_provider(client):
+def test_explain_endpoint_is_honestly_unavailable_without_a_configured_provider(client, conn):
     """The test environment has no SATYAPRAMANA_GEMINI_API_KEY -- the same
     honest-degrade shape as every unconfigured verification capability."""
-    client.post("/tenders/T1/rule-pack", json={"officer_id": "officer_1", "pack": {
+    client.post("/tenders/T1/rule-pack", json={"pack": {
         "rule_pack_id": "test.explain", "semver": "1.0.0",
         "tender_reference": {"tender_id": "T1", "source_document_sha256": "a" * 64,
                              "issuing_authority": "Test Authority"},
@@ -293,7 +295,7 @@ def test_explain_endpoint_is_honestly_unavailable_without_a_configured_provider(
                      "coverage_floor_high": 50, "coverage_floor_medium": 80,
                      "confidence_floor": 70, "freshness_days": {"GST_STATUS": 30}},
         "requirements": PACK["requirements"],
-    }})
+    }}, headers=auth_headers(conn))
     client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
     client.post("/bidders/A/verify", params={"tender_id": "T1"})
     client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
@@ -307,7 +309,7 @@ def test_explain_endpoint_is_honestly_unavailable_without_a_configured_provider(
     assert body["model"] is None and body["generated_at"] is None
 
 
-def test_explain_endpoint_returns_a_narrative_from_a_configured_provider(client, monkeypatch):
+def test_explain_endpoint_returns_a_narrative_from_a_configured_provider(client, conn, monkeypatch):
     """Swaps in a fake Explainer, structurally identical to GeminiExplainer,
     to prove the endpoint's wiring end-to-end without a real provider call."""
     from datetime import datetime, timezone
@@ -323,7 +325,7 @@ def test_explain_endpoint_returns_a_narrative_from_a_configured_provider(client,
 
     monkeypatch.setattr(app_module, "EXPLAINER", _FakeExplainer())
 
-    client.post("/tenders/T1/rule-pack", json={"officer_id": "officer_1", "pack": {
+    client.post("/tenders/T1/rule-pack", json={"pack": {
         "rule_pack_id": "test.explain2", "semver": "1.0.0",
         "tender_reference": {"tender_id": "T1", "source_document_sha256": "a" * 64,
                              "issuing_authority": "Test Authority"},
@@ -332,7 +334,7 @@ def test_explain_endpoint_returns_a_narrative_from_a_configured_provider(client,
                      "coverage_floor_high": 50, "coverage_floor_medium": 80,
                      "confidence_floor": 70, "freshness_days": {"GST_STATUS": 30}},
         "requirements": PACK["requirements"],
-    }})
+    }}, headers=auth_headers(conn))
     client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
     client.post("/bidders/A/verify", params={"tender_id": "T1"})
     client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
@@ -381,8 +383,8 @@ def test_tender_blockers_endpoint_refuses_without_an_adopted_pack(client):
     assert client.get("/tenders/T1/blockers").status_code == 409
 
 
-def test_tender_blockers_endpoint_aggregates_real_autopsies(client):
-    client.post("/tenders/T1/rule-pack", json={"officer_id": "officer_1", "pack": {
+def test_tender_blockers_endpoint_aggregates_real_autopsies(client, conn):
+    client.post("/tenders/T1/rule-pack", json={"pack": {
         "rule_pack_id": "test.blockers", "semver": "1.0.0",
         "tender_reference": {"tender_id": "T1", "source_document_sha256": "a" * 64,
                              "issuing_authority": "Test Authority"},
@@ -391,7 +393,7 @@ def test_tender_blockers_endpoint_aggregates_real_autopsies(client):
                      "coverage_floor_high": 50, "coverage_floor_medium": 80,
                      "confidence_floor": 70, "freshness_days": {"GST_STATUS": 30}},
         "requirements": PACK["requirements"],
-    }})
+    }}, headers=auth_headers(conn))
     client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
     client.post("/tenders/T1/bidders", json={"bidder_id": "B"})
     for bidder_id in ("A", "B"):
@@ -832,13 +834,13 @@ def test_evidence_graph_endpoint_refuses_without_an_adopted_pack(client):
     assert client.get("/bidders/A/evidence-graph", params={"tender_id": "T1"}).status_code == 409
 
 
-def test_evidence_graph_endpoint_after_a_real_evaluation(client):
+def test_evidence_graph_endpoint_after_a_real_evaluation(client, conn):
     """No live capability is configured in this test environment (the same
     as every other through-the-API reporting test) -- verification genuinely
     runs and genuinely fails UNAUTHORIZED, which is exactly the case that
     proves an authority node appears for an *attempted*, not just a
     *successful*, verification."""
-    client.post("/tenders/T1/rule-pack", json={"officer_id": "officer_1", "pack": {
+    client.post("/tenders/T1/rule-pack", json={"pack": {
         "rule_pack_id": "test.evidence-graph", "semver": "1.0.0",
         "tender_reference": {"tender_id": "T1", "source_document_sha256": "a" * 64,
                              "issuing_authority": "Test Authority"},
@@ -847,7 +849,7 @@ def test_evidence_graph_endpoint_after_a_real_evaluation(client):
                      "coverage_floor_high": 50, "coverage_floor_medium": 80,
                      "confidence_floor": 70, "freshness_days": {"GST_STATUS": 30}},
         "requirements": PACK["requirements"],
-    }})
+    }}, headers=auth_headers(conn))
     client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
     client.post("/bidders/A/verify", params={"tender_id": "T1"})
     client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
