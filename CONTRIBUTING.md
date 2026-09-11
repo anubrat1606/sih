@@ -30,7 +30,17 @@ See the [full build plan and per-workstream detail](https://claude.ai/code/artif
 
 ## Setup
 
-You need PostgreSQL running locally.
+You need a real PostgreSQL to point `DATABASE_URL` at. Two ways to get one —
+pick whichever is less friction on your machine:
+
+- **Local Postgres**, if you have (or can install) it: `createdb
+  satyapramana_dev`, then `DATABASE_URL=postgresql://localhost/satyapramana_dev`.
+- **The team's shared Neon Postgres** (decided 2026-09-12, see
+  `docs/STATUS.md`), if you can't install one locally, or don't want to —
+  ask Anubrat for the connection string (shared over a private channel, never
+  committed) and put it straight in `DATABASE_URL` in your own `.env`,
+  including its `?sslmode=require`. Nothing else about running the app
+  changes — same commands below either way.
 
 ```bash
 git clone https://github.com/anubrat1606/sih.git
