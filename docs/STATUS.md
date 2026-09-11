@@ -202,16 +202,20 @@ real demo data exists: does the team share one real key pair (entered
 once into the Render service's env vars, per `docs/DEPLOYMENT.md`), or
 does each developer need their own for local work?
 
-### 3. No rule pack built from a real tender
+### 3. No rule pack built from a real tender — resolved 2026-09-12
 
-`rulepacks/` still only has the round-2 scaffold (`README.md`,
-`validate.py`) — no rule pack decomposed from an actual GeM tender PDF. The
-tooling to do this is now in place (tender PDF upload, Tender Intelligence,
-the requirement-type catalog, guided builder, dry-run validate) — see
-"Built this session" above — but it needs, in order: (a) that work verified
-against a live database, (b) a real tender PDF, (c) an officer to actually
-run the workflow and adopt the result. Still not buildable end-to-end by a
-Claude Code session alone.
+Kevin ran a real GeM tender (BHEL, Enquiry No. T7J1Z68239, "Supply of
+Metallic Expansion Joints") through the full live admin builder flow and
+adopted a real rule pack — `rulepacks/bhel.t7j1z68239.metallic-expansion-joints.json`.
+Independently re-verified before merge, not just trusted: the source PDF's
+SHA-256 was recomputed from a fresh download and matched exactly; the
+pack's `content_hash` was recomputed from the committed file and matched
+the live `RULE_PACK_ADOPTED` event exactly; every quoted requirement text
+was checked against the actual PDF page and matched verbatim; the 5
+requirements correctly left unadopted (turnover, experience, certification,
+insolvency declaration, integrity pact) were confirmed real but genuinely
+unbacked by any registered evidence capability, not stripped to force a
+clean adopt.
 
 ### 4. Deployment — resolved 2026-09-12, no Docker
 
