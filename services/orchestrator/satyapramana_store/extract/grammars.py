@@ -19,6 +19,18 @@ PAN_RE = re.compile(r"[A-Z]{5}[0-9]{4}[A-Z]{1}")
 GSTIN_RE = re.compile(r"[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}")
 UDYAM_RE = re.compile(r"UDYAM-[A-Z]{2}-[0-9]{2}-[0-9]{7}")
 
+#: A PAN card prints the date of birth as DD/MM/YYYY. Sandbox.co.in's PAN
+#: verification endpoint requires exactly this format (adapters/sandbox_co_in.py),
+#: so this is the target grammar, not a generic date parser.
+PAN_DOB_RE = re.compile(r"[0-9]{2}/[0-9]{2}/[0-9]{4}")
+
+#: The printed holder name on a PAN card: letters, spaces, and the
+#: punctuation an Indian legal name actually uses (periods for initials,
+#: apostrophes, hyphens). Deliberately does not accept digits -- a "next
+#: line" containing a digit is not a name, it is something else read from the
+#: wrong line.
+PAN_HOLDER_NAME_RE = re.compile(r"[A-Z][A-Z .'\-]{1,98}[A-Z.]")
+
 #: A CIN is 21 characters: listing status (L or U), a 5-digit industry code, a
 #: 2-letter Registrar-of-Companies state code, the 4-digit year of
 #: incorporation, a 3-letter ownership class, and a 6-digit registration number.
@@ -115,6 +127,27 @@ def validate_pan(value: str) -> Check:
     if holder not in PAN_HOLDER_TYPES:
         return Check(False, f"'{holder}' is not a known PAN holder type")
     return Check(True, f"holder type {holder} ({PAN_HOLDER_TYPES[holder]})")
+
+
+def validate_pan_date_of_birth(value: str) -> Check:
+    if not PAN_DOB_RE.fullmatch(value):
+        return Check(False, "does not match DD/MM/YYYY")
+    from datetime import date
+    day, month, year = (int(part) for part in value.split("/"))
+    try:
+        date(year, month, day)
+    except ValueError:
+        return Check(False, f"{value} is not a real calendar date")
+    return Check(True, f"parses as {value} (DD/MM/YYYY)")
+
+
+def validate_pan_holder_name(value: str) -> Check:
+    if not PAN_HOLDER_NAME_RE.fullmatch(value):
+        return Check(
+            False,
+            "does not look like a printed name (letters, spaces, '.', \"'\", "
+            "'-' only, no digits)")
+    return Check(True, "structurally plausible printed name")
 
 
 def validate_gstin(value: str) -> Check:

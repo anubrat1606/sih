@@ -93,3 +93,30 @@ def locate(page: Page, start: int, end: int, index: list[tuple[int, int, int]]) 
                 max(b.x1 for b in boxes), max(b.bottom for b in boxes)),
         word_indices=tuple(covering),
     )
+
+
+def lines(page: Page, tolerance: float = 3.0) -> list[list[Word]]:
+    """Group a page's words into printed lines, top to bottom, left to right.
+
+    Pure layout geometry -- no assumption about what the words say. Two words
+    fall on the same line when their vertical centres are within `tolerance`
+    points of each other, because word boxes on one printed line are rarely
+    pixel-identical. This is what a label/value document (a PAN card: a
+    printed label, the value on the line beneath it) needs and `searchable()`
+    does not give -- that function deliberately erases line structure to scan
+    for a grammar anywhere on the page.
+    """
+    grouped: list[list[Word]] = []
+    for word in sorted(page.words, key=lambda w: w.top):
+        centre = (word.top + word.bottom) / 2
+        for line in grouped:
+            line_centre = (line[0].top + line[0].bottom) / 2
+            if abs(centre - line_centre) <= tolerance:
+                line.append(word)
+                break
+        else:
+            grouped.append([word])
+    for line in grouped:
+        line.sort(key=lambda w: w.x0)
+    grouped.sort(key=lambda line: line[0].top)
+    return grouped
