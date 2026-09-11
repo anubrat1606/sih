@@ -233,6 +233,38 @@ def test_autopsy_and_repair_plan_endpoints_after_a_real_evaluation(client):
     assert all(a["actionable_by"] == "SYSTEM" for a in repair_body["actions"])
 
 
+def test_dossier_endpoint_composes_the_other_three_real_endpoints(client):
+    client.post("/tenders/T1/rule-pack", json={"officer_id": "officer_1", "pack": {
+        "rule_pack_id": "test.dossier", "semver": "1.0.0",
+        "tender_reference": {"tender_id": "T1", "source_document_sha256": "a" * 64,
+                             "issuing_authority": "Test Authority"},
+        "constants": {"partial_credit": 0.5, "w_mandatory": 1.0, "w_desirable": 0.3,
+                     "recency_floor": 0.5, "corroboration_step": 0.1,
+                     "coverage_floor_high": 50, "coverage_floor_medium": 80,
+                     "confidence_floor": 70, "freshness_days": {"GST_STATUS": 30}},
+        "requirements": PACK["requirements"],
+    }})
+    client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
+    client.post("/bidders/A/verify", params={"tender_id": "T1"})
+    client.post("/bidders/A/evaluate", params={"tender_id": "T1"},
+               json={"bid_submission_date": "2026-09-22"})
+
+    body = client.get("/bidders/A/dossier", params={"tender_id": "T1"}).json()
+    assert body["bidder_id"] == "A" and body["tender_id"] == "T1"
+    assert body["would_qualify"] is False
+    assert {b["requirement_id"] for b in body["blocking_requirements"]} == {"L1", "L2"}
+    assert all(a["actionable_by"] == "SYSTEM" for a in body["repair_actions_by_system"])
+    assert body["repair_actions_by_bidder"] == []
+
+    text = client.get("/bidders/A/dossier", params={"tender_id": "T1", "as_text": "true"}).text
+    assert "COMPLIANCE DOSSIER" in text and "A" in text
+
+
+def test_dossier_endpoint_refuses_without_an_adopted_pack(client):
+    client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
+    assert client.get("/bidders/A/dossier", params={"tender_id": "T1"}).status_code == 409
+
+
 # --- Compliance Dossier -------------------------------------------------------
 # Pure-function tests only, no database: build_dossier() and render_dossier_text()
 # take plain dicts shaped exactly like GET /bidders/{id}, GET /bidders/{id}/autopsy,
