@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import {
-  evaluateBidder, getAutopsy, getBidder, getProvenance, getRepairPlan,
-  overrideVerdict, recordDecision,
+  evaluateBidder, getAutopsy, getBidder, getBidderEvidence, getProvenance,
+  getRepairPlan, overrideVerdict, recordDecision,
 } from "../api";
 import {
-  ActionableBadge, ClassificationBadge, ErrorBox, Metric, ProvenanceStep,
-  RiskBadge, VerdictBadge,
+  ClassificationBadge, ConflictCard, CoverageMeter, ErrorBox, EvidenceChip,
+  Metric, ProvenanceStep, RepairAction, RiskBadge, VerdictBadge,
 } from "../components";
 import PdfEvidenceViewer from "../PdfEvidenceViewer";
 
@@ -21,6 +21,7 @@ export default function BidderDetailPage() {
   const [provenance, setProvenance] = useState(null);
   const [autopsy, setAutopsy] = useState(null);
   const [repairPlan, setRepairPlan] = useState(null);
+  const [evidence, setEvidence] = useState(null);
 
   const [bidSubmissionDate, setBidSubmissionDate] = useState("");
   const [officerId, setOfficerId] = useState("officer_demo");
@@ -37,6 +38,7 @@ export default function BidderDetailPage() {
     // in each section rather than in the shared ErrorBox.
     getAutopsy(bidderId, tenderId).then(setAutopsy).catch(() => setAutopsy(null));
     getRepairPlan(bidderId, tenderId).then(setRepairPlan).catch(() => setRepairPlan(null));
+    getBidderEvidence(bidderId, tenderId).then(setEvidence).catch(() => setEvidence(null));
   }
 
   useEffect(load, [bidderId, tenderId]);
@@ -104,14 +106,26 @@ export default function BidderDetailPage() {
           )}
           <div className="metric-row">
             <Metric label="Compliance score" value={bidder.metrics.compliance_score} />
-            <Metric label="Verification coverage" value={bidder.metrics.verification_coverage} />
-            <Metric label="Mandatory coverage" value={bidder.metrics.verification_coverage_mandatory} />
             <Metric label="Evidence confidence" value={bidder.metrics.evidence_confidence} />
+          </div>
+          <div className="metric-row">
+            <CoverageMeter label="Verification coverage" value={bidder.metrics.verification_coverage} />
+            <CoverageMeter label="Mandatory coverage" value={bidder.metrics.verification_coverage_mandatory} />
           </div>
           <p className="hint">
             Three independent metrics, never blended into one score -- a bidder can be
             fully compliant on what was checked while coverage is honestly low.
           </p>
+
+          {evidence && evidence.evidence.length > 0 && (() => {
+            const byPath = Object.fromEntries(evidence.evidence.map((e) => [e.path, e]));
+            const claimed = byPath["bidder.gst.claimed_legal_name"];
+            const authority = byPath["bidder.gst.legal_name"];
+            if (!claimed?.resolved || !authority?.resolved) return null;
+            return (
+              <ConflictCard field="GST legal name" claim={claimed.value} authority={authority.value} />
+            );
+          })()}
 
           {bidder.collusion && (
             <p className={bidder.collusion.flagged ? "flag" : "hint"}>
@@ -133,9 +147,11 @@ export default function BidderDetailPage() {
                       <td><VerdictBadge verdict={v.verdict_effective} /></td>
                       <td>{v.reason_effective}</td>
                       <td>{v.overridden_by || "—"}</td>
-                      <td><button onClick={() => toggleProvenance(v.requirement_id)}>
-                        {openProvenance === v.requirement_id ? "Hide" : "Why?"}
-                      </button></td>
+                      <td><EvidenceChip
+                        value={openProvenance === v.requirement_id ? "Hide" : "Why?"}
+                        open={openProvenance === v.requirement_id}
+                        onReveal={() => toggleProvenance(v.requirement_id)}
+                      /></td>
                     </tr>
                     {openProvenance === v.requirement_id && provenance && (
                       <tr>
@@ -207,19 +223,7 @@ export default function BidderDetailPage() {
           {!repairPlan || repairPlan.actions.length === 0 ? (
             <p className="hint">{repairPlan?.note || "Nothing to repair right now."}</p>
           ) : (
-            <table className="evidence-table">
-              <thead><tr><th>Requirement</th><th>Action</th><th>Authority</th><th>Who</th></tr></thead>
-              <tbody>
-                {repairPlan.actions.map((a) => (
-                  <tr key={a.requirement_id}>
-                    <td className="mono">{a.requirement_id}</td>
-                    <td>{a.action}</td>
-                    <td>{a.authority || "—"}</td>
-                    <td><ActionableBadge actionableBy={a.actionable_by} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            repairPlan.actions.map((a) => <RepairAction key={a.requirement_id} action={a} />)
           )}
 
           <h2>Evaluate</h2>
