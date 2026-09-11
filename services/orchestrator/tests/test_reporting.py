@@ -11,6 +11,7 @@ from satyapramana_store.app import app, db
 from satyapramana_store.reporting.bid_autopsy import autopsy, classify
 from satyapramana_store.reporting.compliance_repair import repair_plan
 from satyapramana_store.reporting.dossier import build_dossier, render_dossier_text
+from satyapramana_store.reporting.tender_report import tender_report, render_tender_report_text
 
 _SOURCE = {"page": 1, "region": [0, 0, 100, 20]}
 
@@ -401,3 +402,93 @@ def test_render_shows_blocking_requirements_with_their_classification_and_repair
     bidder_section = text.split("REPAIR ACTIONS -- BIDDER")[1].split("REPAIR ACTIONS -- SYSTEM")[0]
     assert "SYSTEM" not in bidder_section
     assert "Flagged: True. Cluster cluster_A_B. Members: A, B." in text
+
+
+# --- Tender Compliance Report --------------------------------------------------
+# Pure-function tests only, no database: tender_report() aggregates a plain
+# list of dicts shaped exactly like GET /bidders/{id} returns (the same shape
+# the dossier tests above already use for BIDDER_QUALIFYING etc.), and does
+# no I/O of its own.
+
+def bidder_fixture(bidder_id, *, score=None, coverage=None, confidence=None,
+                    risk_level="MEDIUM", collusion=None):
+    return {
+        "bidder_id": bidder_id, "tender_id": "T1",
+        "verdicts": [],
+        "metrics": {"compliance_score": score, "verification_coverage": coverage,
+                    "verification_coverage_mandatory": coverage, "evidence_confidence": confidence},
+        "risk": {"level": risk_level, "triggers": [], "function_version": "risk@1"},
+        "collusion": collusion,
+    }
+
+
+def test_tender_report_on_an_empty_tender_is_honest_zeros_not_fabricated_data():
+    report = tender_report("T1", [])
+    assert report["bidder_count"] == 0
+    assert report["risk_distribution"] == {"LOW": 0, "MEDIUM": 0, "HIGH": 0}
+    assert report["collusion"] == {"cluster_count": 0, "flagged_bidder_count": 0, "bidder_clusters": {}}
+    assert report["compliance_score"] == {"mean": None, "min": None, "max": None,
+                                           "count": 0, "null_count": 0}
+
+
+def test_tender_report_mean_excludes_null_scores_and_counts_them_separately():
+    bidders = [bidder_fixture("A", score=80.0), bidder_fixture("B", score=60.0),
+               bidder_fixture("C", score=None)]
+    cs = tender_report("T1", bidders)["compliance_score"]
+    assert cs == {"mean": 70.0, "min": 60.0, "max": 80.0, "count": 2, "null_count": 1}
+
+
+def test_tender_report_groups_two_separate_clusters_and_leaves_one_bidder_unflagged():
+    """E is a tracked-but-isolated node (collusion present, flagged False) --
+    not a cluster membership. F has no collusion signal at all."""
+    bidders = [
+        bidder_fixture("A", collusion={"flagged": True, "cluster_id": "cluster_A_B", "members": ["A", "B"]}),
+        bidder_fixture("B", collusion={"flagged": True, "cluster_id": "cluster_A_B", "members": ["A", "B"]}),
+        bidder_fixture("C", collusion={"flagged": True, "cluster_id": "cluster_C_D", "members": ["C", "D"]}),
+        bidder_fixture("D", collusion={"flagged": True, "cluster_id": "cluster_C_D", "members": ["C", "D"]}),
+        bidder_fixture("E", collusion={"flagged": False, "cluster_id": "cluster_E", "members": ["E"]}),
+        bidder_fixture("F", collusion=None),
+    ]
+    c = tender_report("T1", bidders)["collusion"]
+    assert c["cluster_count"] == 2
+    assert c["flagged_bidder_count"] == 4
+    assert c["bidder_clusters"] == {"A": "cluster_A_B", "B": "cluster_A_B",
+                                     "C": "cluster_C_D", "D": "cluster_C_D"}
+    assert "E" not in c["bidder_clusters"] and "F" not in c["bidder_clusters"]
+
+
+def test_tender_report_risk_distribution_when_every_bidder_is_high_risk():
+    bidders = [bidder_fixture(x, risk_level="HIGH") for x in "ABC"]
+    report = tender_report("T1", bidders)
+    assert report["risk_distribution"] == {"LOW": 0, "MEDIUM": 0, "HIGH": 3}
+    assert report["bidder_count"] == 3
+
+
+def test_tender_report_is_identical_when_built_twice_from_the_same_input():
+    bidders = [
+        bidder_fixture("A", score=80.0,
+                        collusion={"flagged": True, "cluster_id": "cluster_A_B", "members": ["A", "B"]}),
+        bidder_fixture("B", score=None, risk_level="HIGH"),
+    ]
+    first = tender_report("T1", bidders)
+    second = tender_report("T1", bidders)
+    assert first == second
+    assert render_tender_report_text(first) == render_tender_report_text(second)
+
+
+def test_render_tender_report_text_shows_the_right_facts_without_fabricating_a_zero():
+    bidders = [
+        bidder_fixture("A", score=80.0, coverage=60.0, confidence=70.0, risk_level="LOW"),
+        bidder_fixture("B", risk_level="HIGH",
+                        collusion={"flagged": True, "cluster_id": "cluster_B_C", "members": ["B", "C"]}),
+        bidder_fixture("C", risk_level="HIGH",
+                        collusion={"flagged": True, "cluster_id": "cluster_B_C", "members": ["B", "C"]}),
+    ]
+    text = render_tender_report_text(tender_report("T1", bidders))
+    assert "Bidders: 3" in text
+    assert "LOW: 1" in text
+    assert "HIGH: 2" in text
+    assert "Clusters: 1" in text
+    assert "Flagged bidders: 2" in text
+    assert "B -> cluster_B_C" in text
+    assert "1 determined, 2 not yet determined" in text
