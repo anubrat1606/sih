@@ -10,15 +10,16 @@ from fastapi.testclient import TestClient
 
 from satyapramana_store.app import app, db
 from satyapramana_store.extract import (
-    find_candidates, find_document_dates, find_pan_holder_fields,
-    gstin_check_digit, pan_from_gstin, read_pdf, validate_cin,
-    validate_document_date, validate_gstin, validate_pan,
-    validate_pan_date_of_birth, validate_pan_holder_name, validate_udyam,
+    find_candidates, find_document_dates, find_gst_claimed_names,
+    find_pan_holder_fields, gstin_check_digit, pan_from_gstin, read_pdf,
+    validate_cin, validate_claimed_business_name, validate_document_date,
+    validate_gstin, validate_pan, validate_pan_date_of_birth,
+    validate_pan_holder_name, validate_udyam,
 )
 
 from .conftest_pdf import (
-    gst_certificate_lines, imageless_pdf, pan_card_lines, text_pdf, valid_cin,
-    valid_gstin,
+    gst_certificate_lines, gst_claimed_name_lines, imageless_pdf, pan_card_lines,
+    text_pdf, valid_cin, valid_gstin,
 )
 
 GSTIN = valid_gstin()
@@ -144,6 +145,23 @@ def test_a_well_formed_document_date_validates():
 ])
 def test_malformed_document_dates_are_rejected(bad, why):
     assert not validate_document_date(bad).ok, why
+
+
+def test_a_well_formed_claimed_business_name_validates():
+    assert validate_claimed_business_name("SHREE GANESH ENTERPRISES PRIVATE LIMITED").ok
+    assert validate_claimed_business_name("3M INDIA LIMITED").ok
+    assert validate_claimed_business_name("RAO & SONS").ok
+    assert validate_claimed_business_name("M/S RAJESH TRADERS").ok
+
+
+@pytest.mark.parametrize("bad,why", [
+    ("", "empty"),
+    ("123456", "all digits, no letters -- not a name"),
+    ("shree ganesh enterprises", "lowercase -- not how a certificate prints it"),
+    ("SHREE @ GANESH", "'@' is not punctuation a business name uses"),
+])
+def test_malformed_claimed_business_names_are_rejected(bad, why):
+    assert not validate_claimed_business_name(bad).ok, why
 
 
 def test_a_gstin_carries_its_holders_pan():
@@ -413,6 +431,64 @@ def test_an_expiry_equal_to_the_issue_date_is_not_treated_as_before_it():
     assert found["gst_date_of_issue"].valid and found["gst_date_of_expiry"].valid
 
 
+def test_claimed_business_names_are_located_with_their_boxes():
+    pdf = text_pdf(["Test fixture, not a certificate.", *gst_claimed_name_lines()])
+    found = {c.field: c for c in find_gst_claimed_names(read_pdf(pdf))}
+    assert set(found) == {"gst_claimed_legal_name", "gst_claimed_trade_name"}
+    legal, trade = found["gst_claimed_legal_name"], found["gst_claimed_trade_name"]
+    assert legal.valid and legal.value == "SHREE GANESH ENTERPRISES PRIVATE LIMITED"
+    assert legal.page == 1
+    assert trade.valid and trade.value == "SHREE GANESH TRADERS"
+    for field in (legal, trade):
+        x0, top, x1, bottom = field.region
+        assert x1 > x0 and bottom > top, "a real, non-degenerate rectangle"
+
+
+def test_a_blank_trade_name_is_not_read_as_a_guess():
+    """Very common in reality -- most registered businesses have no separate
+    trade name -- and must produce a recorded EXTRACTION_FAILED, not silence
+    and not a guess. In this fixture 'Trade Name' is the last printed line,
+    so no value line follows it at all."""
+    pdf = text_pdf(gst_claimed_name_lines(trade_name=None))
+    found = {c.field: c for c in find_gst_claimed_names(read_pdf(pdf))}
+    assert found["gst_claimed_legal_name"].valid
+    assert not found["gst_claimed_trade_name"].valid
+    assert "no value line follows" in found["gst_claimed_trade_name"].detail
+
+
+def test_a_blank_trade_name_followed_by_another_label_is_not_read_as_a_guess():
+    """The same blank field, but with something else printed after it on
+    the certificate -- the 'itself a printed label' guard, not the
+    'last line on the page' one."""
+    pdf = text_pdf(["Legal Name", "SHREE GANESH ENTERPRISES", "Trade Name",
+                    "Father's Name", "Not actually relevant here"])
+    found = {c.field: c for c in find_gst_claimed_names(read_pdf(pdf))}
+    assert found["gst_claimed_legal_name"].valid
+    assert not found["gst_claimed_trade_name"].valid
+    assert "itself a printed label" in found["gst_claimed_trade_name"].detail
+
+
+def test_a_malformed_claimed_name_is_reported_as_invalid_not_guessed():
+    pdf = text_pdf(gst_claimed_name_lines(legal_name="9999999"))
+    found = [c for c in find_gst_claimed_names(read_pdf(pdf))
+             if c.field == "gst_claimed_legal_name"]
+    assert found and not found[0].valid
+    assert "not a name" in found[0].detail
+
+
+def test_no_claimed_name_labels_means_no_candidates_at_all():
+    pdf = text_pdf([f"GSTIN: {GSTIN}"])
+    assert find_gst_claimed_names(read_pdf(pdf)) == []
+
+
+def test_a_claimed_name_label_repeated_across_pages_produces_only_one_candidate():
+    pdf = text_pdf(["Legal Name", "SHREE GANESH ENTERPRISES"], pages=3)
+    found = [c for c in find_gst_claimed_names(read_pdf(pdf))
+             if c.field == "gst_claimed_legal_name"]
+    assert len(found) == 1
+    assert found[0].page == 1
+
+
 # --- through the API ----------------------------------------------------------
 
 def test_uploading_a_document_extracts_and_records_it(client):
@@ -573,6 +649,37 @@ def test_an_expiry_before_issue_is_rejected_through_the_api(client, conn):
         assert cur.fetchone()[0] == 0
 
 
+def test_uploading_a_gst_certificate_extracts_the_claimed_names(client):
+    pdf = text_pdf(["GST Registration Certificate (test fixture).",
+                    *gst_claimed_name_lines()])
+    body = upload(client, pdf).json()
+    by_path = {e["path"]: e for e in body["extracted"]}
+    assert by_path["bidder.gst.claimed_legal_name"]["value"] == \
+        "SHREE GANESH ENTERPRISES PRIVATE LIMITED"
+    assert by_path["bidder.gst.claimed_trade_name"]["value"] == "SHREE GANESH TRADERS"
+    for path in ("bidder.gst.claimed_legal_name", "bidder.gst.claimed_trade_name"):
+        assert len(by_path[path]["region"]) == 4
+
+
+def test_extracting_a_claimed_name_never_touches_the_verification_path(client, conn):
+    """bidder.gst.legal_name is the live GST_STATUS adapter's path for the
+    authority's answer. evidence.py folds by later-event-wins -- if
+    extraction ever wrote there too, one would silently erase the other.
+    This proves the two are genuinely independent, not just named
+    differently."""
+    pdf = text_pdf(["GST Registration Certificate (test fixture).",
+                    *gst_claimed_name_lines()])
+    body = upload(client, pdf).json()
+    extracted_paths = {e["path"] for e in body["extracted"]}
+    assert "bidder.gst.claimed_legal_name" in extracted_paths
+    assert "bidder.gst.legal_name" not in extracted_paths
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM events WHERE event_type='FIELD_EXTRACTED' "
+            "AND payload->>'path'='bidder.gst.legal_name'")
+        assert cur.fetchone()[0] == 0
+
+
 def test_a_non_pdf_upload_fails_honestly(client):
     body = upload(client, b"this is not a pdf", name="notes.txt").json()
     assert body["extracted"] == [] and "could not read as PDF" in body["error"]
@@ -713,6 +820,35 @@ def test_the_trail_reaches_the_source_document_for_the_gst_expiry_date(client):
     extraction = trail[2]["payload"]
     assert extraction["value"] == "31/03/2028"
     assert extraction["path"] == "bidder.gst.date_of_expiry"
+    assert len(extraction["region"]) == 4
+
+
+def test_the_trail_reaches_the_source_document_for_the_claimed_legal_name(client):
+    """A future FUSE-stage comparison against bidder.gst.legal_name needs
+    this to be a real, provenanced claim -- not just a value in a response
+    body -- exactly like every other extracted field."""
+    pdf = text_pdf(["Test fixture, not a certificate.", *gst_claimed_name_lines()])
+    upload(client, pdf)
+
+    from .test_decide import EVAL, PACK
+    pack = {**PACK, "requirements": [
+        {"id": "R1", "text": "Bidder shall state its claimed legal name.",
+         "source": {"page": 14, "region": [72, 470, 523, 494]},
+         "obligation": "mandatory", "operator": "LEAF",
+         "predicate": {"op": "exists",
+                       "subject": {"field": "bidder.gst.claimed_legal_name"}}}]}
+    client.post("/tenders/T1/rule-pack",
+                json={"officer_id": "officer_1", "pack": pack})
+    client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL)
+
+    trail = client.get("/bidders/A/requirements/R1/provenance").json()["trail"]
+    kinds = [t["event_type"] for t in trail]
+    assert kinds == ["REQUIREMENT_EVALUATED", "EVIDENCE_FUSED",
+                     "FIELD_EXTRACTED", "DOCUMENT_INGESTED"]
+
+    extraction = trail[2]["payload"]
+    assert extraction["value"] == "SHREE GANESH ENTERPRISES PRIVATE LIMITED"
+    assert extraction["path"] == "bidder.gst.claimed_legal_name"
     assert len(extraction["region"]) == 4
 
 

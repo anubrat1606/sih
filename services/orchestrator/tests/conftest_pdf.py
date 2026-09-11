@@ -76,6 +76,28 @@ def gst_certificate_lines(
     return result
 
 
+def gst_claimed_name_lines(
+    legal_name: str | None = "SHREE GANESH ENTERPRISES PRIVATE LIMITED",
+    trade_name: str | None = "SHREE GANESH TRADERS",
+) -> list[str]:
+    """The 'Legal Name' / 'Trade Name' label-then-value lines as printed on
+    a GST registration certificate, for composing into a text_pdf() fixture
+    -- e.g. text_pdf(["not a certificate", *gst_claimed_name_lines()]).
+
+    Not a real certificate -- synthetic business names, arranged the way
+    the certificate actually prints them. Pass None for either to simulate
+    that field being blank (a real certificate very often has no separate
+    trade name).
+    """
+    result = ["Legal Name"]
+    if legal_name is not None:
+        result.append(legal_name)
+    result.append("Trade Name")
+    if trade_name is not None:
+        result.append(trade_name)
+    return result
+
+
 def text_pdf(lines: list[str], pages: int = 1) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
