@@ -535,6 +535,26 @@ def collusion(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
                         for c in clusters]}
 
 
+@app.get("/tenders/{tender_id}/collusion/edges")
+def collusion_edges(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+    """The pairwise findings behind the clusters above -- which two bidders,
+    over which specific attribute. `/collusion` answers "is this bidder
+    flagged"; this answers "why", at the same precision the event log
+    actually recorded it. Never the raw attribute value, only its hash's
+    existence as a match -- the same evidentiary boundary the log itself
+    keeps (see _link_shared_attributes)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT payload->>'bidder_a', payload->>'bidder_b', payload->>'attribute'
+               FROM events
+               WHERE event_type='SHARED_ATTRIBUTE_OBSERVED' AND tender_id=%s
+               ORDER BY seq""",
+            (tender_id,))
+        edges = [{"bidder_a": a, "bidder_b": b, "attribute": attr}
+                 for a, b, attr in cur.fetchall()]
+    return {"tender_id": tender_id, "edges": edges}
+
+
 # --- officer actions ----------------------------------------------------------
 
 @app.post("/bidders/{bidder_id}/decision", status_code=201)

@@ -1,21 +1,25 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { adoptRulePack, getTenderCollusion, listTenderBidders } from "../api";
+import ForceGraph2D from "react-force-graph-2d";
+import { adoptRulePack, getCollusionEdges, getTenderCollusion, listTenderBidders } from "../api";
 import { ErrorBox, Metric, RiskBadge } from "../components";
 
 export default function TenderDashboardPage() {
   const { tenderId } = useParams();
   const [bidders, setBidders] = useState(null);
   const [collusion, setCollusion] = useState(null);
+  const [edges, setEdges] = useState(null);
   const [error, setError] = useState(null);
   const [officerId, setOfficerId] = useState("officer_demo");
   const [packText, setPackText] = useState("");
   const [adoptResult, setAdoptResult] = useState(null);
   const [violations, setViolations] = useState(null);
+  const graphRef = useRef();
 
   function load() {
     listTenderBidders(tenderId).then((body) => setBidders(body.bidders)).catch(setError);
     getTenderCollusion(tenderId).then((body) => setCollusion(body.bidders)).catch(setError);
+    getCollusionEdges(tenderId).then((body) => setEdges(body.edges)).catch(setError);
   }
 
   useEffect(load, [tenderId]);
@@ -60,30 +64,55 @@ export default function TenderDashboardPage() {
         ))}
       </div>
 
-      <h2>Collusion clusters</h2>
-      <p className="hint">Edges are a shared director name, address, phone, or bank account across bidders on this tender.</p>
-      {(() => {
-        const flagged = (collusion || []).filter((b) => b.flagged);
-        if (!collusion) return null;
-        if (flagged.length === 0) return <p className="hint">No collusion links found among registered bidders.</p>;
-        const clusters = new Map();
-        for (const b of flagged) {
-          if (!clusters.has(b.cluster_id)) clusters.set(b.cluster_id, b.members);
-        }
-        return (
-          <table className="evidence-table">
-            <thead><tr><th>Cluster</th><th>Members</th></tr></thead>
-            <tbody>
-              {[...clusters.entries()].map(([clusterId, members]) => (
-                <tr key={clusterId}>
-                  <td>{clusterId}</td>
-                  <td>{members.join(", ")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        );
-      })()}
+      <h2>Collusion</h2>
+      <p className="hint">
+        Edges are a shared director name, address, phone, or bank account across
+        bidders on this tender -- the graph shows only the specific pair and
+        attribute the event log actually recorded, nothing inferred beyond that.
+      </p>
+      {bidders && edges && (
+        edges.length === 0 ? (
+          <p className="hint">No collusion links found among registered bidders.</p>
+        ) : (
+          <div className="graph-box">
+            <ForceGraph2D
+              ref={graphRef}
+              width={640}
+              height={360}
+              graphData={{
+                nodes: bidders.map((b) => ({ id: b.bidder_id, flagged: b.collusion?.flagged })),
+                links: edges.map((e) => ({ source: e.bidder_a, target: e.bidder_b, label: e.attribute })),
+              }}
+              nodeLabel="id"
+              nodeColor={(n) => (n.flagged ? "#cf222e" : "#57606a")}
+              linkLabel={(l) => l.label}
+              linkColor={() => "#9a6700"}
+              linkDirectionalArrowLength={0}
+              linkCanvasObjectMode={() => "after"}
+              linkCanvasObject={(link, ctx) => {
+                if (typeof link.source !== "object" || typeof link.target !== "object") return;
+                const midX = (link.source.x + link.target.x) / 2;
+                const midY = (link.source.y + link.target.y) / 2;
+                ctx.font = "3px sans-serif";
+                ctx.fillStyle = "#9a6700";
+                ctx.textAlign = "center";
+                ctx.fillText(link.label, midX, midY);
+              }}
+            />
+          </div>
+        )
+      )}
+
+      {collusion && collusion.some((b) => b.flagged) && (
+        <table className="evidence-table">
+          <thead><tr><th>Bidder A</th><th>Bidder B</th><th>Shared attribute</th></tr></thead>
+          <tbody>
+            {(edges || []).map((e, i) => (
+              <tr key={i}><td>{e.bidder_a}</td><td>{e.bidder_b}</td><td>{e.attribute}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       <h2>Adopt a rule pack</h2>
       <p className="hint">

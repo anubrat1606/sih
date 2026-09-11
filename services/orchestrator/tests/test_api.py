@@ -105,6 +105,19 @@ def test_the_collusion_endpoint_reports_the_cluster(client):
     assert by_id["C"]["flagged"] is False
 
 
+def test_collusion_edges_names_the_specific_pair_and_attribute(client):
+    register(client, "T1", "A", phone="1111111111", address="1 Test Rd")
+    register(client, "T1", "B", phone="1111111111")
+    register(client, "T1", "C", address="9 Other Rd")
+    edges = client.get("/tenders/T1/collusion/edges").json()["edges"]
+    assert edges == [{"bidder_a": "B", "bidder_b": "A", "attribute": "phone"}]
+
+
+def test_collusion_edges_for_an_unflagged_tender_is_empty(client):
+    register(client, "T1", "A", phone="1111111111")
+    assert client.get("/tenders/T1/collusion/edges").json() == {"tender_id": "T1", "edges": []}
+
+
 def test_listing_tender_bidders_returns_the_same_summary_as_the_single_lookup(client):
     register(client, "T1", "A")
     register(client, "T1", "B")

@@ -64,6 +64,9 @@ export const getProvenance = (bidderId, requirementId) =>
 export const getTenderCollusion = (tenderId) =>
   call(`/tenders/${encodeURIComponent(tenderId)}/collusion`);
 
+export const getCollusionEdges = (tenderId) =>
+  call(`/tenders/${encodeURIComponent(tenderId)}/collusion/edges`);
+
 export const recordDecision = (bidderId, tenderId, officerId, decision, note) =>
   call(`/bidders/${encodeURIComponent(bidderId)}/decision?${new URLSearchParams({ tender_id: tenderId })}`, {
     method: "POST", ...json({ officer_id: officerId, decision, note: note || null }),
