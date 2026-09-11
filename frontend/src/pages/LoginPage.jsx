@@ -15,7 +15,7 @@ export default function LoginPage() {
   // the tenders list by default. Declarative redirect, not a navigate()
   // call during render.
   if (session) {
-    return <Navigate to={location.state?.from?.pathname || "/tenders"} replace />;
+    return <Navigate to={location.state?.from?.pathname || "/dashboard"} replace />;
   }
 
   async function onSubmit(e) {

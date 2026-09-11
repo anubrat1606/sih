@@ -39,6 +39,8 @@ const json = (body) => ({ headers: { "Content-Type": "application/json" }, body:
 
 export const getCapabilities = () => call("/capabilities");
 
+export const getDashboard = () => call("/dashboard");
+
 export const login = (username, password) =>
   call("/auth/login", { method: "POST", ...json({ username, password }) });
 

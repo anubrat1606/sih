@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
 import { AuthProvider, RequireAuth } from "./auth";
-import { useAuth } from "./authContext";
+import { roleAtLeast, useAuth } from "./authContext";
 import StatusPage from "./pages/StatusPage";
 import LoginPage from "./pages/LoginPage";
 import TendersPage from "./pages/TendersPage";
@@ -10,6 +10,8 @@ import TenderDashboardPage from "./pages/TenderDashboardPage";
 import BidderDetailPage from "./pages/BidderDetailPage";
 import EvidenceGraphPage from "./pages/EvidenceGraphPage";
 import AuditPage from "./pages/AuditPage";
+import AdminUsersPage from "./pages/AdminUsersPage";
+import DashboardPage from "./pages/DashboardPage";
 import "./App.css";
 
 // Light is the default; dark is not a filter over it -- both are first-class
@@ -72,9 +74,11 @@ function Nav() {
       <Link to="/">Status</Link>
       {session && (
         <>
+          <Link to="/dashboard">Dashboard</Link>
           <Link to="/tenders">Tenders</Link>
           <Link to="/register">Register bidder</Link>
           <Link to="/audit">Audit log</Link>
+          {roleAtLeast(session.role, "ADMIN") && <Link to="/admin/users">Officer accounts</Link>}
         </>
       )}
       <span className="topnav-note">SATYAPRAMĀṆA — real data only, no simulated authority response</span>
@@ -89,12 +93,14 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<StatusPage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/dashboard" element={<RequireAuth><DashboardPage /></RequireAuth>} />
       <Route path="/tenders" element={<RequireAuth><TendersPage /></RequireAuth>} />
       <Route path="/register" element={<RequireAuth><RegisterBidderPage /></RequireAuth>} />
       <Route path="/tenders/:tenderId" element={<RequireAuth><TenderDashboardPage /></RequireAuth>} />
       <Route path="/bidders/:bidderId" element={<RequireAuth><BidderDetailPage /></RequireAuth>} />
       <Route path="/bidders/:bidderId/evidence-graph" element={<RequireAuth><EvidenceGraphPage /></RequireAuth>} />
       <Route path="/audit" element={<RequireAuth><AuditPage /></RequireAuth>} />
+      <Route path="/admin/users" element={<RequireAuth><AdminUsersPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

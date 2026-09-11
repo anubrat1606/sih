@@ -146,6 +146,46 @@ def test_listing_tenders_with_none_registered_is_an_empty_list(client):
     assert client.get("/tenders").json() == {"tenders": []}
 
 
+# --- dashboard ------------------------------------------------------------
+
+def test_dashboard_requires_authentication(client):
+    assert client.get("/dashboard").status_code == 401
+
+
+def test_dashboard_on_a_fresh_system_is_honest_zeros(client, conn):
+    body = client.get("/dashboard", headers=auth_headers(conn)).json()
+    assert body["tender_count"] == 0 and body["bidder_count"] == 0
+    assert body["risk_distribution"] == {"LOW": 0, "MEDIUM": 0, "HIGH": 0}
+    assert body["recent_decisions"] == []
+    assert "capabilities" in body["capabilities"]
+
+
+def test_dashboard_counts_real_tenders_and_bidders(client, conn):
+    register(client, "T-DASH-1", "A")
+    register(client, "T-DASH-1", "B", phone="9990001111")
+    register(client, "T-DASH-1", "C", phone="9990001111")
+    register(client, "T-DASH-2", "D")
+    body = client.get("/dashboard", headers=auth_headers(conn)).json()
+    assert body["tender_count"] == 2
+    assert body["bidder_count"] == 4
+    assert body["flagged_bidder_count"] == 2  # B and C share a phone
+    assert body["risk_distribution"]["HIGH"] == 2
+    assert sum(body["risk_distribution"].values()) == 4
+
+
+def test_dashboard_lists_recent_decisions_newest_first(client, conn):
+    register(client, "T-DASH-3", "A")
+    client.post("/bidders/A/decision", params={"tender_id": "T-DASH-3"},
+               json={"decision": "QUALIFY"}, headers=auth_headers(conn, username="officer_a"))
+    client.post("/bidders/A/decision", params={"tender_id": "T-DASH-3"},
+               json={"decision": "DISQUALIFY"}, headers=auth_headers(conn, username="officer_a"))
+    body = client.get("/dashboard", headers=auth_headers(conn)).json()
+    decisions = [d for d in body["recent_decisions"] if d["tender_id"] == "T-DASH-3"]
+    assert decisions[0]["decision"] == "DISQUALIFY"  # most recent first
+    assert decisions[1]["decision"] == "QUALIFY"
+    assert decisions[0]["officer"] == "officer_a"
+
+
 # --- read models --------------------------------------------------------------
 
 def test_compliance_score_is_null_not_zero_when_nothing_is_determinate(client):

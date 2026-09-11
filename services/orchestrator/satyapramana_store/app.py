@@ -282,6 +282,49 @@ def list_tenders(conn=Depends(db)) -> dict[str, Any]:
         return {"tenders": [row[0] for row in cur.fetchall()]}
 
 
+@app.get("/dashboard")
+def dashboard(conn=Depends(db), user: User = Depends(current_user)) -> dict[str, Any]:
+    """The landing view: how many tenders and bidders exist, the system-wide
+    risk distribution, the most recent officer decisions, and the same
+    honest capability status /capabilities already reports. Authenticated
+    (unlike /capabilities) because this exposes real tender and bidder
+    counts, not just deployment config.
+
+    Composes list_tenders/list_tender_bidders/capabilities rather than
+    recomputing anything -- every number here traces back to a real read
+    model this system already serves elsewhere."""
+    tenders = list_tenders(conn)["tenders"]
+    risk_counts = {"LOW": 0, "MEDIUM": 0, "HIGH": 0}
+    bidder_count = 0
+    flagged_bidder_count = 0
+    for tender_id in tenders:
+        for b in list_tender_bidders(tender_id, conn)["bidders"]:
+            bidder_count += 1
+            risk_counts[b["risk"]["level"]] += 1
+            if b.get("collusion", {}).get("flagged"):
+                flagged_bidder_count += 1
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT tender_id, bidder_id, occurred_at, payload->>'decision', actor_id
+               FROM events WHERE event_type='DECISION_RECORDED'
+               ORDER BY seq DESC LIMIT 10""")
+        recent_decisions = [
+            {"tender_id": t, "bidder_id": b, "occurred_at": at.isoformat(),
+             "decision": d, "officer": officer}
+            for t, b, at, d, officer in cur.fetchall()
+        ]
+
+    return {
+        "tender_count": len(tenders),
+        "bidder_count": bidder_count,
+        "flagged_bidder_count": flagged_bidder_count,
+        "risk_distribution": risk_counts,
+        "recent_decisions": recent_decisions,
+        "capabilities": capabilities(),
+    }
+
+
 # --- ingestion ----------------------------------------------------------------
 
 @app.post("/tenders/{tender_id}/bidders", status_code=201)
