@@ -86,3 +86,88 @@ export function ErrorBox({ error }) {
   if (!error) return null;
   return <p className="error">{String(error.message || error)}</p>;
 }
+
+// <CoverageMeter> -- satyapramana.md 2.3: "renders verification coverage
+// honestly, including the unverified remainder. Visually incapable of
+// showing 100% when coverage is partial." The uncovered remainder is a
+// diagonal-hatched fill (App.css), never blank space -- blank space reads
+// as "nothing here, all is well," which is exactly the wrong message for
+// an unverified gap.
+export function CoverageMeter({ label, value }) {
+  if (value === null || value === undefined) {
+    return (
+      <div className="coverage-meter">
+        <div className="metric-label">{label}</div>
+        <div className="coverage-track"><div className="coverage-unresolved-label">not determined</div></div>
+      </div>
+    );
+  }
+  const pct = Math.max(0, Math.min(100, Math.round(value)));
+  return (
+    <div className="coverage-meter">
+      <div className="metric-label">{label}</div>
+      <div className="coverage-track">
+        <div className="coverage-fill" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="coverage-value mono">
+        {pct}% verified{pct < 100 ? `, ${100 - pct}% unverified` : ""}
+      </div>
+    </div>
+  );
+}
+
+// <ConflictCard> -- bidder claim vs authority response, side by side, the
+// delta unmissable. Renders nothing when either side is missing: a
+// one-sided "conflict" would be a fabricated comparison, not a real one.
+export function ConflictCard({ field, claim, authority }) {
+  if (claim === null || claim === undefined || authority === null || authority === undefined) return null;
+  const agrees = String(claim).trim().toUpperCase() === String(authority).trim().toUpperCase();
+  return (
+    <div className={`conflict-card ${agrees ? "conflict-agree" : "conflict-disagree"}`}>
+      <div className="conflict-field">{field}</div>
+      <div className="conflict-row">
+        <div className="conflict-side">
+          <div className="metric-label">Bidder claims</div>
+          <div className="mono">{claim}</div>
+        </div>
+        <div className="conflict-delta" aria-hidden="true">{agrees ? "=" : "≠"}</div>
+        <div className="conflict-side">
+          <div className="metric-label">Authority says</div>
+          <div className="mono">{authority}</div>
+        </div>
+      </div>
+      {!agrees && <div className="conflict-flag">Bidder's claim does not match the authority's record.</div>}
+    </div>
+  );
+}
+
+// <RepairAction> -- "a corrective action written as a specific, executable
+// instruction." One card per action, never a bare table row -- the point is
+// that it reads as an instruction someone could act on today.
+export function RepairAction({ action }) {
+  return (
+    <div className={`repair-action repair-${action.actionable_by === "BIDDER" ? "bidder" : "system"}`}>
+      <div className="repair-header">
+        <span className="mono">{action.requirement_id}</span>
+        <ActionableBadge actionableBy={action.actionable_by} />
+      </div>
+      <div className="repair-text">{action.action}</div>
+      {action.authority && <div className="hint">Authority: {action.authority}</div>}
+    </div>
+  );
+}
+
+// <EvidenceChip> -- "any rendered fact is a chip. Clicking reveals its
+// source." This component only renders the chip and forwards the click --
+// the page wires onReveal to whatever "show the source" means in context
+// (open a ProvenanceTrail, scroll to a PdfEvidenceViewer), since only the
+// page knows what evidence backs a given value.
+export function EvidenceChip({ value, onReveal, open }) {
+  return (
+    <button type="button" className={`evidence-chip ${open ? "evidence-chip-open" : ""}`}
+            onClick={onReveal} title="Click to see the source">
+      <span className="mono">{value}</span>
+      <span aria-hidden="true" className="evidence-chip-icon">⌕</span>
+    </button>
+  );
+}

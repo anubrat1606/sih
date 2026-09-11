@@ -460,6 +460,21 @@ def test_a_matching_pan_and_gstin_are_linked(client):
     assert upload(client, pdf).json()["identifier_cross_check"]["outcome"] == "LINKED"
 
 
+def test_the_evidence_endpoint_reports_everything_extracted_for_the_bidder(client):
+    pdf = text_pdf(["Test fixture, not a certificate.", f"GSTIN: {GSTIN}", f"PAN: {PAN}"])
+    upload(client, pdf)
+    body = client.get("/bidders/A/evidence", params={"tender_id": "T1"}).json()
+    by_path = {e["path"]: e for e in body["evidence"]}
+    assert by_path["bidder.gst.gstin"]["resolved"] is True
+    assert by_path["bidder.gst.gstin"]["value"] == GSTIN
+    assert by_path["bidder.pan.pan_number"]["value"] == PAN
+
+
+def test_the_evidence_endpoint_for_an_unknown_bidder_is_an_empty_list(client):
+    assert client.get("/bidders/NOBODY/evidence", params={"tender_id": "T1"}).json() == {
+        "bidder_id": "NOBODY", "tender_id": "T1", "evidence": []}
+
+
 def test_the_cross_check_fires_across_two_separate_uploads(client):
     """A bidder's PAN card and GST certificate are realistically two separate
     files. The second, later upload must see the first upload's identifier."""

@@ -81,6 +81,9 @@ export const overrideVerdict = (bidderId, tenderId, officerId, requirementId, ve
 export const getAutopsy = (bidderId, tenderId) =>
   call(`/bidders/${encodeURIComponent(bidderId)}/autopsy?${new URLSearchParams({ tender_id: tenderId })}`);
 
+export const getBidderEvidence = (bidderId, tenderId) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/evidence?${new URLSearchParams({ tender_id: tenderId })}`);
+
 export const getRepairPlan = (bidderId, tenderId) =>
   call(`/bidders/${encodeURIComponent(bidderId)}/repair-plan?${new URLSearchParams({ tender_id: tenderId })}`);
 

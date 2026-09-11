@@ -568,6 +568,29 @@ def bidder_dossier(bidder_id: str, tender_id: str, as_text: bool = False,
     return dossier
 
 
+@app.get("/bidders/{bidder_id}/evidence")
+def bidder_evidence(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+    """Every evidence path resolved (or not) for this bidder -- the raw
+    material the rule engine reads, before any rule pack judges it.
+    Provenance answers "why does this one verdict say what it says"; this
+    answers "what does this system actually know about this bidder,
+    everything, right now" -- the frontend's ConflictCard needs exactly this
+    to show a bidder's own claim beside what an authority verified, since
+    nothing else exposes two evidence paths side by side."""
+    rebuild_evidence(conn, bidder_id, REGISTRY)
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT path, resolved, value, unresolved_reason, tier, channel
+               FROM proj_evidence WHERE bidder_id=%s ORDER BY path""",
+            (bidder_id,))
+        rows = cur.fetchall()
+    return {"bidder_id": bidder_id, "tender_id": tender_id,
+            "evidence": [
+                {"path": path, "resolved": resolved, "value": value,
+                 "unresolved_reason": reason, "tier": tier, "channel": channel}
+                for path, resolved, value, reason, tier, channel in rows]}
+
+
 @app.get("/bidders/{bidder_id}/requirements/{requirement_id}/provenance")
 def provenance(bidder_id: str, requirement_id: str, conn=Depends(db)) -> dict[str, Any]:
     """Why does this say what it says.

@@ -110,3 +110,57 @@ button.danger { border-color: var(--status-fail-fg); background: var(--status-fa
 .metric { min-width: 90px; }
 .metric-label { font-size: var(--text-xs); color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.03em; }
 .metric-value { font-size: var(--text-lg); font-weight: 700; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* <CoverageMeter> -- the unresolved remainder is a visible hatch, never
+ * blank space, so partial coverage cannot be mistaken for "all clear". */
+.coverage-meter { min-width: 180px; margin: var(--space-2) 0; }
+.coverage-track {
+  position: relative; height: 10px; border-radius: var(--radius-full);
+  margin: var(--space-1) 0;
+  background: repeating-linear-gradient(
+    135deg, var(--color-border), var(--color-border) 3px,
+    var(--color-surface) 3px, var(--color-surface) 6px
+  );
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+}
+.coverage-fill {
+  height: 100%; background: var(--status-pass-fg);
+  transition: width var(--duration-slow) var(--ease-standard);
+}
+.coverage-value { font-size: var(--text-xs); color: var(--color-text-secondary); }
+.coverage-unresolved-label { font-size: var(--text-xs); color: var(--color-text-secondary); padding: var(--space-1) 0; }
+
+/* <ConflictCard> -- bidder claim vs authority response, delta unmissable. */
+.conflict-card {
+  border: 1px solid var(--color-border); border-radius: var(--radius-md);
+  padding: var(--space-3); margin: var(--space-2) 0; background: var(--color-surface);
+}
+.conflict-card.conflict-disagree { border-color: var(--status-fail-fg); background: var(--status-fail-bg); }
+.conflict-field { font-weight: 600; margin-bottom: var(--space-2); }
+.conflict-row { display: flex; align-items: center; gap: var(--space-3); }
+.conflict-side { flex: 1; }
+.conflict-delta { font-size: var(--text-lg); font-weight: 700; color: var(--color-text-secondary); }
+.conflict-disagree .conflict-delta { color: var(--status-fail-fg); }
+.conflict-flag { margin-top: var(--space-2); font-size: var(--text-sm); color: var(--status-fail-fg); font-weight: 600; }
+
+/* <RepairAction> -- a specific, executable instruction, never a bare row. */
+.repair-action {
+  border: 1px solid var(--color-border); border-left: 4px solid var(--status-unknown-fg);
+  border-radius: var(--radius-sm); padding: var(--space-3); margin: var(--space-2) 0;
+  background: var(--color-surface);
+}
+.repair-action.repair-bidder { border-left-color: var(--status-pass-fg); }
+.repair-header { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); }
+.repair-text { font-size: var(--text-base); }
+
+/* <EvidenceChip> -- any rendered fact, hoverable/clickable to its source. */
+.evidence-chip {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  background: var(--color-accent-bg); color: var(--color-text);
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  padding: 2px var(--space-2); font-size: var(--text-sm); cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+.evidence-chip:hover, .evidence-chip.evidence-chip-open { border-color: var(--color-accent); }
+.evidence-chip-icon { opacity: 0.6; font-size: var(--text-xs); }
