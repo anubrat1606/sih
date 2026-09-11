@@ -202,20 +202,25 @@ real demo data exists: does the team share one real key pair (entered
 once into the Render service's env vars, per `docs/DEPLOYMENT.md`), or
 does each developer need their own for local work?
 
-### 3. No rule pack built from a real tender — resolved 2026-09-12
+[PR #59](https://github.com/anubrat1606/sih/pull/59), merged: Kevin ran a
+real GeM tender (BHEL, Enquiry No. T7J1Z68239, "Supply of Metallic
+Expansion Joints," sourced live from GeM's public catalog document store)
+through the full live admin builder flow and adopted a real rule pack —
+`rulepacks/bhel.t7j1z68239.metallic-expansion-joints.json` — 3 requirements
+(GST, PAN, Udyam), all evidence-backed. Independently re-verified before
+merge, not just trusted: the source PDF's SHA-256 was recomputed from a
+fresh download and matched exactly; the pack's `content_hash` was
+recomputed from the committed file and matched the live
+`RULE_PACK_ADOPTED` event exactly; every quoted requirement text was
+checked against the actual PDF page and matched verbatim.
 
-Kevin ran a real GeM tender (BHEL, Enquiry No. T7J1Z68239, "Supply of
-Metallic Expansion Joints") through the full live admin builder flow and
-adopted a real rule pack — `rulepacks/bhel.t7j1z68239.metallic-expansion-joints.json`.
-Independently re-verified before merge, not just trusted: the source PDF's
-SHA-256 was recomputed from a fresh download and matched exactly; the
-pack's `content_hash` was recomputed from the committed file and matched
-the live `RULE_PACK_ADOPTED` event exactly; every quoted requirement text
-was checked against the actual PDF page and matched verbatim; the 5
-requirements correctly left unadopted (turnover, experience, certification,
-insolvency declaration, integrity pact) were confirmed real but genuinely
-unbacked by any registered evidence capability, not stripped to force a
-clean adopt.
+5 more real requirements from the same tender (turnover, experience,
+certification, two declarations) were drafted, validated, and correctly
+refused adoption (rule 8: no evidence path; rule 11: `review_required`) —
+documented in the PR, not silently dropped. That residual gap (no evidence
+path for turnover/experience/certification/declarations anywhere in this
+system) is real and still open, but it's a capability gap now, not a
+"nobody has tried this with real data yet" gap.
 
 ### 4. Deployment — resolved 2026-09-12, no Docker
 
