@@ -186,12 +186,22 @@ button.danger { border-color: var(--status-fail-fg); background: var(--status-fa
 }
 .evidence-graph-link:hover { text-decoration: underline; }
 
+.eg-toolbar { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-3) 0; flex-wrap: wrap; }
+.eg-toolbar button { padding: var(--space-1) var(--space-3); font-size: var(--text-sm); }
+
 .evidence-graph-scroll {
-  overflow-x: auto; background: var(--color-surface);
+  overflow: hidden; background: var(--color-surface);
   border: 1px solid var(--color-border); border-radius: var(--radius-md);
   padding: var(--space-3);
 }
 .evidence-graph-svg { display: block; }
+.eg-svg-viewport { cursor: grab; touch-action: none; }
+.eg-svg-viewport:active { cursor: grabbing; }
+
+.eg-legend { display: flex; gap: var(--space-4); flex-wrap: wrap; margin: var(--space-3) 0; font-size: var(--text-sm); color: var(--color-text-secondary); }
+.eg-legend-item { display: inline-flex; align-items: center; gap: var(--space-1); }
+.eg-legend-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.eg-legend-dashed { width: 18px; height: 0; border-top: 2px dashed var(--color-text-secondary); display: inline-block; }
 .eg-col-header {
   font-family: var(--font-display); font-size: var(--text-sm); font-weight: 700;
   fill: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.04em;

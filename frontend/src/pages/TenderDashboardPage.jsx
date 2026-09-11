@@ -17,7 +17,21 @@ export default function TenderDashboardPage() {
   const [packText, setPackText] = useState("");
   const [adoptResult, setAdoptResult] = useState(null);
   const [violations, setViolations] = useState(null);
+  const [selectedNode, setSelectedNode] = useState(null);
   const graphRef = useRef();
+
+  // Which bidder ids are actually connected to the selected node, so a
+  // click can dim everything else instead of leaving the whole graph
+  // equally weighted -- react-force-graph-2d gives pan/zoom for free
+  // (d3-zoom under the hood), this is the one thing it doesn't.
+  function connectedTo(bidderId, edgeList) {
+    const linked = new Set([bidderId]);
+    edgeList.forEach((e) => {
+      if (e.bidder_a === bidderId) linked.add(e.bidder_b);
+      if (e.bidder_b === bidderId) linked.add(e.bidder_a);
+    });
+    return linked;
+  }
 
   function load() {
     listTenderBidders(tenderId).then((body) => setBidders(body.bidders)).catch(setError);
@@ -77,32 +91,56 @@ export default function TenderDashboardPage() {
         edges.length === 0 ? (
           <p className="hint">No collusion links found among registered bidders.</p>
         ) : (
-          <div className="graph-box">
-            <ForceGraph2D
-              ref={graphRef}
-              width={640}
-              height={360}
-              graphData={{
-                nodes: bidders.map((b) => ({ id: b.bidder_id, flagged: b.collusion?.flagged })),
-                links: edges.map((e) => ({ source: e.bidder_a, target: e.bidder_b, label: e.attribute })),
-              }}
-              nodeLabel="id"
-              nodeColor={(n) => (n.flagged ? cssVar("--status-fail-fg") : cssVar("--status-unknown-fg"))}
-              linkLabel={(l) => l.label}
-              linkColor={() => cssVar("--status-partial-fg")}
-              linkDirectionalArrowLength={0}
-              linkCanvasObjectMode={() => "after"}
-              linkCanvasObject={(link, ctx) => {
-                if (typeof link.source !== "object" || typeof link.target !== "object") return;
-                const midX = (link.source.x + link.target.x) / 2;
-                const midY = (link.source.y + link.target.y) / 2;
-                ctx.font = "3px sans-serif";
-                ctx.fillStyle = cssVar("--status-partial-fg");
-                ctx.textAlign = "center";
-                ctx.fillText(link.label, midX, midY);
-              }}
-            />
-          </div>
+          <>
+            <div className="eg-toolbar">
+              <button type="button" onClick={() => graphRef.current?.zoomToFit(400, 40)}>Reset view</button>
+              {selectedNode && (
+                <button type="button" onClick={() => setSelectedNode(null)}>Clear selection</button>
+              )}
+              <span className="hint">Scroll to zoom, drag to pan, click a bidder to trace their links</span>
+            </div>
+            <div className="graph-box">
+              <ForceGraph2D
+                ref={graphRef}
+                width={640}
+                height={360}
+                graphData={{
+                  nodes: bidders.map((b) => ({ id: b.bidder_id, flagged: b.collusion?.flagged })),
+                  links: edges.map((e) => ({ source: e.bidder_a, target: e.bidder_b, label: e.attribute })),
+                }}
+                nodeLabel="id"
+                onNodeClick={(n) => setSelectedNode((cur) => (cur === n.id ? null : n.id))}
+                nodeColor={(n) => {
+                  const dim = selectedNode && !connectedTo(selectedNode, edges).has(n.id);
+                  const base = n.flagged ? cssVar("--status-fail-fg") : cssVar("--status-unknown-fg");
+                  return dim ? cssVar("--color-border") : base;
+                }}
+                linkLabel={(l) => l.label}
+                linkColor={(l) => {
+                  if (!selectedNode) return cssVar("--status-partial-fg");
+                  const sourceId = l.source.id ?? l.source;
+                  const targetId = l.target.id ?? l.target;
+                  const connected = sourceId === selectedNode || targetId === selectedNode;
+                  return connected ? cssVar("--status-partial-fg") : cssVar("--color-border");
+                }}
+                linkDirectionalArrowLength={0}
+                linkCanvasObjectMode={() => "after"}
+                linkCanvasObject={(link, ctx) => {
+                  if (typeof link.source !== "object" || typeof link.target !== "object") return;
+                  const midX = (link.source.x + link.target.x) / 2;
+                  const midY = (link.source.y + link.target.y) / 2;
+                  ctx.font = "3px sans-serif";
+                  ctx.fillStyle = cssVar("--status-partial-fg");
+                  ctx.textAlign = "center";
+                  ctx.fillText(link.label, midX, midY);
+                }}
+              />
+            </div>
+            <div className="eg-legend">
+              <span className="eg-legend-item"><span className="eg-legend-swatch" style={{ background: "var(--status-fail-fg)" }} />collusion-flagged</span>
+              <span className="eg-legend-item"><span className="eg-legend-swatch" style={{ background: "var(--status-unknown-fg)" }} />tracked, not flagged</span>
+            </div>
+          </>
         )
       )}
 
