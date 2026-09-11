@@ -36,7 +36,8 @@ from .decide import fuse_and_evaluate
 from .events import Actor, append, export_jsonl, verify_chain
 from .evidence import ProjectionResolver, rebuild_evidence
 from .explain import Unavailable
-from .extract import ingest_document
+from .extract import ingest_document, read_pdf
+from .tender_intelligence import Unavailable as DecomposeUnavailable
 from .projections import collusion_clusters, provenance_trail, rebuild_projections
 from .reporting.bid_autopsy import autopsy
 from .reporting.blocker_summary import blocker_summary
@@ -116,6 +117,13 @@ for _adapter in _build_sandbox_adapters():
 # than a fabricated narrative.
 from .explain import build_from_env as _build_explainer  # noqa: E402
 EXPLAINER = _build_explainer()
+
+# Same plug-in shape again: with no SATYAPRAMANA_GEMINI_API_KEY set,
+# DECOMPOSER stays on the honest UnconfiguredDecomposer and
+# /tenders/{id}/decompose returns Unavailable -- never a fabricated
+# requirement list.
+from .tender_intelligence import build_from_env as _build_decomposer  # noqa: E402
+DECOMPOSER = _build_decomposer()
 
 
 def db():
@@ -577,6 +585,64 @@ def get_document(document_sha256: str, conn=Depends(db)):
     if not os.path.isfile(path):
         raise HTTPException(404, "the event log references this document, but it is not on disk here")
     return FileResponse(path, media_type="application/pdf")
+
+
+class DecomposeIn(BaseModel):
+    document_sha256: str
+
+
+@app.post("/tenders/{tender_id}/decompose")
+def decompose_tender(tender_id: str, body: DecomposeIn, conn=Depends(db),
+                     user: User = Depends(current_user)) -> dict[str, Any]:
+    """satyapramana.md section 5's AI/deterministic boundary table, the
+    "Decompose tender prose into atomic requirements" row -- explicitly an
+    LLM-may capability, and explicitly bounded: this returns candidate
+    requirement proposals for an officer to review, never a rule pack.
+    Nothing from here reaches POST /tenders/{id}/rule-pack without a human
+    manually re-entering it through the rule pack builder -- there is no
+    code path that skips that.
+
+    The document must already be an ingested document (any prior upload
+    endpoint reaches the same storage) -- this never accepts raw text
+    directly, so every decomposition traces back to a real, hash-addressed
+    source document, the same evidentiary discipline as everything else in
+    this system.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT payload->>'storage_ref' FROM events
+               WHERE event_type='DOCUMENT_INGESTED' AND payload->>'document_sha256'=%s
+               LIMIT 1""",
+            (body.document_sha256,))
+        row = cur.fetchone()
+    if not row or not row[0]:
+        raise HTTPException(404, "no document with that hash was ever ingested")
+    path = row[0]
+    if not os.path.isfile(path):
+        raise HTTPException(404, "the event log references this document, but it is not on disk here")
+
+    with open(path, "rb") as f:
+        pages = read_pdf(f.read())
+    document_text = "\n\n".join(
+        f"--- PAGE {p.number} ---\n" + " ".join(w.text for w in p.words)
+        for p in pages if p.has_text_layer)
+    if not document_text.strip():
+        return {"tender_id": tender_id, "available": False,
+                "reason": "this document has no extractable text layer (a scanned image, not real text)",
+                "model": None, "generated_at": None, "proposals": []}
+
+    outcome = DECOMPOSER.decompose(document_text)
+    if isinstance(outcome, DecomposeUnavailable):
+        return {"tender_id": tender_id, "available": False, "reason": outcome.reason,
+                "model": None, "generated_at": None, "proposals": []}
+    return {"tender_id": tender_id, "available": True, "reason": None,
+            "model": outcome.model, "generated_at": outcome.generated_at.isoformat(),
+            "proposals": [
+                {"text": p.text, "page": p.page, "obligation_guess": p.obligation_guess,
+                 "suggested_field": p.suggested_field, "suggested_check": p.suggested_check,
+                 "note": p.note}
+                for p in outcome.proposals
+            ]}
 
 
 # --- rule packs and decision --------------------------------------------------

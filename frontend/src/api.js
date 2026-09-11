@@ -123,5 +123,9 @@ export const getRepairPlan = (bidderId, tenderId) =>
 export const getExplanation = (bidderId, tenderId) =>
   call(`/bidders/${encodeURIComponent(bidderId)}/explain?${new URLSearchParams({ tender_id: tenderId })}`);
 
+export const decomposeTender = (tenderId, documentSha256) =>
+  call(`/tenders/${encodeURIComponent(tenderId)}/decompose`, { method: "POST",
+    ...json({ document_sha256: documentSha256 }) });
+
 export const getAuditExport = () => call("/audit/export");
 export const getAuditVerify = () => call("/audit/verify");
