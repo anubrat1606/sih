@@ -10,6 +10,7 @@ from satyapramana_store.adapters import Registry
 from satyapramana_store.app import app, db
 from satyapramana_store.reporting.bid_autopsy import autopsy, classify
 from satyapramana_store.reporting.compliance_repair import repair_plan
+from satyapramana_store.reporting.dossier import build_dossier, render_dossier_text
 
 _SOURCE = {"page": 1, "region": [0, 0, 100, 20]}
 
@@ -230,3 +231,141 @@ def test_autopsy_and_repair_plan_endpoints_after_a_real_evaluation(client):
     repair_body = client.get("/bidders/A/repair-plan", params={"tender_id": "T1"}).json()
     assert {a["requirement_id"] for a in repair_body["actions"]} == {"L1", "L2"}
     assert all(a["actionable_by"] == "SYSTEM" for a in repair_body["actions"])
+
+
+# --- Compliance Dossier -------------------------------------------------------
+# Pure-function tests only, no database: build_dossier() and render_dossier_text()
+# take plain dicts shaped exactly like GET /bidders/{id}, GET /bidders/{id}/autopsy,
+# and GET /bidders/{id}/repair-plan already return, and do no I/O of their own.
+
+BIDDER_QUALIFYING = {
+    "bidder_id": "A", "tender_id": "T1",
+    "verdicts": [
+        {"requirement_id": "ROOT", "verdict_system": "PASS", "reason_system": "THRESHOLD_MET",
+         "verdict_effective": "PASS", "reason_effective": "THRESHOLD_MET",
+         "overridden_by": None, "override_justification": None,
+         "rule_pack_version": "test@1.0.0+abc"},
+    ],
+    "metrics": {"compliance_score": 100.0, "verification_coverage": 100.0,
+                "verification_coverage_mandatory": 100.0, "evidence_confidence": 95.0},
+    "risk": {"level": "LOW", "triggers": [], "function_version": "risk@1"},
+    "collusion": None,
+}
+AUTOPSY_QUALIFYING = {"would_qualify": True, "blocking_requirements": [],
+                       "counterfactual": None, "note": None}
+REPAIR_QUALIFYING = {"actions": [], "note": None}
+
+BIDDER_BLOCKED = {
+    "bidder_id": "A", "tender_id": "T1",
+    "verdicts": [
+        row("ROOT", "FAIL", "SUBREQUIREMENT_UNREACHABLE"),
+        row("L1", "FAIL", "AUTHORITY_CONTRADICTED"),
+        row("L2", "UNKNOWN", "MANDATORY_DOCUMENT_ABSENT"),
+    ],
+    "metrics": {"compliance_score": 40.0, "verification_coverage": 50.0,
+                "verification_coverage_mandatory": 50.0, "evidence_confidence": 60.0},
+    "risk": {"level": "HIGH", "triggers": ["collusion_edge"], "function_version": "risk@1"},
+    "collusion": {"flagged": True, "cluster_id": "cluster_A_B", "members": ["A", "B"]},
+}
+AUTOPSY_BLOCKED = {
+    "would_qualify": False,
+    "blocking_requirements": [
+        {"requirement_id": "L1", "text": "GST is active", "verdict": "FAIL",
+         "reason_code": "AUTHORITY_CONTRADICTED", "classification": "FATAL", "overridden_by": None},
+        {"requirement_id": "L2", "text": "PAN is valid", "verdict": "UNKNOWN",
+         "reason_code": "MANDATORY_DOCUMENT_ABSENT", "classification": "CURABLE", "overridden_by": None},
+    ],
+    "counterfactual": {"curable_requirement_ids": ["L2"], "would_qualify_if_cured": False,
+                        "still_blocking_after_cure": ["ROOT"]},
+    "note": None,
+}
+REPAIR_BLOCKED = {
+    "actions": [
+        {"requirement_id": "L2", "text": "PAN is valid", "reason_code": "MANDATORY_DOCUMENT_ABSENT",
+         "evidence_paths": ["bidder.pan.pan_number"], "authority": None,
+         "actionable_by": "BIDDER", "action": "Upload a document providing bidder.pan.pan_number."},
+    ],
+    "note": None,
+}
+
+BIDDER_UNEVALUATED = {
+    "bidder_id": "A", "tender_id": "T1",
+    "verdicts": [],
+    "metrics": {"compliance_score": None, "verification_coverage": None,
+                "verification_coverage_mandatory": None, "evidence_confidence": None},
+    "risk": {"level": "HIGH", "triggers": ["mandatory_unverified"], "function_version": "risk@1"},
+    "collusion": None,
+}
+_UNEVALUATED_NOTE = "not yet evaluated -- no rule pack has been run against this bidder"
+AUTOPSY_UNEVALUATED = {"would_qualify": None, "blocking_requirements": [],
+                        "counterfactual": None, "note": _UNEVALUATED_NOTE}
+REPAIR_UNEVALUATED = {"actions": [], "note": _UNEVALUATED_NOTE}
+
+
+def test_dossier_for_a_qualifying_bidder_has_no_blocking_requirements():
+    d = build_dossier(BIDDER_QUALIFYING, AUTOPSY_QUALIFYING, REPAIR_QUALIFYING)
+    assert d["would_qualify"] is True
+    assert d["blocking_requirements"] == []
+    assert d["repair_actions_by_bidder"] == []
+    assert d["repair_actions_by_system"] == []
+    assert d["collusion"] is None
+
+
+def test_dossier_splits_repair_actions_by_who_can_act():
+    """A SYSTEM-side gap must never end up in the bidder's list -- the same
+    rule compliance_repair.py itself follows."""
+    d = build_dossier(BIDDER_BLOCKED, AUTOPSY_BLOCKED, REPAIR_BLOCKED)
+    assert [a["requirement_id"] for a in d["repair_actions_by_bidder"]] == ["L2"]
+    assert d["repair_actions_by_system"] == []
+    assert d["would_qualify"] is False
+    assert d["collusion"]["flagged"] is True
+    assert d["collusion"]["cluster_id"] == "cluster_A_B"
+
+
+def test_dossier_never_turns_a_null_metric_or_unknown_qualification_into_a_guess():
+    """A bidder never evaluated: would_qualify is None, not False; every metric
+    is None, not 0."""
+    d = build_dossier(BIDDER_UNEVALUATED, AUTOPSY_UNEVALUATED, REPAIR_UNEVALUATED)
+    assert d["would_qualify"] is None
+    assert d["metrics"]["compliance_score"] is None
+    assert d["metrics"]["verification_coverage"] is None
+    assert d["repair_actions_by_bidder"] == []
+    assert d["repair_actions_by_system"] == []
+
+
+def test_dossier_is_identical_when_built_twice_from_the_same_input():
+    first = build_dossier(BIDDER_BLOCKED, AUTOPSY_BLOCKED, REPAIR_BLOCKED)
+    second = build_dossier(BIDDER_BLOCKED, AUTOPSY_BLOCKED, REPAIR_BLOCKED)
+    assert first == second
+    assert render_dossier_text(first) == render_dossier_text(second)
+
+
+def test_render_never_prints_a_fabricated_zero_for_a_null_metric():
+    d = build_dossier(BIDDER_UNEVALUATED, AUTOPSY_UNEVALUATED, REPAIR_UNEVALUATED)
+    text = render_dossier_text(d)
+    assert "not determined" in text
+    assert "0.0" not in text
+    assert "Not yet evaluated" in text
+    assert _UNEVALUATED_NOTE in text
+
+
+def test_render_shows_the_qualifying_verdict_and_score():
+    d = build_dossier(BIDDER_QUALIFYING, AUTOPSY_QUALIFYING, REPAIR_QUALIFYING)
+    text = render_dossier_text(d)
+    assert "Would qualify: YES" in text
+    assert "100.0" in text
+    assert "No collusion cluster." in text
+
+
+def test_render_shows_blocking_requirements_with_their_classification_and_repair_split():
+    d = build_dossier(BIDDER_BLOCKED, AUTOPSY_BLOCKED, REPAIR_BLOCKED)
+    text = render_dossier_text(d)
+    assert "Would qualify: NO" in text
+    assert "[FATAL] L1: GST is active -- AUTHORITY_CONTRADICTED" in text
+    assert "[CURABLE] L2: PAN is valid -- MANDATORY_DOCUMENT_ABSENT" in text
+    assert "REPAIR ACTIONS -- BIDDER" in text
+    assert "L2: Upload a document providing bidder.pan.pan_number." in text
+    # No system-side gaps here, and the bidder section must never carry one.
+    bidder_section = text.split("REPAIR ACTIONS -- BIDDER")[1].split("REPAIR ACTIONS -- SYSTEM")[0]
+    assert "SYSTEM" not in bidder_section
+    assert "Flagged: True. Cluster cluster_A_B. Members: A, B." in text
