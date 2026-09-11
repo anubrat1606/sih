@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
+import { AuthProvider, RequireAuth } from "./auth";
+import { useAuth } from "./authContext";
 import StatusPage from "./pages/StatusPage";
+import LoginPage from "./pages/LoginPage";
 import TendersPage from "./pages/TendersPage";
 import RegisterBidderPage from "./pages/RegisterBidderPage";
 import TenderDashboardPage from "./pages/TenderDashboardPage";
@@ -47,27 +50,63 @@ function ThemeToggle() {
   );
 }
 
+// Identity + sign-out, shown in the topnav once a session exists. Signed
+// out, this renders nothing here -- LoginPage is where signing in happens,
+// not the nav bar.
+function AccountBadge() {
+  const { session, logout } = useAuth();
+  if (!session) return null;
+  return (
+    <span className="account-badge">
+      <span className="mono">{session.displayName}</span>
+      <span className="account-role">{session.role.replace("_", " ")}</span>
+      <button type="button" className="account-logout" onClick={logout}>Sign out</button>
+    </span>
+  );
+}
+
+function Nav() {
+  const { session } = useAuth();
+  return (
+    <nav className="topnav">
+      <Link to="/">Status</Link>
+      {session && (
+        <>
+          <Link to="/tenders">Tenders</Link>
+          <Link to="/register">Register bidder</Link>
+          <Link to="/audit">Audit log</Link>
+        </>
+      )}
+      <span className="topnav-note">SATYAPRAMĀṆA — real data only, no simulated authority response</span>
+      <AccountBadge />
+      <ThemeToggle />
+    </nav>
+  );
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<StatusPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/tenders" element={<RequireAuth><TendersPage /></RequireAuth>} />
+      <Route path="/register" element={<RequireAuth><RegisterBidderPage /></RequireAuth>} />
+      <Route path="/tenders/:tenderId" element={<RequireAuth><TenderDashboardPage /></RequireAuth>} />
+      <Route path="/bidders/:bidderId" element={<RequireAuth><BidderDetailPage /></RequireAuth>} />
+      <Route path="/bidders/:bidderId/evidence-graph" element={<RequireAuth><EvidenceGraphPage /></RequireAuth>} />
+      <Route path="/audit" element={<RequireAuth><AuditPage /></RequireAuth>} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
-      <nav className="topnav">
-        <Link to="/">Status</Link>
-        <Link to="/tenders">Tenders</Link>
-        <Link to="/register">Register bidder</Link>
-        <Link to="/audit">Audit log</Link>
-        <span className="topnav-note">SATYAPRAMĀṆA — real data only, no simulated authority response</span>
-        <ThemeToggle />
-      </nav>
-      <Routes>
-        <Route path="/" element={<StatusPage />} />
-        <Route path="/tenders" element={<TendersPage />} />
-        <Route path="/register" element={<RegisterBidderPage />} />
-        <Route path="/tenders/:tenderId" element={<TenderDashboardPage />} />
-        <Route path="/bidders/:bidderId" element={<BidderDetailPage />} />
-        <Route path="/bidders/:bidderId/evidence-graph" element={<EvidenceGraphPage />} />
-        <Route path="/audit" element={<AuditPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <AuthProvider>
+        <Nav />
+        <AppRoutes />
+      </AuthProvider>
     </BrowserRouter>
   );
 }

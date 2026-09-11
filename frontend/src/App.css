@@ -33,7 +33,21 @@ h2 { font-size: var(--text-lg); margin-top: var(--space-6); }
 }
 .theme-toggle:hover { background: rgba(255,255,255,0.12); }
 
+.account-badge { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
+.account-role {
+  text-transform: uppercase; letter-spacing: 0.03em; font-size: var(--text-xs);
+  background: rgba(255,255,255,0.16); padding: 1px var(--space-2); border-radius: var(--radius-full);
+}
+.account-logout {
+  background: transparent; border: 1px solid rgba(255,255,255,0.4); color: inherit;
+  padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm);
+  font-size: var(--text-sm); font-weight: 600; cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.account-logout:hover { background: rgba(255,255,255,0.12); }
+
 .page { max-width: 900px; margin: 0 auto; padding: var(--space-5) var(--space-4); }
+.page-narrow { max-width: 420px; }
 .hint { color: var(--color-text-secondary); font-size: var(--text-base); }
 
 /* EXPLAIN stage output -- a presentation layer, styled to read as prose, not
