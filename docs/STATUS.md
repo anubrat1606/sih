@@ -106,6 +106,11 @@ report actions — all wired into the real pages, not sitting unused.
 
 ## Built this session, NOT yet merged — needs live verification first
 
+**→ [PR #56](https://github.com/anubrat1606/sih/pull/56) — branch
+`feat/kevin-admin-tender-builder`, open against `main`, built by Kevin.**
+See `docs/NEXT_TASKS_5_kevin_anubrat_suhani.md` for the full attributed
+list and Anubrat's review task.
+
 Per this file's own rule below ("nothing here is asserted without having
 been run for real at least once"), the following is deliberately kept out
 of "Built and merged" above: it was implemented and statically verified

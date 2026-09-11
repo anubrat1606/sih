@@ -14,30 +14,91 @@ this round's new areas).
 
 ## Where this round sits
 
-Round 4 shipped the frontend interactivity pass. Since then, a Claude Code
-session built the admin tender builder (tender metadata fields, tender PDF
-upload, the requirement-type catalog, dry-run rule-pack validation, and the
-frontend wiring for all of it) — see `STATUS.md`'s "Built this session, NOT
-yet merged" section for the exact file list. **That work has not been run
-against a live PostgreSQL and has not gone through review or a PR.** It was
-only statically verified (imports cleanly, the new pure functions were
-exercised directly, all tests collect with no errors, frontend build/lint
-clean) because Docker wasn't available in that session's environment.
+Round 4 shipped the frontend interactivity pass. Since then, **Kevin built
+the admin tender builder** — see "What Kevin added this round" below for
+the full, precise list, and `STATUS.md`'s "Built this session, NOT yet
+merged" section for the same list in context. It's up on GitHub now, not
+sitting in an unpushed working copy:
+
+**→ [PR #56](https://github.com/anubrat1606/sih/pull/56) — branch
+`feat/kevin-admin-tender-builder`, open against `main`, not yet merged.**
+
+**That work has not been run against a live PostgreSQL.** It was only
+statically verified (the app imports cleanly with every new route
+registered, the new pure functions were exercised directly and produced
+correct output, all orchestrator tests collect with zero errors, frontend
+build/lint clean) because Docker/Postgres wasn't available in the
+environment it was built in. One real bug was already found and fixed this
+way before it ever ran live — see the PR description.
 
 This round has one hard sequencing rule as a result: **the app itself is
 not provably working yet.** Round 5's real goal — a genuine tender with a
 real rule pack, real consented bidders, and the collusion case firing on
-real (not fabricated) shared data — cannot start until that verification
-happens. See Anubrat's section below; it's first for a reason, not because
-his work matters more.
+real (not fabricated) shared data — cannot start until PR #56 is
+live-verified. See Anubrat's section below; it's first for a reason, not
+because his work matters more.
 
-**Also worth knowing before you start:** the working copy this was built
-against (`anubrat/sih-main/` on this machine) is a snapshot, not a git
-clone — there's no `.git` here. The real repo is
-`https://github.com/anubrat1606/sih.git` per `CONTRIBUTING.md`. Whoever
-picks up Anubrat's verification task should diff this snapshot's changed
-files against a real clone of `main`, apply them there, and go through the
-real branch/PR flow — not commit directly from this folder.
+## What Kevin added this round
+
+Precisely, so review doesn't have to reconstruct it from the diff alone —
+all of it is in [PR #56](https://github.com/anubrat1606/sih/pull/56):
+
+**Backend** (`services/orchestrator/`):
+- `TenderIn`/`TENDER_CREATED`/`proj_tenders` extended with `department`,
+  `category`, `issue_date` — new migration `sql/007_tender_metadata.sql`,
+  additive (`ADD COLUMN IF NOT EXISTS`), old tenders read back as honest
+  `NULL` for all three.
+- `POST /tenders/{tender_id}/documents` (new) — uploads the tender's own
+  source PDF, separate from `POST /bidders/{id}/documents`. Deliberately
+  runs no identifier extraction (a tender notice isn't an ID document).
+- `satyapramana_store/requirement_types.py` (new) + `GET /requirement-types`
+  — a catalog of the 15 requirement types the brief named. Each type's
+  `evidence_backed` flag is computed **live** against `REGISTRY` and the
+  deterministic extraction field list — the same two sources rule 8 already
+  checks a submitted pack against, so this can't silently drift from what
+  adoption will actually accept. GST/PAN/CIN/Udyam come back backed with
+  real field paths; the other eleven (turnover, net worth, ITR, experience,
+  similar work, OEM authorization, certification, EPFO/ESIC, declaration,
+  generic document-required, technical) honestly come back unbacked with a
+  stated reason.
+- `rulepacks.validate_only()` (new, factored out of `adopt()`) +
+  `POST /tenders/{tender_id}/rule-pack/validate` (new) — dry-run
+  validation, identical rule-8-through-13 check adoption gates on, appends
+  no event and writes no row.
+- **Bug fixed before ever running live:** the tender-document-upload
+  endpoint originally appended `DOCUMENT_INGESTED` with a `HUMAN` actor;
+  `events.HUMAN_EVENT_TYPES` doesn't permit that for this event type and
+  `append()` would have raised on every real call. Fixed to match
+  `POST /bidders/{id}/documents`'s existing convention (`SYSTEM` actor,
+  officer identity recorded in the payload as `uploaded_by`).
+
+**Frontend** (`frontend/src/`):
+- `pages/TendersPage.jsx` — department/category/issue_date fields + tender
+  PDF upload on the create-tender form.
+- `RulePackBuilder.jsx` — a requirement-type picker per requirement row
+  (pre-fills a working predicate for backed types; auto-sets
+  `review_required` with the catalog's own honest note for unbacked ones),
+  a **Validate** button separate from **Adopt**, and unit/applicable-period/
+  notes fields.
+- `TenderIntelligence.jsx` — proposals get a "Use this →" button that adds
+  a still-`review_required` draft row into the builder. It still never
+  calls the adopt endpoint itself.
+- `pages/TenderDashboardPage.jsx`, `api.js` — wiring for all of the above.
+
+**Tests:** `tests/test_admin_tender_builder.py` (new, 13 tests), plus
+extensions to `tests/test_api.py` (new tender fields, old-payload-shape
+back-compat) and `tests/test_decide.py` (adopting a new rule pack version
+never mutates an earlier version's stored body or an already-recorded
+verdict's `rule_pack_version` reference — the "published tender can't
+silently change its approved requirements" guarantee).
+
+**Docs:** this file (new), `docs/COMPLETION_PLAN.md` (new), `docs/STATUS.md`
+(the "Built this session, NOT yet merged" section).
+
+**Nothing from a separate, independent prototype (`kevin/` on Kevin's own
+machine, not this repo) was ported in.** That prototype was compared
+against this codebase and found to be behind on every axis checked —
+everything above was built fresh, against this repo's actual architecture.
 
 ## Merge approval — unchanged from round 4
 
@@ -98,31 +159,39 @@ Two more, specific to this round:
 **Goal:** turn "Built this session, NOT yet merged" into actually merged,
 live-verified work, then make the whole system runnable with one command.
 
-### Part 1 — live-verify and merge the admin tender builder
+### Part 1 — live-verify and review PR #56
+
+**[PR #56](https://github.com/anubrat1606/sih/pull/56)**, branch
+`feat/kevin-admin-tender-builder`, already open against `main`. Everything
+it contains is listed precisely in "What Kevin added this round" above and
+in the PR description itself — read that before you start, not just the
+diff.
 
 1. Get PostgreSQL running locally (`CONTRIBUTING.md`'s setup section still
    applies) — or get Docker working, whichever's faster on your machine.
-2. Diff this session's changes against a real clone of `main`:
-   `services/orchestrator/satyapramana_store/app.py`, `rulepacks.py`,
-   `projections.py`, `requirement_types.py` (new), `sql/007_tender_metadata.sql`
-   (new), `tests/test_admin_tender_builder.py` (new), the edits to
-   `tests/test_api.py` and `tests/test_decide.py`, and the frontend changes
-   to `RulePackBuilder.jsx`, `TenderIntelligence.jsx`,
-   `pages/TendersPage.jsx`, `pages/TenderDashboardPage.jsx`, `api.js`.
-   Apply them to your clone, on a branch.
-3. Run `cd services/orchestrator && python -m pytest tests/ -q` for real.
-   Fix anything that only surfaces against a live database — the migration
-   (`007_tender_metadata.sql`) and the `projections.py` fold are the two
-   places most likely to have a real bug hiding behind "it imports fine."
+2. `git fetch origin && git checkout feat/kevin-admin-tender-builder`
+   (or review the PR's Files Changed tab directly on GitHub).
+3. Run `cd services/orchestrator && python -m pytest tests/ -q` for real
+   against your local Postgres. Fix anything that only surfaces against a
+   live database — the migration (`007_tender_metadata.sql`) and the
+   `projections.py` fold are the two places most likely to have a real bug
+   hiding behind "it imports fine." Push any fixes to the same branch —
+   it's already yours to push to once you're reviewing it, no new branch
+   needed.
 4. Sanity-check the one design call worth a second opinion: `rulepacks.py`'s
    `validate_only()` was factored out of `adopt()` so the new
    `/rule-pack/validate` endpoint and the real adoption path share one
    validation code path, never two. Confirm that's actually true by reading
    both call sites, not just trusting the docstring.
 5. Run `npm run build && npm run lint` in `frontend/` — already clean as of
-   this session, confirm it still is after any backend changes you make.
-6. Open the PR, get it reviewed, merge it. Update `STATUS.md`: fold the
-   "Built this session" section into "Built and merged" once it's real.
+   the PR, confirm it still is after any backend changes you make.
+6. Manually exercise `POST /tenders/{id}/documents` once the app is
+   actually running — this is the endpoint that had the `HUMAN`-actor bug,
+   fixed before it ever ran live; confirm the fix actually works end to end,
+   not just that it imports.
+7. Get a second reviewer per `CONTRIBUTING.md`'s existing rule, then merge
+   PR #56 yourself. Update `STATUS.md`: fold the "Built this session, NOT
+   yet merged" section into "Built and merged" once it's real.
 
 ### Part 2 — deployment
 
