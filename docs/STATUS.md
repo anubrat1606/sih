@@ -1,6 +1,6 @@
 # STATUS — where the project is and what to do next
 
-Last reviewed: 2026-09-10. Read `../CLAUDE.md` first for architecture and conventions.
+Last reviewed: 2026-09-11. Read `../CLAUDE.md` first for architecture and conventions.
 
 ## Architecture direction — added 2026-09-10
 
@@ -102,6 +102,48 @@ embedded PAN), and recorded with the exact page and region -- so the provenance
 trail now reaches the source document and a click lands on the right line, with
 no AI anywhere in the path. 145 orchestrator tests and 182 core tests pass.
 
+**Verification is live for three of four capabilities.** `services/orchestrator/satyapramana_store/adapters/sandbox_co_in.py`
+wires `PAN_STATUS`, `GST_STATUS` and `CIN_STATUS` against real Sandbox.co.in
+endpoints (contracts read from their docs, not guessed), gated entirely by
+`SATYAPRAMANA_SANDBOX_API_KEY` / `_SECRET` / `_ENV` in `services/orchestrator/.env`
+(gitignored, real key pair configured locally). With no key set, behaviour is
+unchanged from before. With one set, `GET /capabilities` reports `live_count: 3`
+and the two remaining registry rows are both correctly justified:
+`UDYAM_STATUS` stays `AWAITING_CREDENTIALS` (checked Sandbox's full API
+catalogue -- no Udyam endpoint exists anywhere on the platform, confirming the
+earlier call to cut it from scope) and EPFO/ESIC stay `UNAVAILABLE`. Sandbox
+also exposes MCA director data as discontinued, so `CIN_STATUS`'s live
+`provides` is narrower than the registry placeholder -- it never claims
+`bidder.entity.directors`.
+
+Two real gaps stand between "live" and "actually fires for a bidder," both in
+`extract/` (Suhani's, not touched here): PAN verification needs the holder's
+name and date of birth, and extraction currently only captures the PAN
+*number*; CIN isn't extracted at all yet, though its grammar
+(`^[LU]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}$`) fits the same deterministic
+regex-and-structural-check approach already used for PAN/GSTIN/Udyam. Until
+either lands, those two capabilities honestly refuse with `MALFORMED` rather
+than skip silently -- the adapter code needs no further change when they do.
+
+**Frontend rebuilt, functional-first.** The whole `frontend/` was still wired
+to the retired Mongo/Express backend and had never rendered a real response
+from the orchestrator. Rewritten end to end -- five pages (status, register +
+upload + verify, tender dashboard, bidder detail, audit log) against the
+actual endpoints, no design system yet (charter section 2.3's tokens and
+evidence-native primitives are a deliberate later pass, not skipped by
+accident). Needed one new backend read model, `GET /tenders/{tender_id}/bidders`
+(list), which didn't exist. 147 orchestrator tests pass. Verified against a
+real running instance with a 24-assertion integration script exercising every
+request the frontend makes; a real browser screenshot pass was attempted but
+blocked by a sandboxed Chromium download timing out -- still worth a manual
+click-through before calling this visually confirmed.
+
+Three PRs open against `main`, none merged yet as of this writing:
+CONTRIBUTING ownership (frontend/ -> Anubrat, Kevindeep was never an actual
+team member), the Sandbox.co.in adapters, and the frontend rebuild. The
+adapters and frontend PRs are independent of each other -- a checkout with
+only one merged will show the other half missing.
+
 **Two approvals were taken as granted after three explicit go-aheads.** Both are
 recorded here because both are reversible and neither has been confirmed in
 writing:
@@ -137,26 +179,27 @@ strength; make it explicit in the pitch.
 
 ## Priorities, in order
 
-### 1. Make verification real
+### 1. Make verification real — mostly done as of 2026-09-11, see the paragraph above
 
-The government portals (`services.gst.gov.in`, `epfindia.gov.in`) have no public
-API and CAPTCHA-block programmatic access. Don't fight that.
+Superseded by the current architecture: this originally pointed at
+`services/verification` (the retired Mongo-era scaffold, `pan_live_kyc_check()`
+etc.), which no longer exists. What actually happened instead:
+`services/orchestrator/satyapramana_store/adapters/sandbox_co_in.py` wires PAN,
+GST and CIN against Sandbox.co.in for real. Left to do: PAN holder name/DOB and
+CIN extraction (Suhani, `extract/`), and a real consented document to push
+through the whole path end to end — see priority 3.
 
-- **PAN** — sign up for one KYC provider sandbox (Sandbox.co.in, Setu, or
-  Signzy free tier). Put the real endpoint + key in
-  `services/verification/.env`. Confirm the request/response shape against the
-  provider's own docs, then fix `pan_live_kyc_check()` to match. The code path
-  already exists.
-- **GST** — use a GSTIN-verification aggregator (Sandbox / Masters India /
-  RapidAPI), not the raw portal. Rewrite `gst_public_portal_check()` against it.
-- **Udyam and EPFO** — formally cut from demo scope unless an aggregator turns
-  up. The code already reports them as `UNVERIFIED`, which is defensible.
+- **Udyam and EPFO** — confirmed cut from scope; Sandbox.co.in's full API
+  catalogue has no Udyam endpoint, and EPFO/ESIC have no lawful programmatic
+  source anywhere. Not worth re-checking unless a new aggregator turns up.
 
-### 2. Stand up the whole stack once, locally
+### 2. Stand up the whole stack once, locally — done for the plumbing, not for real data
 
-Nobody has done this. MongoDB + all five services + `scripts/e2e_test.js` with
-real consented bidder data (two bidders genuinely sharing a phone or address for
-the collusion case). This will surface the real integration bugs.
+PostgreSQL + the orchestrator + the rebuilt frontend all run together and were
+exercised live (registration, verification, dashboard, audit log) — see the
+frontend paragraph above. What's still missing is exactly priority 3: nobody
+has pushed a real consented document through `/bidders/{id}/documents` yet, so
+extraction, and therefore the PAN/GST/CIN adapters, have never fired for real.
 
 ### 3. Collect demo data
 
