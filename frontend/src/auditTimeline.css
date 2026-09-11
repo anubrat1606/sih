@@ -1,0 +1,25 @@
+/* <AuditTimeline> -- round 4, R3. All colours from tokens.css. */
+.audit-timeline {
+  list-style: none; margin: var(--space-3) 0; padding: 0;
+  border-left: 2px solid var(--color-border);
+}
+.audit-timeline-item {
+  display: flex; gap: var(--space-3);
+  padding: var(--space-2) 0 var(--space-2) var(--space-4);
+}
+.audit-timeline-icon {
+  flex: 0 0 auto; width: 24px; height: 24px; margin-left: -13px;
+  border-radius: var(--radius-full); border: 2px solid var(--color-bg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--text-sm);
+}
+.audit-timeline-tone-accent { background: var(--color-accent-bg); color: var(--color-accent); }
+.audit-timeline-tone-pass { background: var(--status-pass-bg); color: var(--status-pass-fg); }
+.audit-timeline-tone-fail { background: var(--status-fail-bg); color: var(--status-fail-fg); }
+.audit-timeline-tone-partial { background: var(--status-partial-bg); color: var(--status-partial-fg); }
+.audit-timeline-tone-unknown { background: var(--status-unknown-bg); color: var(--status-unknown-fg); }
+
+.audit-timeline-body { flex: 1; min-width: 0; }
+.audit-timeline-header { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
+.audit-timeline-meta { color: var(--color-text-secondary); font-size: var(--text-xs); }
+.audit-timeline-summary { font-size: var(--text-sm); color: var(--color-text); margin-top: 2px; }
