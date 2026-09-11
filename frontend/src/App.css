@@ -1,46 +1,112 @@
 * { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, sans-serif; background: #f6f8fa; color: #1f2328; }
-.topnav { display: flex; align-items: center; gap: 16px; padding: 12px 20px; background: #24292f; color: white; }
-.topnav a { color: white; text-decoration: none; font-weight: 600; }
-.topnav-note { opacity: 0.75; font-size: 13px; margin-left: auto; }
-.page { max-width: 900px; margin: 0 auto; padding: 24px 20px; }
-.hint { color: #57606a; font-size: 14px; }
-.form { display: flex; flex-direction: column; gap: 12px; max-width: 480px; }
-.form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; }
-.form input, .form select { padding: 8px; border: 1px solid #d0d7de; border-radius: 6px; font-size: 14px; }
-.form fieldset { border: 1px solid #d0d7de; border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-button { padding: 8px 16px; border-radius: 6px; border: 1px solid #1a7f37; background: #2da44e; color: white; font-weight: 600; cursor: pointer; }
-button.danger { border-color: #cf222e; background: #cf222e; }
-.status { color: #1a7f37; }
-.error { color: #cf222e; font-weight: 600; }
-.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-top: 16px; }
-.card { display: block; padding: 16px; background: white; border: 1px solid #d0d7de; border-radius: 8px; text-decoration: none; color: inherit; }
-.card h2 { margin: 0 0 6px; font-size: 16px; }
-.score { font-size: 22px; font-weight: 700; margin: 4px 0; }
-.flag { color: #cf222e; font-weight: 600; }
-.score-big { font-size: 24px; font-weight: 700; }
-.actions { display: flex; gap: 10px; margin: 14px 0; }
-.evidence-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px; }
-.evidence-table th, .evidence-table td { border: 1px solid #d0d7de; padding: 8px; text-align: left; }
-.evidence-table .details { color: #57606a; font-size: 12px; max-width: 260px; }
-.graph-box { background: white; border: 1px solid #d0d7de; border-radius: 8px; padding: 8px; }
-.audit-list { font-size: 13px; font-family: monospace; }
+body {
+  margin: 0;
+  font-family: var(--font-text);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--text-base);
+}
 
-/* Four-state verdict + three-tier risk. Colour is never the only carrier of
-   meaning long-term (satyapramana.md 2.3 wants colour+glyph+label) -- this
-   minimal pass is colour+label only, a gap to close in the design-system pass. */
-.badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; }
-.v-pass { background: #dafbe1; color: #1a7f37; }
-.v-fail { background: #ffebe9; color: #cf222e; }
-.v-partial { background: #fff8c5; color: #9a6700; }
-.v-unknown { background: #eaeef2; color: #57606a; }
-.r-low { background: #dafbe1; color: #1a7f37; }
-.r-medium { background: #fff8c5; color: #9a6700; }
-.r-high { background: #ffebe9; color: #cf222e; }
+h1, h2 { font-family: var(--font-display); color: var(--color-text); }
+h1 { font-size: var(--text-xl); }
+h2 { font-size: var(--text-lg); margin-top: var(--space-6); }
 
-.metric-row { display: flex; gap: 18px; margin: 10px 0; flex-wrap: wrap; }
+/* Statutory identifiers, amounts, dates, scores: always this class, never
+ * the proportional text face -- a column of GSTINs or compliance scores
+ * must align vertically down the column (satyapramana.md section 2.3). */
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.topnav {
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-accent); color: var(--color-text-on-accent);
+}
+.topnav a { color: var(--color-text-on-accent); text-decoration: none; font-weight: 600; }
+.topnav a:hover { text-decoration: underline; }
+.topnav-note { opacity: 0.8; font-size: var(--text-sm); margin-left: auto; }
+
+.theme-toggle {
+  background: transparent; border: 1px solid rgba(255,255,255,0.4); color: inherit;
+  padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm);
+  font-size: var(--text-sm); font-weight: 600; cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.theme-toggle:hover { background: rgba(255,255,255,0.12); }
+
+.page { max-width: 900px; margin: 0 auto; padding: var(--space-5) var(--space-4); }
+.hint { color: var(--color-text-secondary); font-size: var(--text-base); }
+
+.form { display: flex; flex-direction: column; gap: var(--space-3); max-width: 480px; }
+.form label { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-base); font-weight: 600; }
+.form input, .form select, textarea {
+  padding: var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  font-size: var(--text-base); background: var(--color-surface); color: var(--color-text);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+.form input:focus, .form select:focus, textarea:focus {
+  outline: none; border-color: var(--color-accent);
+}
+.form fieldset {
+  border: 1px solid var(--color-border); border-radius: var(--radius-md);
+  padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3);
+}
+textarea { font-family: var(--font-mono); font-size: var(--text-sm); }
+
+button {
+  padding: var(--space-2) var(--space-4); border-radius: var(--radius-sm);
+  border: 1px solid var(--status-pass-fg); background: var(--status-pass-fg);
+  color: var(--color-text-on-accent); font-weight: 600; cursor: pointer; font-size: var(--text-base);
+  transition: background var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard);
+}
+button:hover { opacity: 0.88; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.danger { border-color: var(--status-fail-fg); background: var(--status-fail-fg); }
+
+.status { color: var(--status-pass-fg); }
+.error { color: var(--status-fail-fg); font-weight: 600; }
+.flag { color: var(--status-fail-fg); font-weight: 600; }
+
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-4); margin-top: var(--space-4); }
+.card {
+  display: block; padding: var(--space-4); background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius-md);
+  text-decoration: none; color: inherit; box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--duration-base) var(--ease-standard), border-color var(--duration-base) var(--ease-standard);
+}
+.card:hover { box-shadow: var(--shadow-md); border-color: var(--color-border-strong); }
+.card h2 { margin: 0 0 var(--space-2); font-size: var(--text-md); }
+
+.score-big { font-size: var(--text-xl); font-weight: 700; }
+.actions { display: flex; gap: var(--space-3); margin: var(--space-4) 0; }
+
+.evidence-table { width: 100%; border-collapse: collapse; font-size: var(--text-base); margin-top: var(--space-3); }
+.evidence-table th, .evidence-table td {
+  border: 1px solid var(--color-border); padding: var(--space-2);
+  text-align: left; vertical-align: top;
+}
+.evidence-table th { background: var(--color-accent-bg); font-weight: 600; }
+.evidence-table .details { color: var(--color-text-secondary); font-size: var(--text-xs); max-width: 260px; }
+
+.graph-box { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-2); }
+.audit-list { font-size: var(--text-sm); font-family: var(--font-mono); }
+
+/* Four-state verdict + three-tier risk, the locked semantic scales. Colour
+ * is never the only carrier of meaning: components.jsx pairs every badge
+ * with a glyph and a text label, not colour alone. */
+.badge {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: 3px var(--space-2); border-radius: var(--radius-full);
+  font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.02em;
+}
+.v-pass { background: var(--status-pass-bg); color: var(--status-pass-fg); }
+.v-fail { background: var(--status-fail-bg); color: var(--status-fail-fg); }
+.v-partial { background: var(--status-partial-bg); color: var(--status-partial-fg); }
+.v-unknown { background: var(--status-unknown-bg); color: var(--status-unknown-fg); }
+.r-low { background: var(--risk-low-bg); color: var(--risk-low-fg); }
+.r-medium { background: var(--risk-medium-bg); color: var(--risk-medium-fg); }
+.r-high { background: var(--risk-high-bg); color: var(--risk-high-fg); }
+
+.metric-row { display: flex; gap: var(--space-5); margin: var(--space-3) 0; flex-wrap: wrap; }
 .metric { min-width: 90px; }
-.metric-label { font-size: 12px; color: #57606a; text-transform: uppercase; letter-spacing: 0.03em; }
-.metric-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
-
-textarea { padding: 8px; border: 1px solid #d0d7de; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 13px; }
+.metric-label { font-size: var(--text-xs); color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.03em; }
+.metric-value { font-size: var(--text-lg); font-weight: 700; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
