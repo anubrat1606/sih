@@ -13,11 +13,13 @@ Read [`CLAUDE.md`](CLAUDE.md) and [`docs/satyapramana.md`](docs/satyapramana.md)
 
 | Path | Owner | Rule |
 |---|---|---|
-| `frontend/` | Anubrat | Sole owner |
+| `frontend/` — existing pages (`App.jsx`, `App.css`, `api.js`, `components.jsx`, everything in `pages/`) | Anubrat | Sole owner — the only one who edits an existing frontend file |
+| `frontend/` — new, self-contained components (round 4: `notifications/`, `Skeleton.jsx`, `validation.js`, `SearchFilterBar.jsx`, `charts.jsx`, `AuditTimeline.jsx`, etc.) | Suhani, Rishika | Each owns the specific new files their round's brief names — see `docs/NEXT_TASKS_4_suhani_rishika.md`. Never an existing file; Anubrat integrates afterward. |
 | `services/orchestrator/satyapramana_store/adapters/` | Anubrat | Sole owner |
 | `services/orchestrator/satyapramana_store/extract/` | Suhani | Sole owner |
 | `services/orchestrator/satyapramana_store/reporting/` (new) | Rishika | Sole owner |
-| `rulepacks/` · `data/` (new) | Paridhi | Sole owner |
+| `services/orchestrator/satyapramana_store/explain/` (new) | Anubrat | Sole owner |
+| `rulepacks/` · `data/` (new) | Paridhi (real-world input required; currently Anubrat-held pending that input) | Sole owner |
 | `services/orchestrator/satyapramana_store/*.py` (app, decide, rulepacks, evidence) | Anubrat | Ask before editing |
 | `services/core/` | Anubrat | Frozen — the algebra is exhaustively verified; changes need review |
 | `schemas/*.schema.json` | Anubrat | Frozen — these are the contract between services |
@@ -52,7 +54,7 @@ python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt -e ../core
 createdb satyapramana_dev
 export DATABASE_URL=postgresql://localhost/satyapramana_dev
-./venv/bin/python -m pytest tests/ -q          # expect 145 passed
+./venv/bin/python -m pytest tests/ -q          # expect 313 passed
 
 # start the API
 export SATYAPRAMANA_MIGRATE_ON_START=1
@@ -111,7 +113,7 @@ exactly what the system can and cannot verify right now.
 3. **Nothing changes state except by appending an event.** If you find
    yourself writing `UPDATE` against a verdict table, stop and ask.
    Projections are rebuilt, never patched.
-4. **Every change ships with a test, and the suite stays green.** 327 tests
+4. **Every change ships with a test, and the suite stays green.** 495 tests
    pass today. If your branch drops that number, it isn't ready.
 5. **Secrets live in `.env`, never in a commit.** If a key ever reaches the
    archive or the event log, it cannot be removed — both are immutable by
