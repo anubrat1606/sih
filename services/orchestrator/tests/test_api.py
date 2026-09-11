@@ -172,8 +172,37 @@ def test_a_created_tenders_metadata_is_real_not_guessed(client, conn):
     assert body == {
         "tender_id": "T-NEW", "title": "Supply of pumps", "issuing_authority": "CPCL",
         "bid_submission_deadline": "2026-12-01", "description": "Annual maintenance contract",
-        "created_by": "priya",
+        "created_by": "priya", "department": None, "category": None, "issue_date": None,
     }
+
+
+def test_a_tenders_department_category_and_issue_date_are_recorded(client, conn):
+    client.post("/tenders", json={
+        "tender_id": "T-ADMIN", "title": "Supply of pumps", "issuing_authority": "CPCL",
+        "department": "Materials Management", "category": "Goods", "issue_date": "2026-08-01",
+    }, headers=auth_headers(conn, username="priya"))
+    body = client.get("/tenders/T-ADMIN").json()
+    assert body["department"] == "Materials Management"
+    assert body["category"] == "Goods"
+    assert body["issue_date"] == "2026-08-01"
+    with conn.cursor() as cur:
+        cur.execute("SELECT payload FROM events WHERE event_type='TENDER_CREATED' "
+                    "AND tender_id='T-ADMIN'")
+        payload = cur.fetchone()[0]
+    assert payload["department"] == "Materials Management"
+    assert payload["category"] == "Goods"
+    assert payload["issue_date"] == "2026-08-01"
+
+
+def test_a_tender_created_before_this_change_reads_back_honest_nulls(client, conn):
+    """A TENDER_CREATED payload with no department/category/issue_date keys
+    at all (the pre-admin-builder shape) must not error and must not guess
+    -- get_tender()/rebuild_projections() read them with payload.get(), not
+    payload[...]."""
+    client.post("/tenders", json={"tender_id": "T-OLD-SHAPE", "title": "Legacy",
+                                  "issuing_authority": "CPCL"}, headers=auth_headers(conn))
+    body = client.get("/tenders/T-OLD-SHAPE").json()
+    assert body["department"] is None and body["category"] is None and body["issue_date"] is None
 
 
 def test_a_tender_that_was_never_explicitly_created_has_honest_null_metadata(client):

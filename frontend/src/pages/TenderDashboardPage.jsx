@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import ForceGraph2D from "react-force-graph-2d";
-import { adoptRulePack, getCollusionEdges, getTender, getTenderCollusion, listTenderBidders } from "../api";
+import { adoptRulePack, getCollusionEdges, getTender, getTenderCollusion, listTenderBidders,
+  uploadTenderDocument, validateRulePack } from "../api";
 import { roleAtLeast, useAuth } from "../authContext";
 import { ErrorBox, Metric, RiskBadge } from "../components";
 import { EmptyState } from "../EmptyState";
@@ -28,8 +29,13 @@ export default function TenderDashboardPage() {
   const [adoptResult, setAdoptResult] = useState(null);
   const [violations, setViolations] = useState(null);
   const [adopting, setAdopting] = useState(false);
+  const [validateResult, setValidateResult] = useState(null);
+  const [validating, setValidating] = useState(false);
   const [selectedNode, setSelectedNode] = useState(null);
   const [tender, setTender] = useState(null);
+  const [prefill, setPrefill] = useState(null);
+  const [tenderPdf, setTenderPdf] = useState(null);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
   const graphRef = useRef();
 
   const bidderSortOptions = useMemo(() => [
@@ -86,12 +92,49 @@ export default function TenderDashboardPage() {
     }
   }
 
+  async function handleValidate(pack, parseError) {
+    setValidateResult(null);
+    if (parseError) {
+      notify(parseError.message, { kind: "error" });
+      return;
+    }
+    setValidating(true);
+    try {
+      const result = await validateRulePack(tenderId, pack);
+      setValidateResult(result);
+      notify(result.valid ? "Valid — ready to adopt." : `${result.violations.length} violation(s) found.`,
+        { kind: result.valid ? "success" : "error" });
+    } catch {
+      notify("Could not validate the rule pack.", { kind: "error" });
+    } finally {
+      setValidating(false);
+    }
+  }
+
+  async function handleUploadPdf(e) {
+    e.preventDefault();
+    if (!tenderPdf) return;
+    setUploadingPdf(true);
+    try {
+      const result = await uploadTenderDocument(tenderId, tenderPdf);
+      notify(`Uploaded. Document SHA-256: ${result.document_sha256.slice(0, 16)}…`, { kind: "success" });
+      setTenderPdf(null);
+    } catch (err) {
+      notify(`Could not upload the tender PDF: ${err.message}`, { kind: "error" });
+    } finally {
+      setUploadingPdf(false);
+    }
+  }
+
   return (
     <div className="page">
       <h1>{tender?.title || <span className="mono">{tenderId}</span>}</h1>
       {tender?.title ? (
         <p className="hint">
           <span className="mono">{tenderId}</span> · {tender.issuing_authority}
+          {tender.department && ` · ${tender.department}`}
+          {tender.category && ` · ${tender.category}`}
+          {tender.issue_date && ` · issued ${tender.issue_date}`}
           {tender.bid_submission_deadline && ` · bids close ${tender.bid_submission_deadline}`}
         </p>
       ) : (
@@ -216,11 +259,39 @@ export default function TenderDashboardPage() {
         paste one matching /schemas/rule_pack.schema.json. Adopting a new version never
         mutates a past verdict.
       </p>
+      <h3>Tender PDF</h3>
+      <p className="hint">
+        The original tender notice, kept as the authoritative source for Tender
+        Intelligence below and for the rule pack's own source_document_sha256.
+      </p>
+      <form className="form" onSubmit={handleUploadPdf}>
+        <label>Upload tender PDF
+          <input type="file" accept="application/pdf" onChange={(e) => setTenderPdf(e.target.files?.[0] || null)} />
+        </label>
+        <button type="submit" disabled={!tenderPdf || uploadingPdf}>{uploadingPdf ? "Uploading…" : "Upload"}</button>
+      </form>
+
       {canAdopt ? (
         <>
           <p className="hint">Adopted as {session.displayName} ({session.role.replace("_", " ")}).</p>
-          <TenderIntelligence tenderId={tenderId} />
-          <RulePackBuilder tenderId={tenderId} onAdopt={handleAdopt} submitting={adopting} />
+          <TenderIntelligence tenderId={tenderId} onUseProposal={setPrefill} />
+          <RulePackBuilder tenderId={tenderId} onAdopt={handleAdopt} onValidate={handleValidate}
+                           submitting={adopting} validating={validating}
+                           prefill={prefill} onPrefillConsumed={() => setPrefill(null)} />
+          {validateResult && (
+            validateResult.valid ? (
+              <p className="status">Valid — content hash {validateResult.content_hash.slice(0, 16)}…, {validateResult.requirement_count} requirement(s). Not adopted yet; click Adopt to publish.</p>
+            ) : (
+              <div className="error">
+                <p>Validation found {validateResult.violations.length} violation(s) — not adopted:</p>
+                <ul>
+                  {validateResult.violations.map((v, i) => (
+                    <li key={i}>[{v.rule}] {v.requirement_id ? `${v.requirement_id}: ` : ""}{v.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )
+          )}
           {adoptResult && <p className="status">Adopted rule pack version {adoptResult.rule_pack_version}.</p>}
           {violations && (
             <div className="error">

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { createTender, listTenders } from "../api";
+import { createTender, listTenders, uploadTenderDocument } from "../api";
 import { ErrorBox } from "../components";
 import { EmptyState } from "../EmptyState";
 import { useToast } from "../notifications";
 import { SearchFilterBar } from "../SearchFilterBar";
 import { SkeletonLine } from "../Skeleton";
+
+const TENDER_CATEGORIES = ["Goods", "Works", "Services", "Consultancy"];
 
 export default function TendersPage() {
   const navigate = useNavigate();
@@ -14,7 +16,11 @@ export default function TendersPage() {
   const [filtered, setFiltered] = useState(null);
   const [error, setError] = useState(null);
   const [jumpTo, setJumpTo] = useState("");
-  const [form, setForm] = useState({ tender_id: "", title: "", issuing_authority: "", bid_submission_deadline: "", description: "" });
+  const [form, setForm] = useState({
+    tender_id: "", title: "", issuing_authority: "", bid_submission_deadline: "", description: "",
+    department: "", category: "", issue_date: "",
+  });
+  const [tenderPdf, setTenderPdf] = useState(null);
   const [creating, setCreating] = useState(false);
 
   function load() {
@@ -39,10 +45,25 @@ export default function TendersPage() {
     setCreating(true);
     try {
       await createTender(form.tender_id, form.title, form.issuing_authority,
-        form.bid_submission_deadline, form.description);
+        form.bid_submission_deadline, form.description,
+        { department: form.department, category: form.category, issueDate: form.issue_date });
+      if (tenderPdf) {
+        // Best-effort second step: the tender itself is already created and
+        // real even if this upload fails, so a failure here is surfaced but
+        // does not roll back tender creation -- the officer can retry the
+        // upload from the tender's own page (Tender Intelligence needs a
+        // document hash, uploaded any time before decomposing).
+        try {
+          await uploadTenderDocument(form.tender_id, tenderPdf);
+        } catch (uploadErr) {
+          notify(`Tender created, but the PDF upload failed: ${uploadErr.message}`, { kind: "error" });
+        }
+      }
       notify(`Created tender ${form.tender_id}.`, { kind: "success" });
-      setForm({ tender_id: "", title: "", issuing_authority: "", bid_submission_deadline: "", description: "" });
-      load();
+      setForm({ tender_id: "", title: "", issuing_authority: "", bid_submission_deadline: "", description: "",
+        department: "", category: "", issue_date: "" });
+      setTenderPdf(null);
+      navigate(`/tenders/${encodeURIComponent(form.tender_id)}`);
     } catch (err) {
       setError(err);
       notify("Could not create the tender.", { kind: "error" });
@@ -100,8 +121,21 @@ export default function TendersPage() {
         <label>Tender ID<input value={form.tender_id} onChange={(e) => setForm({ ...form, tender_id: e.target.value })} required /></label>
         <label>Title<input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required /></label>
         <label>Issuing authority<input value={form.issuing_authority} onChange={(e) => setForm({ ...form, issuing_authority: e.target.value })} required /></label>
+        <label>Department / organization (optional)
+          <input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+        </label>
+        <label>Tender category (optional)
+          <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+            <option value="">— unspecified —</option>
+            {TENDER_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <label>Issue date (optional)<input type="date" value={form.issue_date} onChange={(e) => setForm({ ...form, issue_date: e.target.value })} /></label>
         <label>Bid submission deadline (optional)<input type="date" value={form.bid_submission_deadline} onChange={(e) => setForm({ ...form, bid_submission_deadline: e.target.value })} /></label>
         <label>Description (optional)<input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
+        <label>Tender PDF (optional — you can also add this from the tender's own page)
+          <input type="file" accept="application/pdf" onChange={(e) => setTenderPdf(e.target.files?.[0] || null)} />
+        </label>
         <button type="submit" disabled={creating}>{creating ? "Creating…" : "Create tender"}</button>
       </form>
 

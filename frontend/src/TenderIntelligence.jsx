@@ -7,7 +7,7 @@ import { ErrorBox } from "./components";
 // hand into the rule pack builder above if an officer agrees with it.
 // Nothing from this component ever reaches POST /tenders/{id}/rule-pack
 // directly.
-export default function TenderIntelligence({ tenderId }) {
+export default function TenderIntelligence({ tenderId, onUseProposal }) {
   const [documentSha256, setDocumentSha256] = useState("");
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -59,6 +59,11 @@ export default function TenderIntelligence({ tenderId }) {
                 {p.suggested_check && ` (${p.suggested_check})`}
               </p>
               {p.note && <p className="hint">{p.note}</p>}
+              {onUseProposal && (
+                <button type="button" onClick={() => onUseProposal(p)}>
+                  Use this → add as a draft requirement below
+                </button>
+              )}
             </div>
           ))}
         </>

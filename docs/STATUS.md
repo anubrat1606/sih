@@ -56,7 +56,7 @@ install and works from any machine:
 
 ## Built and merged, as of this review
 
-**Zero open PRs. 547 backend tests passing** (365 `services/orchestrator` +
+**Zero open PRs. 563 backend tests passing** (381 `services/orchestrator` +
 182 `services/core`), plus a clean `npm run build` / `npm run lint` on the
 frontend. Every PR that landed this project went through the same cycle:
 built with real tests, reviewed in an isolated worktree, live-verified
@@ -128,6 +128,45 @@ confirmations, loading skeletons, search/filter, confirmation dialogs before
 Disqualify/Override, empty states, a real audit timeline, and CSV/blocker
 report actions — all wired into the real pages, not sitting unused.
 
+**The admin tender builder** ([PR #56](https://github.com/anubrat1606/sih/pull/56),
+built by Kevin — `docs/COMPLETION_PLAN.md` item 2, checklist items 10–17).
+Live-verified for real before merge: 381/381 orchestrator tests passing
+against a real PostgreSQL (not just statically imported), the tender
+document upload actor-kind bug fixed and confirmed live end to end, dry-run
+validate confirmed to append no event on either a rejected or an accepted
+pack.
+- Tender metadata extended: `department`, `category`, `issue_date`
+  (migration `sql/007_tender_metadata.sql`, additive, old tenders read back
+  as honest `NULL`).
+- `POST /tenders/{tender_id}/documents` — upload the tender's own source
+  PDF (separate from a bidder's compliance documents), no identifier
+  extraction run against it (a tender notice isn't an ID document).
+- `GET /requirement-types` — a catalog of 15 requirement types (GST, PAN,
+  CIN, Udyam, document-required, turnover, net worth, ITR, experience,
+  similar work, OEM authorization, certification, EPFO/ESIC, declaration,
+  technical). Each type's `evidence_backed` flag is computed **live**
+  against the real capability registry and extraction field list — the
+  same two sources rule 8 already validates a submitted pack against, so
+  this can never silently drift from what adoption will actually accept.
+  Four types (GST/PAN/CIN/Udyam) come back backed with real field paths;
+  the other eleven honestly come back unbacked with a stated reason —
+  nothing here fabricates an evidence path.
+- `POST /tenders/{tender_id}/rule-pack/validate` — dry-run validation
+  (`rulepacks.validate_only()`), same rule-8-through-13 check adoption
+  gates on, appends no event and writes no row.
+- Frontend: tender creation form gets department/category/issue_date +
+  PDF upload; the guided rule-pack builder gets a requirement-type picker
+  (pre-fills a working predicate for backed types, auto-sets
+  `review_required` with an honest note for unbacked ones — schema rule 11
+  already refuses to adopt anything still flagged), a Validate button
+  separate from Adopt, and unit/period/notes fields; Tender Intelligence
+  proposals get a "Use this →" button that adds a still-`review_required`
+  draft row into the builder — it still never adopts anything itself.
+- Tests: `tests/test_admin_tender_builder.py` (13 tests) plus extensions to
+  `test_api.py` and a new `test_decide.py` test proving adopting a new rule
+  pack version never mutates an earlier version's stored body or an
+  already-recorded verdict's `rule_pack_version` reference.
+
 ---
 
 ## Outstanding — in priority order
@@ -166,10 +205,13 @@ does each developer need their own for local work?
 ### 3. No rule pack built from a real tender
 
 `rulepacks/` still only has the round-2 scaffold (`README.md`,
-`validate.py`) — no rule pack decomposed from an actual GeM tender PDF.
-Tender Intelligence (above) should make this faster once a real tender PDF
-and gap 2's credentials exist, but an officer still has to run it and
-review/adopt the result for real.
+`validate.py`) — no rule pack decomposed from an actual GeM tender PDF. The
+tooling to do this is now in place (tender PDF upload, Tender Intelligence,
+the requirement-type catalog, guided builder, dry-run validate) — see
+"Built this session" above — but it needs, in order: (a) that work verified
+against a live database, (b) a real tender PDF, (c) an officer to actually
+run the workflow and adopt the result. Still not buildable end-to-end by a
+Claude Code session alone.
 
 ### 4. Deployment — resolved 2026-09-12, no Docker
 
@@ -178,9 +220,7 @@ Render Blueprint (`render.yaml`) running the orchestrator and frontend as
 two free services against the shared Neon database — see
 `docs/DEPLOYMENT.md` for the one-time setup and its one honest limitation
 (uploaded document files don't survive a redeploy on Render's free tier;
-the event log itself always does). PR #56 (admin tender builder) is
-reviewed, live-verified against real Postgres, and CI-green — merging it
-is the one step still pending as of this writing.
+the event log itself always does).
 
 ### 5. Everything else
 
@@ -199,7 +239,7 @@ cd services/core && ./venv/bin/python -m pytest tests/ -q   # expect 182 passed
 # orchestrator — needs PostgreSQL
 cd services/orchestrator
 export DATABASE_URL=postgresql://localhost/satyapramana_test
-./venv/bin/python -m pytest tests/ -q                        # expect 365 passed
+./venv/bin/python -m pytest tests/ -q                        # expect 381 passed
 
 # frontend
 cd frontend && npm run build && npm run lint                 # both clean
