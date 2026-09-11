@@ -5,6 +5,7 @@ import { adoptRulePack, getCollusionEdges, getTender, getTenderCollusion, listTe
 import { roleAtLeast, useAuth } from "../authContext";
 import { ErrorBox, Metric, RiskBadge } from "../components";
 import RulePackBuilder from "../RulePackBuilder";
+import TenderIntelligence from "../TenderIntelligence";
 import { cssVar } from "../theme";
 
 export default function TenderDashboardPage() {
@@ -177,6 +178,7 @@ export default function TenderDashboardPage() {
       {canAdopt ? (
         <>
           <p className="hint">Adopted as {session.displayName} ({session.role.replace("_", " ")}).</p>
+          <TenderIntelligence tenderId={tenderId} />
           <RulePackBuilder tenderId={tenderId} onAdopt={handleAdopt} submitting={adopting} />
           {adoptResult && <p className="status">Adopted rule pack version {adoptResult.rule_pack_version}.</p>}
           {violations && (

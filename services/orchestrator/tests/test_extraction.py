@@ -941,3 +941,72 @@ def test_extracted_evidence_is_labelled_a_claim_not_an_authority_answer(client, 
     trail = client.get("/bidders/A/requirements/R1/provenance").json()["trail"]
     fused = next(t for t in trail if t["event_type"] == "EVIDENCE_FUSED")
     assert fused["payload"]["outcome"] == "CLAIM_ONLY"
+
+
+# --- Tender Intelligence: decompose ------------------------------------------
+# See test_tender_intelligence.py for the Decomposer unit tests. These
+# exercise the real endpoint: real document storage, a real text layer, and
+# (for the "configured" case) a fake-but-structurally-real Decomposer
+# swapped in -- never a call to the real Gemini API.
+
+def test_decompose_endpoint_requires_authentication(client):
+    pdf = text_pdf(["A tender document."])
+    body = upload(client, pdf).json()
+    r = client.post("/tenders/T1/decompose", json={"document_sha256": body["document_sha256"]})
+    assert r.status_code == 401
+
+
+def test_decompose_endpoint_404s_for_an_unknown_document_hash(client, conn):
+    r = client.post("/tenders/T1/decompose", json={"document_sha256": "a" * 64},
+                    headers=auth_headers(conn))
+    assert r.status_code == 404
+
+
+def test_decompose_endpoint_is_honestly_unavailable_without_a_configured_provider(client, conn):
+    """The test environment has no SATYAPRAMANA_GEMINI_API_KEY -- the same
+    honest-degrade shape as EXPLAIN."""
+    pdf = text_pdf(["A real tender document with actual text in it."])
+    body = upload(client, pdf).json()
+    r = client.post("/tenders/T1/decompose", json={"document_sha256": body["document_sha256"]},
+                    headers=auth_headers(conn))
+    result = r.json()
+    assert result["available"] is False
+    assert "not configured" in result["reason"]
+    assert result["proposals"] == []
+
+
+def test_decompose_endpoint_on_a_document_with_no_text_layer(client, conn):
+    body = upload(client, imageless_pdf()).json()
+    r = client.post("/tenders/T1/decompose", json={"document_sha256": body["document_sha256"]},
+                    headers=auth_headers(conn))
+    result = r.json()
+    assert result["available"] is False
+    assert "no extractable text" in result["reason"]
+
+
+def test_decompose_endpoint_returns_real_proposals_from_a_configured_provider(client, conn, monkeypatch):
+    from satyapramana_store import app as app_module
+    from satyapramana_store.tender_intelligence import Decomposed, ProposedRequirement
+    from datetime import datetime, timezone
+
+    class _FakeDecomposer:
+        def decompose(self, document_text):
+            assert "Bidder shall hold valid GST registration" in document_text
+            return Decomposed(
+                proposals=(ProposedRequirement(
+                    text="Bidder shall hold valid GST registration.", page=1,
+                    obligation_guess="mandatory", suggested_field="bidder.gst.status",
+                    suggested_check="exists", note=None),),
+                model="fake-model", generated_at=datetime.now(timezone.utc))
+
+    monkeypatch.setattr(app_module, "DECOMPOSER", _FakeDecomposer())
+
+    pdf = text_pdf(["Bidder shall hold valid GST registration."])
+    body = upload(client, pdf).json()
+    r = client.post("/tenders/T1/decompose", json={"document_sha256": body["document_sha256"]},
+                    headers=auth_headers(conn))
+    result = r.json()
+    assert result["available"] is True
+    assert result["model"] == "fake-model"
+    assert len(result["proposals"]) == 1
+    assert result["proposals"][0]["suggested_field"] == "bidder.gst.status"
