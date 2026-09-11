@@ -1,0 +1,46 @@
+/* Shimmer is the one deliberate exception to "nothing loops" (tokens.css's
+ * motion comment): a single sweep across a loading placeholder is barely
+ * perceptible, so this is the standard, expected pattern every design
+ * system carries this exception for. Duration is still token-derived
+ * (a multiple of --duration-slow, not a hardcoded ms value) and the
+ * reduced-motion query below still collapses it to a static block, exactly
+ * like every other animation in this app.
+ */
+.skeleton {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--color-border) 25%,
+    var(--color-border-strong) 37%,
+    var(--color-border) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-shimmer calc(var(--duration-slow) * 6) ease-in-out infinite;
+}
+
+.skeleton-line {
+  height: var(--text-base);
+  line-height: var(--text-base);
+}
+
+.card.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  cursor: default;
+}
+.card.skeleton-card:hover { box-shadow: var(--shadow-sm); border-color: var(--color-border); }
+
+.evidence-table.skeleton-table .skeleton-line { height: var(--text-sm); }
+
+@keyframes skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background: var(--color-border);
+  }
+}
