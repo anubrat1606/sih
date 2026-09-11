@@ -60,6 +60,10 @@ def test_pan_verify_success():
         assert request.headers["authorization"] == "test-jwt"
         body = json.loads(request.content)
         assert body["pan"] == "ABCDE1234A"
+        # NORMALIZE guarantees the subject arrives as ISO-8601 -- Sandbox's
+        # own documented contract is DD/MM/YYYY, and converting between the
+        # two is this adapter's job, not upstream's (see _iso_to_ddmmyyyy).
+        assert body["date_of_birth"] == "01/01/1990"
         return httpx.Response(200, json={
             "code": 200, "data": {
                 "status": "valid", "category": "individual",
@@ -71,7 +75,7 @@ def test_pan_verify_success():
     adapter = PanStatusAdapter(session_with(handler))
     req = VerificationRequest("PAN_STATUS", {
         "pan_number": "ABCDE1234A", "pan_holder_name": "Test Bidder",
-        "pan_date_of_birth": "01/01/1990",
+        "pan_date_of_birth": "1990-01-01",
     }, BASIS)
     outcome = adapter.verify(req)
 
@@ -79,6 +83,20 @@ def test_pan_verify_success():
     values = {o.path: o.value for o in outcome.observations}
     assert values == {"bidder.pan.status": "valid", "bidder.pan.holder_category": "individual"}
     assert outcome.raw_response_ref.startswith("unarchived:")
+
+
+def test_pan_verify_a_non_iso_date_of_birth_is_refused_not_guessed():
+    """Real bug, found live (see reporting on the NORMALIZE fix): if the
+    resolved subject ever isn't the ISO-8601 shape NORMALIZE is supposed to
+    guarantee, this adapter must refuse rather than send Sandbox.co.in a
+    value that was never actually validated as a date."""
+    adapter = PanStatusAdapter(session_with(lambda r: AUTH_OK))
+    outcome = adapter.verify(VerificationRequest("PAN_STATUS", {
+        "pan_number": "ABCDE1234A", "pan_holder_name": "Test Bidder",
+        "pan_date_of_birth": "01/01/1990",  # the old, wrong-for-this-layer shape
+    }, BASIS))
+    assert isinstance(outcome, Failure) and outcome.code is FailureCode.MALFORMED
+    assert "ISO-8601" in outcome.detail
 
 
 def test_pan_verify_missing_pan_number_never_calls_the_network():
@@ -110,7 +128,7 @@ def test_pan_verify_unauthorized_maps_correctly():
     adapter = PanStatusAdapter(session_with(handler))
     outcome = adapter.verify(VerificationRequest("PAN_STATUS", {
         "pan_number": "ABCDE1234A", "pan_holder_name": "Test Bidder",
-        "pan_date_of_birth": "01/01/1990",
+        "pan_date_of_birth": "1990-01-01",
     }, BASIS))
     assert isinstance(outcome, Failure) and outcome.code is FailureCode.UNAUTHORIZED
 
@@ -122,7 +140,7 @@ def test_pan_verify_connection_error_is_unavailable_not_a_crash():
     adapter = PanStatusAdapter(session_with(handler))
     outcome = adapter.verify(VerificationRequest("PAN_STATUS", {
         "pan_number": "ABCDE1234A", "pan_holder_name": "Test Bidder",
-        "pan_date_of_birth": "01/01/1990",
+        "pan_date_of_birth": "1990-01-01",
     }, BASIS))
     assert isinstance(outcome, Failure) and outcome.code is FailureCode.UNAVAILABLE
 

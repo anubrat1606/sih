@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -166,6 +167,27 @@ def _status_failure(status: int, body_text: str) -> Failure | None:
     return None
 
 
+_ISO_DATE = re.compile(r"^([0-9]{4})-([0-9]{2})-([0-9]{2})$")
+
+
+def _iso_to_ddmmyyyy(value: str) -> str | None:
+    """NORMALIZE (evidence.py) stores every date this system reads as
+    canonical ISO-8601 -- that is what a resolved subject field always is by
+    the time it reaches an adapter's verify(). Sandbox.co.in's own PAN
+    verification contract is documented as DD/MM/YYYY, a wire-format detail
+    that belongs entirely to this adapter (the same way a different
+    authority's own date format would), never upstream in app.py or
+    evidence.py. Returns None, never a guess, if the value isn't the
+    ISO-8601 shape NORMALIZE guarantees -- that would mean something changed
+    upstream in a way this adapter needs to know about, not silently paper
+    over."""
+    m = _ISO_DATE.fullmatch(value)
+    if not m:
+        return None
+    year, month, day = m.groups()
+    return f"{day}/{month}/{year}"
+
+
 class PanStatusAdapter:
     """docs/ADAPTERS.md capability PAN_STATUS, backed by Sandbox.co.in's
     Verify PAN Details endpoint.
@@ -211,14 +233,24 @@ class PanStatusAdapter:
             return Failure(FailureCode.MALFORMED, "no PAN number extracted for this bidder; nothing to submit")
 
         name = request.subject.get("pan_holder_name")
-        dob = request.subject.get("pan_date_of_birth")
-        if not name or not dob:
+        dob_iso = request.subject.get("pan_date_of_birth")
+        if not name or not dob_iso:
             return Failure(
                 FailureCode.MALFORMED,
                 "Sandbox.co.in's PAN verification requires the holder's name and "
                 "date of birth as printed on the card; extraction does not "
                 "currently capture either field, so this check cannot be "
                 "attempted -- not skipped silently, refused honestly",
+            )
+
+        dob = _iso_to_ddmmyyyy(dob_iso)
+        if dob is None:
+            return Failure(
+                FailureCode.MALFORMED,
+                f"pan_date_of_birth resolved to {dob_iso!r}, not the ISO-8601 "
+                "form NORMALIZE is supposed to guarantee -- refusing to guess "
+                "a wire format rather than sending Sandbox.co.in something "
+                "that was never actually validated",
             )
 
         reason = request.lawful_basis.purpose
