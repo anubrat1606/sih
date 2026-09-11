@@ -150,13 +150,18 @@ bank account) for the collusion case to fire on real data. See
 
 ### 2. Live credentials are per-developer, not shared
 
-`services/orchestrator/.env` is gitignored by design — real Sandbox.co.in
-and Gemini keys live only on whichever machine configured them, never in the
-repo. This is correct, not a bug: without a key, every dependent feature
-degrades to an honest `UNKNOWN`/unavailable state, which is itself part of
-the pitch. Worth deciding, once real demo data exists: does the panel demo
-run from one specific machine with keys already configured, or does whoever
-demos it need their own `.env` set up beforehand?
+**Partially resolved 2026-09-12.** The *database* half of this is
+resolved — see "Database access" above and `docs/DEPLOYMENT.md`: a shared
+Neon Postgres plus a shared Render deployment means nobody needs a local
+Postgres or their own `.env` just to use the running app.
+
+Still open: real Sandbox.co.in and Gemini keys live only on whichever
+machine (or Render service) configured them, never in the repo — correct,
+not a bug, since without a key the dependent feature honestly degrades to
+`UNKNOWN`/unavailable rather than faking a result. Worth deciding once
+real demo data exists: does the team share one real key pair (entered
+once into the Render service's env vars, per `docs/DEPLOYMENT.md`), or
+does each developer need their own for local work?
 
 ### 3. No rule pack built from a real tender
 
@@ -166,10 +171,21 @@ Tender Intelligence (above) should make this faster once a real tender PDF
 and gap 2's credentials exist, but an officer still has to run it and
 review/adopt the result for real.
 
-### 4. Everything else
+### 4. Deployment — resolved 2026-09-12, no Docker
+
+Docker was declined (see "Architecture direction" above) in favor of a
+Render Blueprint (`render.yaml`) running the orchestrator and frontend as
+two free services against the shared Neon database — see
+`docs/DEPLOYMENT.md` for the one-time setup and its one honest limitation
+(uploaded document files don't survive a redeploy on Render's free tier;
+the event log itself always does). PR #56 (admin tender builder) is
+reviewed, live-verified against real Postgres, and CI-green — merging it
+is the one step still pending as of this writing.
+
+### 5. Everything else
 
 No other gap is currently open. If a new one turns up, it goes here with
-the same rigor as 1–3: what's missing, why, and what real-world input (if
+the same rigor as 1–4: what's missing, why, and what real-world input (if
 any) it needs before it's buildable.
 
 ---
