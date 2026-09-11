@@ -359,6 +359,20 @@ def evaluate_bidder_endpoint(bidder_id: str, tender_id: str, body: EvaluateIn,
 
 # --- read models --------------------------------------------------------------
 
+@app.get("/tenders/{tender_id}/bidders")
+def list_tender_bidders(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+    """Every bidder registered on this tender, each with the same summary
+    `GET /bidders/{id}` returns -- one round trip for a dashboard instead of
+    one per card."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT bidder_id FROM bidder_in_tender WHERE tender_id=%s ORDER BY bidder_id",
+            (tender_id,))
+        bidder_ids = [row[0] for row in cur.fetchall()]
+    return {"tender_id": tender_id,
+            "bidders": [get_bidder(bidder_id, tender_id, conn) for bidder_id in bidder_ids]}
+
+
 @app.get("/bidders/{bidder_id}")
 def get_bidder(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
     rebuild_projections(conn)

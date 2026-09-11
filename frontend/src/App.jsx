@@ -1,21 +1,27 @@
 import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
-import UploadPage from "./pages/UploadPage";
-import DashboardPage from "./pages/DashboardPage";
+import StatusPage from "./pages/StatusPage";
+import RegisterBidderPage from "./pages/RegisterBidderPage";
+import TenderDashboardPage from "./pages/TenderDashboardPage";
 import BidderDetailPage from "./pages/BidderDetailPage";
+import AuditPage from "./pages/AuditPage";
 import "./App.css";
 
 export default function App() {
   return (
     <BrowserRouter>
       <nav className="topnav">
-        <Link to="/upload">Upload</Link>
-        <span className="topnav-note">SIH26100 — GeM Bid Compliance (real data only)</span>
+        <Link to="/">Status</Link>
+        <Link to="/register">Register bidder</Link>
+        <Link to="/audit">Audit log</Link>
+        <span className="topnav-note">SATYAPRAMĀṆA — real data only, no simulated authority response</span>
       </nav>
       <Routes>
-        <Route path="/" element={<Navigate to="/upload" replace />} />
-        <Route path="/upload" element={<UploadPage />} />
-        <Route path="/dashboard/:tenderId" element={<DashboardPage />} />
-        <Route path="/bidder/:bidderId" element={<BidderDetailPage />} />
+        <Route path="/" element={<StatusPage />} />
+        <Route path="/register" element={<RegisterBidderPage />} />
+        <Route path="/tenders/:tenderId" element={<TenderDashboardPage />} />
+        <Route path="/bidders/:bidderId" element={<BidderDetailPage />} />
+        <Route path="/audit" element={<AuditPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

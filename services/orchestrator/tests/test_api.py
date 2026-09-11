@@ -105,6 +105,21 @@ def test_the_collusion_endpoint_reports_the_cluster(client):
     assert by_id["C"]["flagged"] is False
 
 
+def test_listing_tender_bidders_returns_the_same_summary_as_the_single_lookup(client):
+    register(client, "T1", "A")
+    register(client, "T1", "B")
+    listed = client.get("/tenders/T1/bidders").json()["bidders"]
+    assert {b["bidder_id"] for b in listed} == {"A", "B"}
+    single = client.get("/bidders/A", params={"tender_id": "T1"}).json()
+    listed_a = next(b for b in listed if b["bidder_id"] == "A")
+    assert listed_a["metrics"] == single["metrics"]
+
+
+def test_listing_bidders_for_an_empty_tender_is_an_empty_list_not_an_error(client):
+    body = client.get("/tenders/T-EMPTY/bidders").json()
+    assert body == {"tender_id": "T-EMPTY", "bidders": []}
+
+
 # --- read models --------------------------------------------------------------
 
 def test_compliance_score_is_null_not_zero_when_nothing_is_determinate(client):
