@@ -4,6 +4,7 @@ import ForceGraph2D from "react-force-graph-2d";
 import { adoptRulePack, getCollusionEdges, getTender, getTenderCollusion, listTenderBidders } from "../api";
 import { roleAtLeast, useAuth } from "../authContext";
 import { ErrorBox, Metric, RiskBadge } from "../components";
+import RulePackBuilder from "../RulePackBuilder";
 import { cssVar } from "../theme";
 
 export default function TenderDashboardPage() {
@@ -14,9 +15,9 @@ export default function TenderDashboardPage() {
   const [collusion, setCollusion] = useState(null);
   const [edges, setEdges] = useState(null);
   const [error, setError] = useState(null);
-  const [packText, setPackText] = useState("");
   const [adoptResult, setAdoptResult] = useState(null);
   const [violations, setViolations] = useState(null);
+  const [adopting, setAdopting] = useState(false);
   const [selectedNode, setSelectedNode] = useState(null);
   const [tender, setTender] = useState(null);
   const graphRef = useRef();
@@ -43,21 +44,22 @@ export default function TenderDashboardPage() {
 
   useEffect(load, [tenderId]);
 
-  async function onAdopt(e) {
-    e.preventDefault();
+  async function handleAdopt(pack, parseError) {
     setError(null);
     setViolations(null);
+    setAdoptResult(null);
+    if (parseError) {
+      setError(parseError);
+      return;
+    }
+    setAdopting(true);
     try {
-      let pack;
-      try {
-        pack = JSON.parse(packText);
-      } catch {
-        throw new Error("rule pack must be valid JSON -- see schemas/rule_pack.schema.json");
-      }
       setAdoptResult(await adoptRulePack(tenderId, pack));
     } catch (err) {
       if (err.detail?.violations) setViolations(err.detail.violations);
       else setError(err);
+    } finally {
+      setAdopting(false);
     }
   }
 
@@ -175,12 +177,7 @@ export default function TenderDashboardPage() {
       {canAdopt ? (
         <>
           <p className="hint">Adopted as {session.displayName} ({session.role.replace("_", " ")}).</p>
-          <form className="form" onSubmit={onAdopt}>
-            <label>Rule pack JSON
-              <textarea rows={10} value={packText} onChange={(e) => setPackText(e.target.value)} placeholder='{"rule_pack_id": "...", "semver": "1.0.0", "requirements": [...]}' required />
-            </label>
-            <button type="submit">Adopt</button>
-          </form>
+          <RulePackBuilder tenderId={tenderId} onAdopt={handleAdopt} submitting={adopting} />
           {adoptResult && <p className="status">Adopted rule pack version {adoptResult.rule_pack_version}.</p>}
           {violations && (
             <div className="error">
