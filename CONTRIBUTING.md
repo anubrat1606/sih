@@ -1,6 +1,6 @@
 # Contributing — Satyapramāṇa (SIH26100)
 
-Five people push to one repository this week. This document is the whole reason
+Four people push to one repository this week. This document is the whole reason
 that works without a merge conflict: **each workstream owns its own
 directories outright, and nobody edits anybody else's files.** If your work
 seems to need a change outside your own paths, message that file's owner and
@@ -13,7 +13,7 @@ Read [`CLAUDE.md`](CLAUDE.md) and [`docs/satyapramana.md`](docs/satyapramana.md)
 
 | Path | Owner | Rule |
 |---|---|---|
-| `frontend/` | Kevindeep | Sole owner |
+| `frontend/` | Anubrat | Sole owner |
 | `services/orchestrator/satyapramana_store/adapters/` | Anubrat | Sole owner |
 | `services/orchestrator/satyapramana_store/extract/` | Suhani | Sole owner |
 | `services/orchestrator/satyapramana_store/reporting/` (new) | Rishika | Sole owner |
