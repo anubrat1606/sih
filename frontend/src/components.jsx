@@ -3,6 +3,8 @@
 // colour is never the only carrier of meaning, so an officer with
 // deuteranopia reads the identical verdict a sighted colleague does.
 
+import PdfEvidenceViewer from "./PdfEvidenceViewer";
+
 const VERDICT_CLASS = { PASS: "v-pass", FAIL: "v-fail", PARTIAL: "v-partial", UNKNOWN: "v-unknown" };
 const VERDICT_GLYPH = { PASS: "✓", FAIL: "✕", PARTIAL: "◑", UNKNOWN: "?" };
 
@@ -79,6 +81,31 @@ export function ProvenanceStep({ step }) {
     <li>
       <strong>{step.event_type}</strong> (seq {step.seq}, {step.occurred_at}) — {summarize ? summarize(step.payload) : JSON.stringify(step.payload)}
     </li>
+  );
+}
+
+// The demo axiom's walkable path, as one component: a provenance trail's
+// steps, and -- when the trail reaches both an extracted field (page +
+// region) and the document it came from (its content hash) -- the exact
+// highlighted line of the source PDF beside it. A verification-sourced fact
+// never reaches a document, and that's correct, not a bug: only an
+// extraction-sourced fact has a page to highlight.
+export function ProvenancePanel({ trail }) {
+  const extracted = trail.find((t) => t.event_type === "FIELD_EXTRACTED");
+  const document = trail.find((t) => t.event_type === "DOCUMENT_INGESTED");
+  return (
+    <div>
+      <ol className="audit-list">
+        {trail.map((t) => <ProvenanceStep key={t.seq} step={t} />)}
+      </ol>
+      {extracted && document && (
+        <PdfEvidenceViewer
+          documentSha256={document.payload.document_sha256}
+          page={extracted.payload.page}
+          region={extracted.payload.region}
+        />
+      )}
+    </div>
   );
 }
 

@@ -1,14 +1,13 @@
 import { Fragment, useEffect, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   evaluateBidder, getAutopsy, getBidder, getBidderEvidence, getProvenance,
   getRepairPlan, overrideVerdict, recordDecision,
 } from "../api";
 import {
   ClassificationBadge, ConflictCard, CoverageMeter, ErrorBox, EvidenceChip,
-  Metric, ProvenanceStep, RepairAction, RiskBadge, VerdictBadge,
+  Metric, ProvenancePanel, RepairAction, RiskBadge, VerdictBadge,
 } from "../components";
-import PdfEvidenceViewer from "../PdfEvidenceViewer";
 
 export default function BidderDetailPage() {
   const { bidderId } = useParams();
@@ -100,6 +99,9 @@ export default function BidderDetailPage() {
         <>
           <div className="actions">
             <RiskBadge level={bidder.risk.level} />
+            <Link className="evidence-graph-link" to={`/bidders/${encodeURIComponent(bidderId)}/evidence-graph?tender_id=${encodeURIComponent(tenderId)}`}>
+              Evidence Graph →
+            </Link>
           </div>
           {bidder.risk.triggers.length > 0 && (
             <p className="hint">Risk triggers: {bidder.risk.triggers.join(", ")} (function {bidder.risk.function_version})</p>
@@ -155,30 +157,7 @@ export default function BidderDetailPage() {
                     </tr>
                     {openProvenance === v.requirement_id && provenance && (
                       <tr>
-                        <td colSpan={5}>
-                          <ol className="audit-list">
-                            {provenance.trail.map((t) => <ProvenanceStep key={t.seq} step={t} />)}
-                          </ol>
-                          {(() => {
-                            // The demo axiom: click a verdict, land on the exact
-                            // highlighted line of the actual PDF. Only possible
-                            // when the trail reaches both an extracted field
-                            // (page + region) and the document it came from
-                            // (its content hash) -- a verification-sourced fact
-                            // never reaches a document, and that's correct, not
-                            // a bug (see PROVENANCE_SUMMARY's own comment).
-                            const extracted = provenance.trail.find((t) => t.event_type === "FIELD_EXTRACTED");
-                            const document = provenance.trail.find((t) => t.event_type === "DOCUMENT_INGESTED");
-                            if (!extracted || !document) return null;
-                            return (
-                              <PdfEvidenceViewer
-                                documentSha256={document.payload.document_sha256}
-                                page={extracted.payload.page}
-                                region={extracted.payload.region}
-                              />
-                            );
-                          })()}
-                        </td>
+                        <td colSpan={5}><ProvenancePanel trail={provenance.trail} /></td>
                       </tr>
                     )}
                   </Fragment>
