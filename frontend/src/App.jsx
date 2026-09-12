@@ -16,6 +16,7 @@ import NotificationsPage from "./bidder/pages/NotificationsPage";
 import ProfilePage from "./bidder/pages/ProfilePage";
 import HelpPage from "./bidder/pages/HelpPage";
 
+import LandingPage from "./landing/LandingPage";
 import LoginPage from "./pages/LoginPage";
 import MissionControlPage from "./pages/MissionControlPage";
 import TendersPage from "./pages/TendersPage";
@@ -97,18 +98,19 @@ function PortalRoutes() {
   );
 }
 
-// Signed-in bidders land on /portal, everyone else on /dashboard -- a
-// plain unconditional redirect here would send a bidder into an officer
-// page that now correctly 403s server-side instead of the portal they
-// actually have.
-function RootRedirect() {
+// "/" is the public landing page for anyone signed out. A live session
+// skips it: bidders go to /portal, everyone else to /dashboard -- a plain
+// unconditional redirect would send a bidder into an officer page that
+// correctly 403s server-side instead of the portal they actually have.
+function RootGate() {
   const { session, checking } = useAuth();
   // Wait for a stored session to be confirmed against the real backend
-  // before deciding where to send it -- otherwise a bidder refreshing on
-  // "/" would be redirected to /dashboard during the brief window before
-  // their session is restored, and land in the wrong shell.
+  // before deciding -- otherwise a bidder refreshing on "/" would flash the
+  // landing page (or be sent to /dashboard) during the brief window before
+  // their session is restored.
   if (checking) return <div className="page"><p className="hint">Checking session…</p></div>;
-  return <Navigate to={session?.role === "BIDDER" ? "/portal" : "/dashboard"} replace />;
+  if (session) return <Navigate to={session.role === "BIDDER" ? "/portal" : "/dashboard"} replace />;
+  return <LandingPage />;
 }
 
 export default function App() {
@@ -117,7 +119,7 @@ export default function App() {
       <ToastProvider>
         <AuthProvider>
           <Routes>
-            <Route path="/" element={<RootRedirect />} />
+            <Route path="/" element={<RootGate />} />
             <Route path="/portal/*" element={<PortalRoutes />} />
             <Route path="/*" element={<OfficerRoutes />} />
           </Routes>
