@@ -1,0 +1,98 @@
+/* Mobile/tablet rules for the bidder portal only -- everything here is
+ * scoped under .bidder-portal (BidderShell.jsx sets that class), so none
+ * of it can affect the officer portal. No new colour, font, radius or
+ * shadow (round 6 hard rule 8) -- only layout, spacing and visibility. */
+
+/* ---- ≤900px: tablet ------------------------------------------------- */
+@media (max-width: 900px) {
+  /* Denser tables so more columns fit before .table-scroll's existing
+     overflow-x: auto (components.css) has to kick in. */
+  .bidder-portal .data-table th,
+  .bidder-portal .data-table td {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+  }
+
+  /* Rows of side-by-side fields/actions stack into one column -- reused
+     shared classes (ui/primitives.jsx's Field grid, form rows, toolbars),
+     scoped here so this never touches the officer pages that use the
+     same classes. */
+  .bidder-portal .field-grid,
+  .bidder-portal .form-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .bidder-portal .toolbar,
+  .bidder-portal .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bidder-portal .page-header-actions {
+    justify-content: flex-start;
+  }
+}
+
+/* ---- ≤600px: phone ---------------------------------------------------
+ * DataTable's rows collapse to stacked label/value pairs on narrow
+ * screens, keeping the tender/bidder id, title, deadline, status and
+ * action visible first -- the rule below is written to activate the
+ * moment each <td> carries a `data-label` attribute (the standard
+ * CSS-only technique for this: `content: attr(data-label)`). That
+ * attribute does not exist on ui/DataTable.jsx's markup today, and
+ * DataTable.jsx is outside this round's Kevin file list (it's shared,
+ * Anubrat's) -- so per this round's own rule ("if your task genuinely
+ * needs something outside your files, stop and ask"), this is flagged as
+ * a real ask rather than forked or guessed at with brittle nth-child
+ * column assumptions. Until that attribute lands, the table still works
+ * correctly via the existing .table-scroll horizontal scroll -- nothing
+ * below is required for correctness, only for the nicer stacked layout. */
+@media (max-width: 600px) {
+  .bidder-portal .data-table.stacked-on-mobile thead {
+    position: absolute;
+    width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);
+  }
+  .bidder-portal .data-table.stacked-on-mobile,
+  .bidder-portal .data-table.stacked-on-mobile tbody,
+  .bidder-portal .data-table.stacked-on-mobile tr,
+  .bidder-portal .data-table.stacked-on-mobile td {
+    display: block; width: 100%;
+  }
+  .bidder-portal .data-table.stacked-on-mobile tr {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-3);
+  }
+  .bidder-portal .data-table.stacked-on-mobile td {
+    display: flex; justify-content: space-between; gap: var(--space-3);
+    border: none; border-bottom: 1px solid var(--color-border);
+    padding: var(--space-2) var(--space-3);
+  }
+  .bidder-portal .data-table.stacked-on-mobile td:last-child { border-bottom: none; }
+  .bidder-portal .data-table.stacked-on-mobile td[data-label]::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    margin-right: var(--space-3);
+    flex-shrink: 0;
+  }
+
+  /* The three-step submit layout (Suhani's SubmitDocumentsPage) stacks to
+     one column -- targets the same numbered-left-column/content-right
+     shape described in NEXT_TASKS_6's S2, using the generic .row/.stack
+     utility classes rather than a page-specific one that doesn't exist
+     yet, so this degrades safely regardless of the exact markup chosen. */
+  .bidder-portal .bidder-step-layout {
+    flex-direction: column;
+  }
+
+  /* The notification bell must stay reachable in the collapsed header at
+     every width -- it's a plain Link like any other topbar-button, this
+     only guards against it ever being squeezed out by flex overflow. */
+  .bidder-portal .topbar { flex-wrap: nowrap; }
+  .bidder-portal .topbar-button { flex-shrink: 0; }
+
+  .bidder-portal .bidder-breadcrumbs {
+    font-size: var(--text-xs);
+  }
+}
