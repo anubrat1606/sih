@@ -356,6 +356,21 @@ def list_tenders(conn=Depends(db)) -> dict[str, Any]:
         return {"tenders": [row[0] for row in cur.fetchall()]}
 
 
+@app.get("/bidder-ids")
+def list_bidder_ids(conn=Depends(db), _user: User = Depends(require_role(Role.OFFICER))) -> dict[str, Any]:
+    """Every bidder_id registered anywhere, with which tender(s) -- for the
+    admin's bidder-account form (round 6, A5) to offer a real select
+    instead of a free-text field an admin could typo. One query, not
+    list_tenders() followed by one list_tender_bidders() call per tender
+    from the frontend -- the exact N+1 shape docs/PERFORMANCE_AUDIT.md
+    already found and fixed elsewhere, not worth reintroducing here."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT bidder_id, array_agg(tender_id ORDER BY tender_id) "
+            "FROM bidder_in_tender GROUP BY bidder_id ORDER BY bidder_id")
+        return {"bidders": [{"bidder_id": b, "tender_ids": t} for b, t in cur.fetchall()]}
+
+
 @app.post("/tenders", status_code=201)
 def create_tender(body: TenderIn, conn=Depends(db),
                   user: User = Depends(require_role(Role.OFFICER))) -> dict[str, Any]:
