@@ -13,6 +13,7 @@ import TenderDetailPage from "./pages/TenderDetailPage";
 import BiddersPage from "./pages/BiddersPage";
 import RegisterBidderPage from "./pages/RegisterBidderPage";
 import BidderCompliancePage from "./pages/BidderCompliancePage";
+import ReviewQueuePage from "./officer/review/ReviewQueuePage";
 import EvidenceGraphPage from "./pages/EvidenceGraphPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import VerificationPage from "./pages/VerificationPage";
@@ -42,6 +43,7 @@ function OfficerRoutes() {
         {/* Static segment before the dynamic one, so /bidders/register is
             never read as a bidder whose id happens to be "register". */}
         <Route path="/bidders" element={<RequireAuth><BiddersPage /></RequireAuth>} />
+        <Route path="/review" element={<RequireAuth><ReviewQueuePage /></RequireAuth>} />
         <Route path="/bidders/register" element={<RequireAuth><RegisterBidderPage /></RequireAuth>} />
         <Route path="/bidders/:bidderId" element={<RequireAuth><BidderCompliancePage /></RequireAuth>} />
         <Route path="/bidders/:bidderId/evidence-graph" element={<RequireAuth><EvidenceGraphPage /></RequireAuth>} />

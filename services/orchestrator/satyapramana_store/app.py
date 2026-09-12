@@ -1311,6 +1311,36 @@ def my_submission(tender_id: str, conn=Depends(db),
             "status": status, "documents": documents}
 
 
+def _bidder_result_view(conn, tender_id: str, bidder_id: str) -> dict[str, Any]:
+    """The bidder-visible result, exactly -- shared by the bidder's own
+    GET /me/tenders/{id}/result and the officer's pre-decision preview
+    below, so "what the bidder sees" is never a second, hand-maintained
+    copy of this projection that could quietly drift from the real one."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT occurred_at, payload->>'decision', payload->>'note'
+               FROM events WHERE event_type='DECISION_RECORDED'
+                 AND tender_id=%s AND bidder_id=%s
+               ORDER BY seq DESC LIMIT 1""",
+            (tender_id, bidder_id))
+        row = cur.fetchone()
+    if not row:
+        return {"tender_id": tender_id, "bidder_id": bidder_id, "published": False}
+    decided_at, decision, note = row
+    rebuild_projections(conn)
+    verdicts = _fetch_verdict_rows(conn, bidder_id)
+    outcomes = [{"requirement_id": v["requirement_id"], "verdict": v["verdict_effective"]}
+                for v in verdicts]
+    actions = []
+    found = active_pack(conn, tender_id)
+    if found:
+        _, pack = found
+        actions = repair_plan(pack, verdicts, REGISTRY).get("actions", [])
+    return {"tender_id": tender_id, "bidder_id": bidder_id, "published": True,
+            "decision": decision, "decided_at": decided_at.isoformat(), "note": note,
+            "outcomes": outcomes, "repair_actions": actions}
+
+
 @app.get("/me/tenders/{tender_id}/result")
 def my_result(tender_id: str, conn=Depends(db),
               bidder: User = Depends(current_bidder)) -> dict[str, Any]:
@@ -1319,29 +1349,18 @@ def my_result(tender_id: str, conn=Depends(db),
     justifications. Once decided: the decision, the officer's note (if
     any), per-requirement effective verdicts, and repair actions for
     curable gaps."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """SELECT occurred_at, payload->>'decision', payload->>'note'
-               FROM events WHERE event_type='DECISION_RECORDED'
-                 AND tender_id=%s AND bidder_id=%s
-               ORDER BY seq DESC LIMIT 1""",
-            (tender_id, bidder.bidder_id))
-        row = cur.fetchone()
-    if not row:
-        return {"tender_id": tender_id, "bidder_id": bidder.bidder_id, "published": False}
-    decided_at, decision, note = row
-    rebuild_projections(conn)
-    verdicts = _fetch_verdict_rows(conn, bidder.bidder_id)
-    outcomes = [{"requirement_id": v["requirement_id"], "verdict": v["verdict_effective"]}
-                for v in verdicts]
-    actions = []
-    found = active_pack(conn, tender_id)
-    if found:
-        _, pack = found
-        actions = repair_plan(pack, verdicts, REGISTRY).get("actions", [])
-    return {"tender_id": tender_id, "bidder_id": bidder.bidder_id, "published": True,
-            "decision": decision, "decided_at": decided_at.isoformat(), "note": note,
-            "outcomes": outcomes, "repair_actions": actions}
+    return _bidder_result_view(conn, tender_id, bidder.bidder_id)
+
+
+@app.get("/tenders/{tender_id}/bidders/{bidder_id}/result-preview")
+def bidder_result_preview(tender_id: str, bidder_id: str, conn=Depends(db),
+                          _user: User = Depends(require_role(Role.OFFICER))) -> dict[str, Any]:
+    """The officer's pre-decision check: exactly what GET /me/tenders/{id}/result
+    would return to this bidder right now -- same helper, same projection,
+    so "what the bidder will see" is never guessed at from a different
+    (richer) officer-side view. If no decision exists yet, this honestly
+    returns published: false, same as the bidder would see."""
+    return _bidder_result_view(conn, tender_id, bidder_id)
 
 
 # --- officer review desk (round 6) ----------------------------------------------

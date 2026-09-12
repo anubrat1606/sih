@@ -11,6 +11,7 @@ const NAV = [
   { to: "/dashboard", label: "Mission Control", glyph: "▦" },
   { to: "/tenders", label: "Tenders", glyph: "▤" },
   { to: "/bidders", label: "Bidders", glyph: "⚏" },
+  { to: "/review", label: "Review queue", glyph: "☑" },
   { to: "/documents", label: "Documents", glyph: "▥" },
   { to: "/verification", label: "Verification", glyph: "⛉" },
   { to: "/compliance", label: "Compliance", glyph: "✓" },

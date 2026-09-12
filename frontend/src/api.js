@@ -128,6 +128,15 @@ export const getTenderCollusion = (tenderId) =>
 export const getCollusionEdges = (tenderId) =>
   call(`/tenders/${encodeURIComponent(tenderId)}/collusion/edges`);
 
+// The review desk (round 6): every bidder across every tender that may
+// need a human decision, and -- before recording one -- exactly what that
+// bidder would see if decided right now, from the same projection
+// GET /me/tenders/{id}/result uses (never a second, hand-built preview).
+export const getReviewQueue = () => call("/review-queue");
+
+export const getBidderResultPreview = (tenderId, bidderId) =>
+  call(`/tenders/${encodeURIComponent(tenderId)}/bidders/${encodeURIComponent(bidderId)}/result-preview`);
+
 export const recordDecision = (bidderId, tenderId, decision, note) =>
   call(`/bidders/${encodeURIComponent(bidderId)}/decision?${new URLSearchParams({ tender_id: tenderId })}`, {
     method: "POST", ...json({ decision, note: note || null }),

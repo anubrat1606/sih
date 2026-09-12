@@ -214,3 +214,28 @@ def test_review_queue_requires_an_officer(client, conn):
     register_and_adopt(client, conn, "A")
     r = client.get("/review-queue", headers=bidder_headers(conn, "A"))
     assert r.status_code == 403
+
+
+# --- the officer's pre-decision preview of what the bidder will see -----------
+
+def test_result_preview_matches_what_the_bidder_would_see(client, conn):
+    register_and_adopt(client, conn, "A")
+    client.post("/bidders/A/verify", params={"tender_id": "T1"})
+    client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL)
+    client.post("/bidders/A/decision", params={"tender_id": "T1"},
+               json={"decision": "QUALIFY", "note": "All mandatory requirements met."})
+    officer_view = client.get("/tenders/T1/bidders/A/result-preview").json()
+    bidder_view = client.get("/me/tenders/T1/result", headers=bidder_headers(conn, "A")).json()
+    assert officer_view == bidder_view
+
+
+def test_result_preview_is_honestly_unpublished_before_a_decision(client, conn):
+    register_and_adopt(client, conn, "A")
+    r = client.get("/tenders/T1/bidders/A/result-preview")
+    assert r.json() == {"tender_id": "T1", "bidder_id": "A", "published": False}
+
+
+def test_result_preview_requires_an_officer(client, conn):
+    register_and_adopt(client, conn, "A")
+    r = client.get("/tenders/T1/bidders/A/result-preview", headers=bidder_headers(conn, "A"))
+    assert r.status_code == 403
