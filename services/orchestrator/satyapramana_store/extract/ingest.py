@@ -236,6 +236,7 @@ def find_pan_holder_fields(pages: list[Page]) -> list[Candidate]:
         if not page.has_text_layer:
             continue  # find_candidates already records this page as unreadable
         grouped = lines(page)
+        labelled_here = False
         for label_words, (field, validate) in PAN_HOLDER_FIELDS.items():
             if field in found:
                 continue  # a document has one printed value per field, not
@@ -246,9 +247,53 @@ def find_pan_holder_fields(pages: list[Page]) -> list[Candidate]:
             idx = _label_line_index(grouped, label_words)
             if idx is None:
                 continue
+            labelled_here = True
             candidates.append(_read_value_under_label(page, grouped, idx, field, validate))
             found.add(field)
+        if not labelled_here and not found:
+            for candidate in _pan_anchored_holder_fields(page, grouped):
+                candidates.append(candidate)
+                found.add(candidate.field)
     return candidates
+
+
+# Seen on a real UTIITSL e-PAN (2026-09-12): the card's labels ("Name",
+# "Date of Birth") are part of the artwork -- an image -- and the text layer
+# carries only the printed values, in the card's fixed order: the PAN, then
+# the holder's name, then the father's name, then the date of birth. With no
+# label on the page the reader above finds nothing, PAN_STATUS can't be
+# asked (Sandbox needs name + DOB), and a genuine card verifies as UNKNOWN.
+#
+# The PAN itself is the anchor here instead of a label: it is located by
+# grammar and check-validated first, exactly like every other identifier.
+# The three lines beneath it must then read, in order, as a name, a name and
+# a dd/mm/yyyy date, or nothing is emitted at all -- an absence, like a label
+# that isn't on the page, never a partial guess. The card's own order is what
+# decides which name line is the holder's; if a card ever printed them the
+# other way round, the authority's own name check refuses it, and the
+# provenance shows exactly which line was read.
+def _pan_anchored_holder_fields(page: Page, grouped: list[list[Word]]) -> list[Candidate]:
+    for i, line in enumerate(grouped):
+        anchor = next((w.text for w in line
+                       if PATTERNS["pan_number"].fullmatch(w.text) and VALIDATORS["pan_number"](w.text).ok),
+                      None)
+        if anchor is None or i + 3 >= len(grouped):
+            continue
+        name_line, father_line, dob_line = grouped[i + 1], grouped[i + 2], grouped[i + 3]
+        name, father, dob = _line_text(name_line), _line_text(father_line), _line_text(dob_line)
+        if any(t.rstrip(":").upper() in _KNOWN_LABEL_LINES for t in (name, father, dob)):
+            continue  # labels are in the text layer after all -- not this layout
+        name_check = validate_pan_holder_name(name)
+        dob_check = validate_pan_date_of_birth(dob)
+        if not (name_check.ok and validate_pan_holder_name(father).ok and dob_check.ok):
+            continue
+        return [
+            Candidate("pan_holder_name", name, page.number, _line_region(name_line),
+                      True, name_check.detail),
+            Candidate("pan_date_of_birth", dob, page.number, _line_region(dob_line),
+                      True, dob_check.detail),
+        ]
+    return []
 
 
 def find_gst_claimed_names(pages: list[Page]) -> list[Candidate]:

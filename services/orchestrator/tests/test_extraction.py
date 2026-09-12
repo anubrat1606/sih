@@ -19,7 +19,7 @@ from satyapramana_store.extract import (
 
 from .conftest import auth_headers
 from .conftest_pdf import (
-    gst_certificate_lines, gst_claimed_name_lines, imageless_pdf, pan_card_lines,
+    epan_lines, gst_certificate_lines, gst_claimed_name_lines, imageless_pdf, pan_card_lines,
     text_pdf, valid_cin, valid_gstin,
 )
 
@@ -311,6 +311,37 @@ def test_pan_holder_name_and_dob_are_located_with_their_boxes():
     for field in (name, dob):
         x0, top, x1, bottom = field.region
         assert x1 > x0 and bottom > top, "a real, non-degenerate rectangle"
+
+
+def test_an_epan_with_labels_in_the_artwork_is_read_from_the_pan_anchor():
+    """Real UTIITSL e-PAN (2026-09-12): 'Name' and 'Date of Birth' are in the
+    card image, the text layer has only the values under the PAN. The PAN is
+    the anchor; the holder's name is the line beneath it, the date of birth
+    the dd/mm/yyyy line two below that."""
+    pdf = text_pdf(["Test fixture, not a card.", *epan_lines()])
+    found = {c.field: c for c in find_pan_holder_fields(read_pdf(pdf))}
+    assert set(found) == {"pan_holder_name", "pan_date_of_birth"}
+    assert found["pan_holder_name"].valid and found["pan_holder_name"].value == "RAHUL KUMAR SHARMA"
+    assert found["pan_date_of_birth"].valid and found["pan_date_of_birth"].value == "15/08/1990"
+    x0, top, x1, bottom = found["pan_holder_name"].region
+    assert x1 > x0 and bottom > top
+
+
+def test_the_pan_anchor_emits_nothing_unless_all_three_lines_match():
+    """Two lines under the PAN instead of three (no date): the layout is not
+    the e-PAN's, so nothing is read -- not the name on its own, which would
+    let PAN_STATUS be asked with a guessed pairing."""
+    pdf = text_pdf(epan_lines(dob=None))
+    assert find_pan_holder_fields(read_pdf(pdf)) == []
+
+
+def test_a_printed_label_under_the_pan_means_it_is_not_the_anchored_layout():
+    """A card that prints its labels as text is handled by the label reader;
+    the anchor must stand down when the line under the PAN is a label."""
+    pdf = text_pdf(["AAAPA0000A", "Name", "RAHUL KUMAR SHARMA", "Date of Birth", "15/08/1990"])
+    found = {c.field: c for c in find_pan_holder_fields(read_pdf(pdf))}
+    assert found["pan_holder_name"].value == "RAHUL KUMAR SHARMA"
+    assert found["pan_date_of_birth"].value == "15/08/1990"
 
 
 def test_a_blank_name_field_is_not_read_as_a_guess():
