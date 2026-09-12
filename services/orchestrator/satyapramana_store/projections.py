@@ -41,13 +41,37 @@ def provenance_trail(conn, bidder_id: str, requirement_id: str) -> list[dict[str
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
+#: Advisory lock key for the rebuild below. Any stable bigint works; it only
+#: has to be the same number in every process that talks to this database.
+REBUILD_LOCK_KEY = 7_411_001
+
+
 def rebuild_projections(conn, up_to_seq: int | None = None) -> dict[str, int]:
     """Truncate and fold from genesis.
 
     `up_to_seq` gives time travel: fold to sequence N and the projection is the
     state as of that moment. The TemporalScrubber UI is deferred, but the
     capability underneath it costs nothing extra, so the query stays supported.
+
+    Seen live (Render, 2026-09-12): the officer dashboard fires several
+    requests at once and more than one of them rebuilds. Pool connections are
+    autocommit, so DELETE-then-INSERT from two requests interleaved -- both
+    deleted, both inserted the same tender -- and one died with
+    UniqueViolation on proj_tenders_pkey (and, a minute earlier, on
+    proj_collusion_pkey). A 500 from there escapes the CORS middleware, which
+    is why the browser reported it as a CORS/ERR_FAILED failure rather than
+    an error the page could show. One transaction plus a transaction-scoped
+    advisory lock makes concurrent rebuilds queue instead of interleave, and
+    means a reader never sees the cache empty between the DELETE and the
+    INSERTs either.
     """
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(%s)", (REBUILD_LOCK_KEY,))
+        return _rebuild_locked(conn, up_to_seq)
+
+
+def _rebuild_locked(conn, up_to_seq: int | None) -> dict[str, int]:
     ceiling = up_to_seq if up_to_seq is not None else _tip(conn)
     counts = {"proj_verdicts": 0, "proj_collusion": 0, "proj_tenders": 0}
 

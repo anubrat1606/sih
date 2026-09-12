@@ -55,6 +55,42 @@ def test_concurrent_writers_cannot_fork_the_chain(conn, dsn):
     assert report.events == report.linked == report.rehashed == total
 
 
+def test_concurrent_rebuilds_do_not_collide(conn, dsn):
+    """Seen live on Render (2026-09-12): the officer dashboard fires several
+    requests at once, more than one rebuilds the projections, and with
+    autocommit connections their DELETE-then-INSERT interleaved -- both
+    deleted, both inserted the same tender, one died with UniqueViolation on
+    proj_tenders_pkey. Rebuilds must queue, and the cache must come out with
+    exactly one row per tender no matter how many rebuilt at once."""
+    from satyapramana_store.projections import rebuild_projections
+
+    append(conn, event_type="TENDER_CREATED", actor=Actor("HUMAN", "officer_1"),
+           correlation_id=str(uuid.uuid4()), tender_id="T-RACE",
+           payload={"title": "Race", "issuing_authority": "Test authority",
+                    "created_by": "officer_1"})
+    errors: list[Exception] = []
+
+    def rebuilder() -> None:
+        try:
+            c = connect(dsn)
+            for _ in range(12):
+                rebuild_projections(c)
+            c.close()
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=rebuilder) for _ in range(WRITERS)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"concurrent rebuilds failed: {errors[:3]}"
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM proj_tenders")
+        assert cur.fetchone()[0] == 1
+
+
 def test_seq_order_and_chain_order_agree(conn, dsn):
     """The export is ordered by seq, so seq order must be chain order. Because
     the sequence value is assigned inside the same lock that reads the tip,
