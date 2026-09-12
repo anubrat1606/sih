@@ -24,19 +24,6 @@ function initials(name) {
   return name.trim().slice(0, 2).toUpperCase();
 }
 
-function useTheme() {
-  const [theme, setTheme] = useState(() => {
-    try { return localStorage.getItem("satyapramana-theme") || "system"; } catch { return "system"; }
-  });
-  function apply(next) {
-    setTheme(next);
-    if (next === "system") delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = next;
-    try { localStorage.setItem("satyapramana-theme", next); } catch { /* storage blocked */ }
-  }
-  return [theme, apply];
-}
-
 // Global search over the tender list the session has already loaded — a
 // real client-side filter over real records, never a fabricated "smart
 // search" hitting an endpoint that doesn't exist.
@@ -170,7 +157,6 @@ function ProfileMenu() {
   const { session, logout } = useAuth();
   const { notify } = useToast();
   const [open, setOpen] = useState(false);
-  const [theme, setTheme] = useTheme();
   const ref = useRef(null);
 
   useEffect(() => {
@@ -178,9 +164,6 @@ function ProfileMenu() {
     document.addEventListener("mousedown", onClickAway);
     return () => document.removeEventListener("mousedown", onClickAway);
   }, []);
-
-  const nextTheme = { system: "light", light: "dark", dark: "system" };
-  const themeLabel = { system: "System", light: "Light", dark: "Dark" };
 
   return (
     <div className="topbar-profile" ref={ref}>
@@ -198,12 +181,6 @@ function ProfileMenu() {
             </div>
           </div>
           <div className="popover-body">
-            <div className="popover-item" style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <span>Theme</span>
-              <button type="button" className="btn btn-sm btn-secondary" onClick={() => setTheme(nextTheme[theme])}>
-                {themeLabel[theme]}
-              </button>
-            </div>
             {roleAtLeast(session.role, "ADMIN") && (
               <Link to="/officials/settings" className="popover-item" onClick={() => setOpen(false)} style={{ textDecoration: "none", color: "inherit" }}>
                 <span aria-hidden="true">⚙</span> Settings & officer accounts
