@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../authContext";
-import { ErrorBox } from "../components";
 import { useToast } from "../notifications";
+import { ErrorState } from "../ui/primitives";
 
 export default function LoginPage() {
   const { session, login } = useAuth();
@@ -13,9 +13,6 @@ export default function LoginPage() {
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Already signed in -- land back wherever RequireAuth sent them from, or
-  // the tenders list by default. Declarative redirect, not a navigate()
-  // call during render.
   if (session) {
     return <Navigate to={location.state?.from?.pathname || "/dashboard"} replace />;
   }
@@ -27,33 +24,49 @@ export default function LoginPage() {
     try {
       const next = await login(username, password);
       notify(`Signed in as ${next.displayName}.`, { kind: "success" });
-      // The redirect above handles getting them where they were headed --
-      // this render will re-run with session set and take that branch.
     } catch (err) {
       setError(err);
-      notify("Sign in failed.", { kind: "error" });
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="page page-narrow">
-      <h1>Sign in</h1>
-      <p className="hint">
-        SATYAPRAMĀṆA — officer access only. There is no self-signup; an administrator
-        creates every account.
-      </p>
-      <ErrorBox error={error} />
-      <form className="form" onSubmit={onSubmit}>
-        <label>Username
-          <input value={username} onChange={(e) => setUsername(e.target.value)} required autoFocus />
-        </label>
-        <label>Password
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        </label>
-        <button type="submit" disabled={submitting}>{submitting ? "Signing in…" : "Sign in"}</button>
-      </form>
+    <div className="page" style={{ display: "grid", placeItems: "center", minHeight: "calc(100vh - 64px)" }}>
+      <div className="card" style={{ width: "100%", maxWidth: 420 }}>
+        <div className="card-body">
+          <div className="page-eyebrow">Officer sign-in</div>
+          <h1 className="section-title" style={{ marginBottom: 6 }}>SATYAPRAMĀṆ</h1>
+          <p className="text-sm text-secondary" style={{ marginBottom: 20 }}>
+            There is no self-signup. Every officer account is created by an administrator, and every action
+            you take is recorded against your identity.
+          </p>
+
+          <ErrorState error={error} />
+
+          <form className="form" onSubmit={onSubmit}>
+            <div className="field">
+              <label htmlFor="login-user">Username</label>
+              <input id="login-user" value={username} autoComplete="username" required
+                     onChange={(e) => setUsername(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="login-pass">Password</label>
+              <input id="login-pass" type="password" value={password} autoComplete="current-password" required
+                     onChange={(e) => setPassword(e.target.value)} />
+            </div>
+            <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
+              {submitting ? "Signing in…" : "Sign in"}
+            </button>
+          </form>
+        </div>
+        <div className="card-footer">
+          <p className="text-xs text-muted">
+            Sessions are signed and expire. Nothing you see in this application is simulated — where an
+            authority cannot be reached, the answer is UNKNOWN with a stated reason.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
