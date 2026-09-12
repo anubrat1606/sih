@@ -129,7 +129,7 @@ export default function TenderDetailPage() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow={<Link to="/tenders">Tenders</Link>}
+        eyebrow={<Link to="/officials/tenders">Tenders</Link>}
         title={t?.title || tenderId}
         subtitle={t?.description}
         actions={
@@ -216,7 +216,7 @@ export default function TenderDetailPage() {
               <div className="stack-sm">
                 {bidderRows.slice(0, 6).map((b) => (
                   <div key={b.bidder_id} className="row" style={{ justifyContent: "space-between" }}>
-                    <Link to={`/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(tenderId)}`} className="mono">
+                    <Link to={`/officials/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(tenderId)}`} className="mono">
                       {b.bidder_id}
                     </Link>
                     <RiskBadge level={b.risk?.level} />
@@ -311,11 +311,11 @@ export default function TenderDetailPage() {
           searchPlaceholder="Search bidders…"
           emptyTitle="No bidders registered"
           emptyMessage="Register a bidder against this tender to begin evaluating their submission."
-          emptyAction={<Link className="btn btn-primary" to={`/bidders/register?tender_id=${encodeURIComponent(tenderId)}`}>Register a bidder</Link>}
+          emptyAction={<Link className="btn btn-primary" to={`/officials/bidders/register?tender_id=${encodeURIComponent(tenderId)}`}>Register a bidder</Link>}
           columns={[
             { key: "id", header: "Bidder", sortValue: (b) => b.bidder_id, searchValue: (b) => b.bidder_id,
               render: (b) => (
-                <Link to={`/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(tenderId)}`} className="mono">
+                <Link to={`/officials/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(tenderId)}`} className="mono">
                   {b.bidder_id}
                 </Link>
               ) },
@@ -340,7 +340,7 @@ export default function TenderDetailPage() {
             { key: "actions", header: "", align: "right",
               render: (b) => (
                 <Link className="btn btn-sm btn-secondary"
-                      to={`/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(tenderId)}`}>
+                      to={`/officials/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(tenderId)}`}>
                   Open
                 </Link>
               ) },
@@ -410,7 +410,7 @@ export default function TenderDetailPage() {
             <div className="grid-3">
               {bidderRows.map((b) => (
                 <Link key={b.bidder_id} className="card card-link"
-                      to={`/bidders/${encodeURIComponent(b.bidder_id)}/evidence-graph?tender_id=${encodeURIComponent(tenderId)}`}>
+                      to={`/officials/bidders/${encodeURIComponent(b.bidder_id)}/evidence-graph?tender_id=${encodeURIComponent(tenderId)}`}>
                   <div className="card-body">
                     <div className="mono" style={{ fontWeight: 600 }}>{b.bidder_id}</div>
                     <p className="text-sm text-secondary" style={{ marginTop: 6 }}>

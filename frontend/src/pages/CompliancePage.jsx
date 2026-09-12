@@ -60,12 +60,12 @@ export default function CompliancePage() {
         <div style={{ marginTop: 24 }}>
           <EmptyState glyph="◌" title="No tenders yet"
                       message="Compliance is measured per tender. Create one to begin."
-                      action={<Link to="/tenders" className="btn btn-primary">Go to tenders</Link>} />
+                      action={<Link to="/officials/tenders" className="btn btn-primary">Go to tenders</Link>} />
         </div>
       ) : (
         tenders.map((t) => (
           <Section key={t.tender_id}
-                   title={<Link to={`/tenders/${encodeURIComponent(t.tender_id)}`}>{t.title || t.tender_id}</Link>}
+                   title={<Link to={`/officials/tenders/${encodeURIComponent(t.tender_id)}`}>{t.title || t.tender_id}</Link>}
                    note={<span className="mono text-xs">{t.tender_id}</span>}
                    actions={packs[t.tender_id]
                      ? <Tag accent>{packs[t.tender_id].semver}</Tag>
@@ -102,7 +102,7 @@ export default function CompliancePage() {
               <div className="grid-3" style={{ marginTop: 12 }}>
                 {t.bidders.map((b) => (
                   <Link key={b.bidder_id} className="card card-link"
-                        to={`/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(t.tender_id)}`}>
+                        to={`/officials/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(t.tender_id)}`}>
                     <div className="card-body">
                       <div className="row" style={{ justifyContent: "space-between" }}>
                         <span className="mono" style={{ fontWeight: 600 }}>{b.bidder_id}</span>

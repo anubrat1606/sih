@@ -196,11 +196,11 @@ export default function RegisterBidderPage() {
                 <button type="button" className="btn btn-primary" onClick={onVerify} disabled={busy}>
                   {busy ? "Verifying…" : "Run verification"}
                 </button>
-                <Link className="btn btn-secondary" to={`/tenders/${encodeURIComponent(tenderId)}?tab=bidders`}>
+                <Link className="btn btn-secondary" to={`/officials/tenders/${encodeURIComponent(tenderId)}?tab=bidders`}>
                   Back to tender
                 </Link>
                 <Link className="btn btn-secondary"
-                      to={`/bidders/${encodeURIComponent(bidderId)}?tender_id=${encodeURIComponent(tenderId)}`}>
+                      to={`/officials/bidders/${encodeURIComponent(bidderId)}?tender_id=${encodeURIComponent(tenderId)}`}>
                   Open compliance workspace
                 </Link>
               </div>

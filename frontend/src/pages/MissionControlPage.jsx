@@ -50,7 +50,7 @@ export default function MissionControlPage() {
         eyebrow="Operations"
         title="Mission Control"
         subtitle="Monitor tenders, bidder compliance and verification status. Every figure below is read from the live event log — nothing is estimated."
-        actions={<Link to="/tenders" className="btn btn-primary">Open tenders</Link>}
+        actions={<Link to="/officials/tenders" className="btn btn-primary">Open tenders</Link>}
       />
 
       <ErrorState error={dashboard.error} onRetry={dashboard.reload} />
@@ -99,7 +99,7 @@ export default function MissionControlPage() {
                     </div>
                   </div>
                 ))}
-                <Link to="/verification" className="text-sm">Full verification status →</Link>
+                <Link to="/officials/verification" className="text-sm">Full verification status →</Link>
               </div>
             )
           )}
@@ -107,7 +107,7 @@ export default function MissionControlPage() {
       </div>
 
       <Section title="Active tenders" note="Every tender in the system, with its rule-pack status."
-               actions={<Link to="/tenders" className="btn btn-sm btn-secondary">View all</Link>}>
+               actions={<Link to="/officials/tenders" className="btn btn-sm btn-secondary">View all</Link>}>
         <DataTable
           rows={tenders}
           loading={tenderOverview.loading}
@@ -116,11 +116,11 @@ export default function MissionControlPage() {
           searchPlaceholder="Search tenders…"
           emptyTitle="No tenders yet"
           emptyMessage="Create a tender to begin evaluating bids against it."
-          emptyAction={<Link to="/tenders" className="btn btn-primary">Create a tender</Link>}
+          emptyAction={<Link to="/officials/tenders" className="btn btn-primary">Create a tender</Link>}
           columns={[
             {
               key: "id", header: "Tender ID", sortValue: (r) => r.tender_id, searchValue: (r) => r.tender_id,
-              render: (r) => <Link to={`/tenders/${encodeURIComponent(r.tender_id)}`} className="mono">{r.tender_id}</Link>,
+              render: (r) => <Link to={`/officials/tenders/${encodeURIComponent(r.tender_id)}`} className="mono">{r.tender_id}</Link>,
             },
             {
               key: "title", header: "Tender", sortValue: (r) => r.title, searchValue: (r) => r.title,
@@ -153,7 +153,7 @@ export default function MissionControlPage() {
               {d.recent_decisions.slice(0, 6).map((row, i) => (
                 <div key={i} className="row" style={{ justifyContent: "space-between", gap: 12 }}>
                   <span className="text-sm">
-                    <Link to={`/bidders/${encodeURIComponent(row.bidder_id)}?tender_id=${encodeURIComponent(row.tender_id)}`} className="mono">
+                    <Link to={`/officials/bidders/${encodeURIComponent(row.bidder_id)}?tender_id=${encodeURIComponent(row.tender_id)}`} className="mono">
                       {row.bidder_id}
                     </Link>
                     <span className="text-muted"> on </span>
@@ -173,7 +173,7 @@ export default function MissionControlPage() {
         </Card>
 
         <Card title="Recent audit activity"
-              actions={<Link to="/audit" className="btn btn-sm btn-ghost">Audit trail →</Link>}>
+              actions={<Link to="/officials/audit" className="btn btn-sm btn-ghost">Audit trail →</Link>}>
           {audit.loading ? <SkeletonLine /> : audit.error ? (
             <ErrorState error={audit.error} onRetry={audit.reload} />
           ) : events.length === 0 ? (

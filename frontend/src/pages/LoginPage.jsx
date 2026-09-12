@@ -14,7 +14,7 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (session) {
-    return <Navigate to={location.state?.from?.pathname || "/dashboard"} replace />;
+    return <Navigate to={location.state?.from?.pathname || "/officials/dashboard"} replace />;
   }
 
   async function onSubmit(e) {

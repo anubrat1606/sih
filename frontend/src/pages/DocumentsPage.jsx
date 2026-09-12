@@ -46,7 +46,7 @@ export default function DocumentsPage() {
         searchPlaceholder="Search by filename, hash, tender or bidder…"
         emptyTitle="No documents ingested yet"
         emptyMessage="Upload a tender notice or a bidder's compliance documents to begin."
-        emptyAction={<Link to="/tenders" className="btn btn-primary">Go to tenders</Link>}
+        emptyAction={<Link to="/officials/tenders" className="btn btn-primary">Go to tenders</Link>}
         initialSort={{ key: "at", direction: "desc" }}
         filters={types.length ? [{
           id: "type", label: "Type", value: typeFilter, onChange: setTypeFilter,
@@ -64,14 +64,14 @@ export default function DocumentsPage() {
           {
             key: "tender", header: "Tender", sortValue: (d) => d.tender_id, searchValue: (d) => d.tender_id,
             render: (d) => d.tender_id
-              ? <Link to={`/tenders/${encodeURIComponent(d.tender_id)}`} className="mono text-sm">{d.tender_id}</Link>
+              ? <Link to={`/officials/tenders/${encodeURIComponent(d.tender_id)}`} className="mono text-sm">{d.tender_id}</Link>
               : <Dash />,
           },
           {
             key: "bidder", header: "Bidder", sortValue: (d) => d.bidder_id, searchValue: (d) => d.bidder_id,
             render: (d) => d.bidder_id
               ? <Link className="mono text-sm"
-                      to={`/bidders/${encodeURIComponent(d.bidder_id)}?tender_id=${encodeURIComponent(d.tender_id)}`}>
+                      to={`/officials/bidders/${encodeURIComponent(d.bidder_id)}?tender_id=${encodeURIComponent(d.tender_id)}`}>
                   {d.bidder_id}
                 </Link>
               : <span className="text-muted text-sm">tender-level</span>,

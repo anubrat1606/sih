@@ -222,7 +222,7 @@ export default function ReportsPage() {
       {tenderList.loading ? <LoadingBlock /> : !tenderList.data?.tenders?.length ? (
         <EmptyState glyph="▣" title="No tenders to report on"
                     message="Reports are produced per tender. Create one to begin."
-                    action={<Link to="/tenders" className="btn btn-primary">Go to tenders</Link>} />
+                    action={<Link to="/officials/tenders" className="btn btn-primary">Go to tenders</Link>} />
       ) : (
         <>
           <Card title="Select a tender">

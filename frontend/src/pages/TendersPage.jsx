@@ -201,7 +201,7 @@ export default function TendersPage() {
         columns={[
           {
             key: "id", header: "Tender ID", sortValue: (r) => r.tender_id, searchValue: (r) => r.tender_id,
-            render: (r) => <Link to={`/tenders/${encodeURIComponent(r.tender_id)}`} className="mono">{r.tender_id}</Link>,
+            render: (r) => <Link to={`/officials/tenders/${encodeURIComponent(r.tender_id)}`} className="mono">{r.tender_id}</Link>,
           },
           {
             key: "title", header: "Tender", sortValue: (r) => r.title, searchValue: (r) => r.title,
@@ -243,7 +243,7 @@ export default function TendersPage() {
           {
             key: "actions", header: "", align: "right",
             render: (r) => (
-              <Link to={`/tenders/${encodeURIComponent(r.tender_id)}`} className="btn btn-sm btn-secondary">Open</Link>
+              <Link to={`/officials/tenders/${encodeURIComponent(r.tender_id)}`} className="btn btn-sm btn-secondary">Open</Link>
             ),
           },
         ]}
@@ -252,7 +252,7 @@ export default function TendersPage() {
       <CreateTenderDialog
         open={creating}
         onClose={() => setCreating(false)}
-        onCreated={(id) => { setCreating(false); navigate(`/tenders/${encodeURIComponent(id)}`); }}
+        onCreated={(id) => { setCreating(false); navigate(`/officials/tenders/${encodeURIComponent(id)}`); }}
       />
     </div>
   );

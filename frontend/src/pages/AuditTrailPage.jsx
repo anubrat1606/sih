@@ -98,7 +98,7 @@ export default function AuditTrailPage() {
         {events.loading ? <LoadingBlock lines={6} /> : !parsed?.length ? (
           <EmptyState glyph="≣" title="No events yet"
                       message="The first event appears as soon as a tender is created."
-                      action={<Link to="/tenders" className="btn btn-primary">Go to tenders</Link>} />
+                      action={<Link to="/officials/tenders" className="btn btn-primary">Go to tenders</Link>} />
         ) : (
           <>
             <div className="toolbar">

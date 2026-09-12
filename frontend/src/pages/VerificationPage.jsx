@@ -80,7 +80,7 @@ export default function VerificationPage() {
             glyph="⛉"
             title="No verification attempted yet"
             message="Verifications run once a bidder's documents have been ingested and a check is requested."
-            action={<Link to="/bidders" className="btn btn-secondary">Go to bidders</Link>}
+            action={<Link to="/officials/bidders" className="btn btn-secondary">Go to bidders</Link>}
           />
         ) : (
           <DataTable
@@ -107,7 +107,7 @@ export default function VerificationPage() {
               { key: "bidder", header: "Bidder", sortValue: (e) => e.bidder_id, searchValue: (e) => e.bidder_id,
                 render: (e) => e.bidder_id
                   ? <Link className="mono text-sm"
-                          to={`/bidders/${encodeURIComponent(e.bidder_id)}?tender_id=${encodeURIComponent(e.tender_id)}`}>
+                          to={`/officials/bidders/${encodeURIComponent(e.bidder_id)}?tender_id=${encodeURIComponent(e.tender_id)}`}>
                       {e.bidder_id}
                     </Link>
                   : <Dash /> },

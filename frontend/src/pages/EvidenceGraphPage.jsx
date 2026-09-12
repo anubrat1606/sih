@@ -72,7 +72,7 @@ export default function EvidenceGraphPage() {
       <div className="page">
         <EmptyState glyph="⚠" title="Missing tender context"
                     message="An evidence graph is always scoped to one bidder on one tender."
-                    action={<Link to="/tenders" className="btn btn-primary">Go to tenders</Link>} />
+                    action={<Link to="/officials/tenders" className="btn btn-primary">Go to tenders</Link>} />
       </div>
     );
   }
@@ -88,7 +88,7 @@ export default function EvidenceGraphPage() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow={<Link to={`/bidders/${encodeURIComponent(bidderId)}?tender_id=${encodeURIComponent(tenderId)}`}>
+        eyebrow={<Link to={`/officials/bidders/${encodeURIComponent(bidderId)}?tender_id=${encodeURIComponent(tenderId)}`}>
           Bidder {bidderId}
         </Link>}
         title="Evidence graph"

@@ -8,15 +8,15 @@ import { useToast } from "../notifications";
 // Every nav entry below resolves to a real page backed by real endpoints —
 // nothing here is a label for functionality that doesn't exist.
 const NAV = [
-  { to: "/dashboard", label: "Mission Control", glyph: "▦" },
-  { to: "/tenders", label: "Tenders", glyph: "▤" },
-  { to: "/bidders", label: "Bidders", glyph: "⚏" },
-  { to: "/documents", label: "Documents", glyph: "▥" },
-  { to: "/verification", label: "Verification", glyph: "⛉" },
-  { to: "/compliance", label: "Compliance", glyph: "✓" },
-  { to: "/evidence", label: "Evidence", glyph: "⌕" },
-  { to: "/reports", label: "Reports", glyph: "▣" },
-  { to: "/audit", label: "Audit Trail", glyph: "≣" },
+  { to: "/officials/dashboard", label: "Mission Control", glyph: "▦" },
+  { to: "/officials/tenders", label: "Tenders", glyph: "▤" },
+  { to: "/officials/bidders", label: "Bidders", glyph: "⚏" },
+  { to: "/officials/documents", label: "Documents", glyph: "▥" },
+  { to: "/officials/verification", label: "Verification", glyph: "⛉" },
+  { to: "/officials/compliance", label: "Compliance", glyph: "✓" },
+  { to: "/officials/evidence", label: "Evidence", glyph: "⌕" },
+  { to: "/officials/reports", label: "Reports", glyph: "▣" },
+  { to: "/officials/audit", label: "Audit Trail", glyph: "≣" },
 ];
 
 function initials(name) {
@@ -68,7 +68,7 @@ function GlobalSearch() {
   function go(tenderId) {
     setQuery("");
     setOpen(false);
-    navigate(`/tenders/${encodeURIComponent(tenderId)}`);
+    navigate(`/officials/tenders/${encodeURIComponent(tenderId)}`);
   }
 
   return (
@@ -205,7 +205,7 @@ function ProfileMenu() {
               </button>
             </div>
             {roleAtLeast(session.role, "ADMIN") && (
-              <Link to="/settings" className="popover-item" onClick={() => setOpen(false)} style={{ textDecoration: "none", color: "inherit" }}>
+              <Link to="/officials/settings" className="popover-item" onClick={() => setOpen(false)} style={{ textDecoration: "none", color: "inherit" }}>
                 <span aria-hidden="true">⚙</span> Settings & officer accounts
               </Link>
             )}
@@ -225,8 +225,8 @@ function ProfileMenu() {
 // bidder the current URL is scoped to, read straight from the route.
 function ContextChip() {
   const { pathname, search } = useLocation();
-  const tender = pathname.match(/^\/tenders\/([^/]+)/);
-  const bidder = pathname.match(/^\/bidders\/([^/]+)/);
+  const tender = pathname.match(/^\/officials\/tenders\/([^/]+)/);
+  const bidder = pathname.match(/^\/officials\/bidders\/([^/]+)/);
   if (tender) {
     return (
       <span className="topbar-context">
@@ -258,7 +258,7 @@ export default function AppShell({ children }) {
     return (
       <div className="signed-out">
         <header className="signed-out-header">
-          <Link to="/" className="sidebar-brand">
+          <Link to="/officials" className="sidebar-brand">
             <span className="sidebar-brand-mark">SATYAPRAMĀṆ</span>
             <span className="sidebar-brand-sub">Tender Compliance Platform</span>
           </Link>
@@ -270,7 +270,7 @@ export default function AppShell({ children }) {
   }
 
   const nav = roleAtLeast(session.role, "ADMIN")
-    ? [...NAV, { to: "/settings", label: "Settings", glyph: "⚙" }]
+    ? [...NAV, { to: "/officials/settings", label: "Settings", glyph: "⚙" }]
     : NAV;
 
   return (
@@ -278,7 +278,7 @@ export default function AppShell({ children }) {
       <a className="skip-link" href="#main">Skip to content</a>
 
       <aside className={`sidebar${mobileOpen ? " sidebar-open" : ""}`} id="sidebar">
-        <Link to="/dashboard" className="sidebar-brand">
+        <Link to="/officials/dashboard" className="sidebar-brand">
           <span className="sidebar-brand-mark">SATYAPRAMĀṆ</span>
           <span className="sidebar-brand-sub">Tender Compliance Platform</span>
         </Link>

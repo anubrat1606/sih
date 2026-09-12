@@ -161,7 +161,7 @@ export default function BidderCompliancePage() {
           glyph="⚠"
           title="Missing tender context"
           message="A bidder's compliance is always relative to one tender. Open this bidder from a tender's bidder list."
-          action={<Link to="/tenders" className="btn btn-primary">Go to tenders</Link>}
+          action={<Link to="/officials/tenders" className="btn btn-primary">Go to tenders</Link>}
         />
       </div>
     );
@@ -232,13 +232,13 @@ export default function BidderCompliancePage() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow={<Link to={`/tenders/${encodeURIComponent(tenderId)}?tab=bidders`}>Tender {tenderId}</Link>}
+        eyebrow={<Link to={`/officials/tenders/${encodeURIComponent(tenderId)}?tab=bidders`}>Tender {tenderId}</Link>}
         title={bidderId}
         subtitle="Every verdict below can be traced to the document, page and authority that produced it."
         actions={
           <>
             <Link className="btn btn-secondary"
-                  to={`/bidders/${encodeURIComponent(bidderId)}/evidence-graph?tender_id=${encodeURIComponent(tenderId)}`}>
+                  to={`/officials/bidders/${encodeURIComponent(bidderId)}/evidence-graph?tender_id=${encodeURIComponent(tenderId)}`}>
               Evidence graph
             </Link>
             <span className="row" style={{ gap: 8 }}>

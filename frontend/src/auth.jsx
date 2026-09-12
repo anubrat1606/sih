@@ -83,12 +83,13 @@ export function AuthProvider({ children }) {
 }
 
 // Wrap any route element that needs a signed-in officer. Redirects to
-// /login and remembers where the visitor was headed, so a successful login
-// returns them there instead of dumping them on the tenders list.
+// /officials/login and remembers where the visitor was headed, so a
+// successful login returns them there instead of dumping them on the
+// tenders list.
 export function RequireAuth({ children }) {
   const { session, checking } = useAuth();
   const location = useLocation();
   if (checking) return <div className="page"><p className="hint">Checking session…</p></div>;
-  if (!session) return <Navigate to="/login" state={{ from: location }} replace />;
+  if (!session) return <Navigate to="/officials/login" state={{ from: location }} replace />;
   return children;
 }

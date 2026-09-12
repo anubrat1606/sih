@@ -44,12 +44,12 @@ export default function EvidencePage() {
           searchPlaceholder="Search bidders or tenders…"
           emptyTitle="No evidence recorded yet"
           emptyMessage="Evidence appears once a bidder has been registered and their documents ingested."
-          emptyAction={<Link to="/tenders" className="btn btn-primary">Go to tenders</Link>}
+          emptyAction={<Link to="/officials/tenders" className="btn btn-primary">Go to tenders</Link>}
           columns={[
             { key: "bidder", header: "Bidder", sortValue: (b) => b.bidder_id, searchValue: (b) => b.bidder_id,
               render: (b) => <span className="mono cell-primary">{b.bidder_id}</span> },
             { key: "tender", header: "Tender", sortValue: (b) => b.tender_id, searchValue: (b) => b.tender_id,
-              render: (b) => <Link className="mono text-sm" to={`/tenders/${encodeURIComponent(b.tender_id)}`}>{b.tender_id}</Link> },
+              render: (b) => <Link className="mono text-sm" to={`/officials/tenders/${encodeURIComponent(b.tender_id)}`}>{b.tender_id}</Link> },
             { key: "coverage", header: "Verification coverage", sortValue: (b) => b.metrics?.verification_coverage,
               render: (b) => b.metrics?.verification_coverage == null
                 ? <span className="text-muted text-sm">not determined</span>
@@ -64,11 +64,11 @@ export default function EvidencePage() {
               render: (b) => (
                 <span className="btn-group">
                   <Link className="btn btn-sm btn-secondary"
-                        to={`/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(b.tender_id)}&tab=evidence`}>
+                        to={`/officials/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(b.tender_id)}&tab=evidence`}>
                     Evidence list
                   </Link>
                   <Link className="btn btn-sm btn-primary"
-                        to={`/bidders/${encodeURIComponent(b.bidder_id)}/evidence-graph?tender_id=${encodeURIComponent(b.tender_id)}`}>
+                        to={`/officials/bidders/${encodeURIComponent(b.bidder_id)}/evidence-graph?tender_id=${encodeURIComponent(b.tender_id)}`}>
                     Open graph
                   </Link>
                 </span>

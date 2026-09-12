@@ -72,7 +72,7 @@ export default function BiddersPage() {
         searchPlaceholder="Search bidders or tenders…"
         emptyTitle="No bidders registered"
         emptyMessage="A bidder is registered against a specific tender. Open a tender to register one."
-        emptyAction={<Link to="/tenders" className="btn btn-primary">Go to tenders</Link>}
+        emptyAction={<Link to="/officials/tenders" className="btn btn-primary">Go to tenders</Link>}
         filters={[{
           id: "risk", label: "Risk", value: riskFilter, onChange: setRiskFilter,
           options: [
@@ -87,14 +87,14 @@ export default function BiddersPage() {
             key: "bidder", header: "Bidder", sortValue: (b) => b.bidder_id, searchValue: (b) => b.bidder_id,
             render: (b) => (
               <Link className="mono cell-primary"
-                    to={`/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(b.tender_id)}`}>
+                    to={`/officials/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(b.tender_id)}`}>
                 {b.bidder_id}
               </Link>
             ),
           },
           {
             key: "tender", header: "Tender", sortValue: (b) => b.tender_id, searchValue: (b) => b.tender_id,
-            render: (b) => <Link to={`/tenders/${encodeURIComponent(b.tender_id)}`} className="mono text-sm">{b.tender_id}</Link>,
+            render: (b) => <Link to={`/officials/tenders/${encodeURIComponent(b.tender_id)}`} className="mono text-sm">{b.tender_id}</Link>,
           },
           {
             key: "docs", header: "Documents", sortValue: (b) => documentCounts[`${b.tender_id}::${b.bidder_id}`] || 0,
@@ -136,7 +136,7 @@ export default function BiddersPage() {
             key: "actions", header: "", align: "right",
             render: (b) => (
               <Link className="btn btn-sm btn-secondary"
-                    to={`/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(b.tender_id)}`}>
+                    to={`/officials/bidders/${encodeURIComponent(b.bidder_id)}?tender_id=${encodeURIComponent(b.tender_id)}`}>
                 Open
               </Link>
             ),
