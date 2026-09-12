@@ -10,28 +10,29 @@ from .models import Role, User
 from .passwords import hash_password, verify_password
 
 
-def create_user(conn, username: str, password: str, display_name: str, role: Role) -> User:
+def create_user(conn, username: str, password: str, display_name: str, role: Role,
+                bidder_id: str | None = None) -> User:
     with conn.cursor() as cur:
         cur.execute(
-            """INSERT INTO users (username, password_hash, display_name, role)
-               VALUES (%s,%s,%s,%s) RETURNING id, disabled""",
-            (username, hash_password(password), display_name, role.value))
+            """INSERT INTO users (username, password_hash, display_name, role, bidder_id)
+               VALUES (%s,%s,%s,%s,%s) RETURNING id, disabled""",
+            (username, hash_password(password), display_name, role.value, bidder_id))
         user_id, disabled = cur.fetchone()
     return User(id=user_id, username=username, display_name=display_name,
-                role=role, disabled=disabled)
+                role=role, disabled=disabled, bidder_id=bidder_id)
 
 
 def get_user_by_username(conn, username: str) -> User | None:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, username, display_name, role, disabled FROM users WHERE username=%s",
+            "SELECT id, username, display_name, role, disabled, bidder_id FROM users WHERE username=%s",
             (username,))
         row = cur.fetchone()
     if not row:
         return None
-    uid, uname, display_name, role, disabled = row
+    uid, uname, display_name, role, disabled, bidder_id = row
     return User(id=uid, username=uname, display_name=display_name,
-                role=Role(role), disabled=disabled)
+                role=Role(role), disabled=disabled, bidder_id=bidder_id)
 
 
 def verify_login(conn, username: str, password: str) -> User | None:
@@ -41,17 +42,17 @@ def verify_login(conn, username: str, password: str) -> User | None:
     every login form that has ever existed."""
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT id, username, password_hash, display_name, role, disabled
+            """SELECT id, username, password_hash, display_name, role, disabled, bidder_id
                FROM users WHERE username=%s""",
             (username,))
         row = cur.fetchone()
     if not row:
         return None
-    user_id, uname, pw_hash, display_name, role, disabled = row
+    user_id, uname, pw_hash, display_name, role, disabled, bidder_id = row
     if disabled or not verify_password(password, pw_hash):
         return None
     return User(id=user_id, username=uname, display_name=display_name,
-                role=Role(role), disabled=disabled)
+                role=Role(role), disabled=disabled, bidder_id=bidder_id)
 
 
 def bootstrap_admin(conn) -> User | None:
