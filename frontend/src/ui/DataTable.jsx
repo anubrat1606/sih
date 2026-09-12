@@ -24,6 +24,13 @@ export function DataTable({
   initialSort,               // { key, direction: "asc"|"desc" }
   onRowClick,
   toolbarExtra,
+  // Opt-in: adds the "stacked-on-mobile" class the bidder portal's
+  // responsive.css (round 6, K3) targets to turn rows into stacked
+  // label/value cards at narrow widths, using the data-label attribute
+  // every <td> below already carries. Off by default so this never
+  // changes an existing table's narrow-screen behavior (the global
+  // .table-scroll horizontal scroll) without that table opting in.
+  stackOnMobile,
 }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState(initialSort || null);
@@ -110,7 +117,7 @@ export function DataTable({
       ) : (
         <div className="table-frame">
           <div className="table-scroll">
-            <table className="data-table">
+            <table className={`data-table${stackOnMobile ? " stacked-on-mobile" : ""}`}>
               <thead>
                 <tr>
                   {columns.map((c) => (
@@ -139,7 +146,8 @@ export function DataTable({
                     style={onRowClick ? { cursor: "pointer" } : undefined}
                   >
                     {columns.map((c) => (
-                      <td key={c.key} className={[c.className, c.align === "right" ? "cell-actions" : ""].filter(Boolean).join(" ")}>
+                      <td key={c.key} className={[c.className, c.align === "right" ? "cell-actions" : ""].filter(Boolean).join(" ")}
+                          data-label={typeof c.header === "string" ? c.header : undefined}>
                         {c.render(row)}
                       </td>
                     ))}
