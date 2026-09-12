@@ -6,6 +6,35 @@ section, plus "Where this round sits," "Two decisions this round takes,"
 own fresh Claude Code session — it has no memory of any earlier
 conversation, so everything it needs is written down here.
 
+**Follow this file exactly — no improvising, no "while I'm in here."**
+A1 and A2 are done and merged (`Role.BIDDER`, the bidder-scoped endpoints,
+`bidderApi.js`, the portal shell) — real, live, tested. This isn't a
+starting sketch to riff on; it's the actual contract your section builds
+against. Concretely:
+
+- **Only the files your section lists, nothing else.** Not a "quick fix"
+  in someone else's file, not a helper moved into a shared location that
+  isn't already there. If your task genuinely needs something outside
+  your files, stop and ask — don't just take it.
+- **Call `bidderApi.js` exactly as it's written — don't reshape what it
+  returns, add a field, or call an endpoint it doesn't export.** If a
+  screen needs data that isn't there, that's a question, not something to
+  work around with a new fetch call of your own.
+- **`design/tokens.css` is closed. No new colour, font, radius, or
+  shadow** — reuse what `ui/primitives.jsx` and the existing shell already
+  give you.
+- **No placeholder success.** A field the backend doesn't confirm renders
+  its honest not-available state, never a green tick or a fake "sent."
+- **PR scope must match your section's file list exactly** — if the diff
+  touches a file another section owns, that PR doesn't get merged as-is;
+  it goes back for rework, which is slower for everyone than staying in
+  scope the first time. (This already happened once this round — a PR
+  that rebuilt several of these decisions its own way needed a full
+  rework pass before it could move forward. Don't be the second one.)
+
+Sticking to this is what makes four people's PRs merge cleanly into one
+app instead of needing reconciliation at the end.
+
 Read `STATUS.md` first (what's actually built and merged), then
 `docs/SIMPLE_CHECKLIST.md` (the plain-language version of the same), then
 `CONTRIBUTING.md` (file ownership and the branch/PR workflow — still in
