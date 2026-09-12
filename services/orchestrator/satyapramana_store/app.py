@@ -416,7 +416,7 @@ def dashboard(conn=Depends(db), user: User = Depends(current_user)) -> dict[str,
 # --- ingestion ----------------------------------------------------------------
 
 @app.post("/tenders/{tender_id}/bidders", status_code=201)
-def register_bidder(tender_id: str, body: BidderIn, conn=Depends(db)) -> dict[str, Any]:
+def register_bidder(tender_id: str, body: BidderIn, conn=Depends(db), _user: User = Depends(require_role(Role.OFFICER))) -> dict[str, Any]:
     """Register a bidder and record any attribute they share with an existing
     bidder on the same tender.
 
@@ -488,7 +488,7 @@ def _link_shared_attributes(conn, tender_id, body, correlation, causation) -> li
 # --- verification -------------------------------------------------------------
 
 @app.post("/bidders/{bidder_id}/verify")
-def verify(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+def verify(bidder_id: str, tender_id: str, conn=Depends(db), _user: User = Depends(require_role(Role.OFFICER))) -> dict[str, Any]:
     """Run every registered capability for this bidder.
 
     With no credentials configured every capability returns a Failure, which
@@ -569,7 +569,7 @@ def verify(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
 def upload_document(bidder_id: str, tender_id: str,
                     declared_type: str | None = None,
                     file: UploadFile = File(...),
-                    conn=Depends(db)) -> dict[str, Any]:
+                    conn=Depends(db), _user: User = Depends(require_role(Role.OFFICER))) -> dict[str, Any]:
     """Ingest a document and extract what can be read from it deterministically.
 
     For a PDF with a text layer this needs no model at all: identifiers are
@@ -596,7 +596,7 @@ def upload_document(bidder_id: str, tender_id: str,
 
 
 @app.get("/documents/{document_sha256}")
-def get_document(document_sha256: str, conn=Depends(db)):
+def get_document(document_sha256: str, conn=Depends(db), _user: User = Depends(current_user)):
     """Serve a previously-ingested document back, for the evidence viewer --
     click a verdict, see the actual highlighted line of the actual PDF
     (satyapramana.md's own stated demo axiom).
@@ -666,7 +666,7 @@ def upload_tender_document(tender_id: str, file: UploadFile = File(...),
 
 
 @app.get("/requirement-types")
-def requirement_types() -> dict[str, Any]:
+def requirement_types(_user: User = Depends(current_user)) -> dict[str, Any]:
     """The admin builder's requirement-type catalog (docs/COMPLETION_PLAN.md
     item 2). Computed live against REGISTRY and the deterministic-extraction
     field list -- the same two sources rule 8 validates a submitted pack
@@ -788,7 +788,7 @@ def adopt_rule_pack(tender_id: str, body: RulePackIn, conn=Depends(db),
 
 @app.post("/bidders/{bidder_id}/evaluate")
 def evaluate_bidder_endpoint(bidder_id: str, tender_id: str, body: EvaluateIn,
-                             conn=Depends(db)) -> dict[str, Any]:
+                             conn=Depends(db), _user: User = Depends(require_role(Role.OFFICER))) -> dict[str, Any]:
     """Fold the evidence, fuse it, and decide -- deterministically, with no
     model in the path.
 
@@ -846,7 +846,7 @@ def _list_tender_bidders(tender_id: str, conn) -> dict[str, Any]:
 
 
 @app.get("/tenders/{tender_id}/bidders")
-def list_tender_bidders(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+def list_tender_bidders(tender_id: str, conn=Depends(db), _user: User = Depends(current_user)) -> dict[str, Any]:
     """Every bidder registered on this tender, each with the same summary
     `GET /bidders/{id}` returns -- one round trip for a dashboard instead of
     one per card."""
@@ -855,7 +855,7 @@ def list_tender_bidders(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
 
 
 @app.get("/tenders/{tender_id}/report")
-def tender_compliance_report(tender_id: str, as_text: bool = False, conn=Depends(db)):
+def tender_compliance_report(tender_id: str, as_text: bool = False, conn=Depends(db), _user: User = Depends(current_user)):
     """Of everyone who bid, where do we stand overall -- the aggregate
     counterpart to a single bidder's Dossier. `?as_text=true` for the
     plain-text rendering."""
@@ -867,7 +867,7 @@ def tender_compliance_report(tender_id: str, as_text: bool = False, conn=Depends
 
 
 @app.get("/tenders/{tender_id}/report/csv")
-def tender_report_csv(tender_id: str, conn=Depends(db)):
+def tender_report_csv(tender_id: str, conn=Depends(db), _user: User = Depends(current_user)):
     """The same bidder list as `GET /tenders/{tender_id}/bidders`, as CSV --
     the artifact an officer actually takes somewhere: a spreadsheet, an
     email, a physical file. See reporting/csv_export.py."""
@@ -876,7 +876,7 @@ def tender_report_csv(tender_id: str, conn=Depends(db)):
 
 
 @app.get("/tenders/{tender_id}/blockers")
-def tender_blockers(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+def tender_blockers(tender_id: str, conn=Depends(db), _user: User = Depends(current_user)) -> dict[str, Any]:
     """Across every bidder on this tender, which requirement is blocking the
     most of them -- aggregating each bidder's own Bid Autopsy. Useful for an
     officer deciding whether a requirement needs relaxing, or which document
@@ -958,7 +958,7 @@ def _bidder_snapshot(bidder_id: str, tender_id: str, conn, *, pack, cluster) -> 
 
 
 @app.get("/bidders/{bidder_id}")
-def get_bidder(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+def get_bidder(bidder_id: str, tender_id: str, conn=Depends(db), _user: User = Depends(current_user)) -> dict[str, Any]:
     rebuild_projections(conn)
     pack = active_pack(conn, tender_id)
     clusters = {c.bidder_id: c for c in collusion_clusters(conn, tender_id)}
@@ -976,7 +976,7 @@ def _bidder_autopsy_result(bidder_id: str, tender_id: str, conn, *, pack) -> dic
 
 
 @app.get("/bidders/{bidder_id}/autopsy")
-def bidder_autopsy(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+def bidder_autopsy(bidder_id: str, tender_id: str, conn=Depends(db), _user: User = Depends(current_user)) -> dict[str, Any]:
     """Why would this bid fail, right now. satyapramana.md section 11:
     deterministic, derived from the event log, never regenerated by a model.
     """
@@ -989,7 +989,7 @@ def bidder_autopsy(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str
 
 
 @app.get("/bidders/{bidder_id}/repair-plan")
-def bidder_repair_plan(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+def bidder_repair_plan(bidder_id: str, tender_id: str, conn=Depends(db), _user: User = Depends(current_user)) -> dict[str, Any]:
     """The forward-looking inverse of the autopsy: one action per curable gap.
     Fatal findings (positive evidence against the bidder) get no action here --
     the autopsy is where those stay visible."""
@@ -1005,7 +1005,7 @@ def bidder_repair_plan(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict
 
 @app.get("/bidders/{bidder_id}/dossier")
 def bidder_dossier(bidder_id: str, tender_id: str, as_text: bool = False,
-                   conn=Depends(db)):
+                   conn=Depends(db), _user: User = Depends(current_user)):
     """The single artifact an officer would print, attach to a decision file,
     or hand to a supervisor -- score, risk, verdicts, the autopsy and the
     repair plan, combined. `?as_text=true` for the plain-text rendering
@@ -1021,7 +1021,7 @@ def bidder_dossier(bidder_id: str, tender_id: str, as_text: bool = False,
 
 
 @app.get("/bidders/{bidder_id}/explain")
-def bidder_explain(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+def bidder_explain(bidder_id: str, tender_id: str, conn=Depends(db), _user: User = Depends(current_user)) -> dict[str, Any]:
     """satyapramana.md section 2.2's EXPLAIN stage: narrate the already-final
     dossier into officer-readable prose. A narrator, not a judge -- the LLM
     receives exactly the plain-text Compliance Dossier an officer could
@@ -1046,7 +1046,7 @@ def bidder_explain(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str
 
 
 @app.get("/bidders/{bidder_id}/evidence")
-def bidder_evidence(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+def bidder_evidence(bidder_id: str, tender_id: str, conn=Depends(db), _user: User = Depends(current_user)) -> dict[str, Any]:
     """Every evidence path resolved (or not) for this bidder -- the raw
     material the rule engine reads, before any rule pack judges it.
     Provenance answers "why does this one verdict say what it says"; this
@@ -1083,7 +1083,7 @@ def _evidence_by_path(conn, bidder_id: str) -> dict[str, dict[str, Any]]:
 
 
 @app.get("/bidders/{bidder_id}/evidence-graph")
-def bidder_evidence_graph(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+def bidder_evidence_graph(bidder_id: str, tender_id: str, conn=Depends(db), _user: User = Depends(current_user)) -> dict[str, Any]:
     """satyapramana.md section 2.3's signature screen, as data: requirements
     on one axis, the evidence each one actually consumes beneath it, and
     which authority (if any) was ever asked about that evidence, beside it.
@@ -1103,7 +1103,7 @@ def bidder_evidence_graph(bidder_id: str, tender_id: str, conn=Depends(db)) -> d
 
 
 @app.get("/bidders/{bidder_id}/requirements/{requirement_id}/provenance")
-def provenance(bidder_id: str, requirement_id: str, conn=Depends(db)) -> dict[str, Any]:
+def provenance(bidder_id: str, requirement_id: str, conn=Depends(db), _user: User = Depends(current_user)) -> dict[str, Any]:
     """Why does this say what it says.
 
     One backward walk along causation_id: verdict -> fused evidence ->
@@ -1120,7 +1120,7 @@ def provenance(bidder_id: str, requirement_id: str, conn=Depends(db)) -> dict[st
 
 
 @app.get("/tenders/{tender_id}/collusion")
-def collusion(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+def collusion(tender_id: str, conn=Depends(db), _user: User = Depends(current_user)) -> dict[str, Any]:
     clusters = collusion_clusters(conn, tender_id)
     return {"tender_id": tender_id,
             "bidders": [{"bidder_id": c.bidder_id, "flagged": c.flagged,
@@ -1129,7 +1129,7 @@ def collusion(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
 
 
 @app.get("/tenders/{tender_id}/collusion/edges")
-def collusion_edges(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+def collusion_edges(tender_id: str, conn=Depends(db), _user: User = Depends(current_user)) -> dict[str, Any]:
     """The pairwise findings behind the clusters above -- which two bidders,
     over which specific attribute. `/collusion` answers "is this bidder
     flagged"; this answers "why", at the same precision the event log
@@ -1188,14 +1188,14 @@ def override(bidder_id: str, tender_id: str, body: OverrideIn, conn=Depends(db),
 # --- audit --------------------------------------------------------------------
 
 @app.get("/audit/export", response_class=PlainTextResponse)
-def audit_export(conn=Depends(db)) -> str:
+def audit_export(conn=Depends(db), _user: User = Depends(current_user)) -> str:
     """JSON Lines, one event per line in seq order. This is the artefact a third
     party verifies without any access to the database or to us."""
     return "\n".join(export_jsonl(conn))
 
 
 @app.get("/audit/verify")
-def audit_verify(conn=Depends(db)) -> dict[str, Any]:
+def audit_verify(conn=Depends(db), _user: User = Depends(current_user)) -> dict[str, Any]:
     report = verify_chain(list(export_jsonl(conn)))
     return {"intact": report.intact, "events": report.events,
             "linked": report.linked, "rehashed": report.rehashed,

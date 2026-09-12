@@ -23,6 +23,10 @@ from .test_decide import PACK
 def client(conn):
     app.dependency_overrides[db] = lambda: conn
     with TestClient(app) as c:
+        # Default senior-officer header: every non-public route requires a
+        # login now. Per-request lower-role headers in gate tests override it.
+        from .conftest import auth_headers
+        c.headers.update(auth_headers(conn, username="fixture_senior"))
         yield c
     app.dependency_overrides.clear()
 
@@ -30,6 +34,7 @@ def client(conn):
 # --- tender document upload ---------------------------------------------------
 
 def test_tender_document_upload_requires_authentication(client):
+    client.headers.pop("Authorization", None)  # this one request must be anonymous
     r = client.post("/tenders/T1/documents", files={"file": ("notice.pdf", text_pdf(["a tender notice"]))})
     assert r.status_code == 401
 
@@ -155,6 +160,7 @@ def test_validate_endpoint_reports_the_same_violations_adopt_would(client, conn)
 
 
 def test_validate_endpoint_requires_authentication(client):
+    client.headers.pop("Authorization", None)  # this one request must be anonymous
     r = client.post("/tenders/T1/rule-pack/validate", json={"pack": PACK})
     assert r.status_code == 401
 

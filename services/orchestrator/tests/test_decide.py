@@ -54,6 +54,10 @@ EVAL = {"as_of": "2026-09-10", "bid_submission_date": "2026-09-22"}
 def client(conn):
     app.dependency_overrides[db] = lambda: conn
     with TestClient(app) as c:
+        # Default senior-officer header: every non-public route requires a
+        # login now. Per-request lower-role headers in gate tests override it.
+        from .conftest import auth_headers
+        c.headers.update(auth_headers(conn, username="fixture_senior"))
         yield c
     app.dependency_overrides.clear()
 

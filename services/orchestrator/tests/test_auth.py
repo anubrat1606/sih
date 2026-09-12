@@ -200,7 +200,8 @@ def test_creating_a_duplicate_username_is_refused(client, conn):
 
 
 def test_adopting_a_rule_pack_requires_senior_officer(client, conn):
-    client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
+    client.post("/tenders/T1/bidders", json={"bidder_id": "A"},
+                headers=auth_headers(conn, username="junior", role=Role.OFFICER))
     from .test_decide import PACK
     r = client.post("/tenders/T1/rule-pack", json={"pack": PACK},
                     headers=auth_headers(conn, username="junior", role=Role.OFFICER))
@@ -208,7 +209,8 @@ def test_adopting_a_rule_pack_requires_senior_officer(client, conn):
 
 
 def test_recording_a_decision_only_needs_any_authenticated_officer(client, conn):
-    client.post("/tenders/T1/bidders", json={"bidder_id": "A"})
+    client.post("/tenders/T1/bidders", json={"bidder_id": "A"},
+                headers=auth_headers(conn, username="junior", role=Role.OFFICER))
     r = client.post("/bidders/A/decision", params={"tender_id": "T1"},
                     json={"decision": "QUALIFY"},
                     headers=auth_headers(conn, username="junior", role=Role.OFFICER))
