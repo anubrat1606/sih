@@ -4,7 +4,7 @@ import { getMyResult, getMySubmission, getMyTenders, getScheduledNotifications }
 import { useApi } from "../../lib/useApi";
 import { Card, EmptyState, ErrorState, LoadingBlock, PageHeader, UnavailableNote } from "../../ui/primitives";
 import { deriveNotifications } from "../notifications/deriveNotifications";
-import { markNotificationsSeen } from "../notifications/NotificationBell";
+import { markNotificationsSeen } from "../notifications/lastSeen";
 
 const KIND_GLYPH = {
   requirements_published: "▤",
