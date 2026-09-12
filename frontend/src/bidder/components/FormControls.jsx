@@ -9,16 +9,21 @@ export function isValidEmail(value) {
 }
 
 // Indian mobile numbers: 10 digits, first digit 6-9, optionally prefixed
-// with +91 / 91 / 0. Normalizes to a bare 10-digit string for storage and
-// to "+91 XXXXX XXXXX" for display.
-const MOBILE_RE = /^(?:\+?91[\s-]?|0)?([6-9]\d{9})$/;
+// with +91 / 91 / 0. Applied after stripping spaces and dashes, so
+// "+91 98765 43210" or "98765-43210" (both ordinary ways to type a phone
+// number) normalize the same as "9876543210" -- matches the backend's
+// bidder_auth/validation.py exactly, so a number this form accepts is never
+// one the server then rejects. Normalizes to a bare 10-digit string for
+// storage and to "+91 XXXXX XXXXX" for display.
+const MOBILE_RE = /^(?:\+?91|0)?([6-9]\d{9})$/;
 
 export function isValidIndianMobile(value) {
-  return MOBILE_RE.test(value.trim());
+  return normalizeIndianMobile(value) !== null;
 }
 
 export function normalizeIndianMobile(value) {
-  const m = value.trim().match(MOBILE_RE);
+  const cleaned = value.trim().replace(/[\s-]/g, "");
+  const m = cleaned.match(MOBILE_RE);
   return m ? m[1] : null;
 }
 

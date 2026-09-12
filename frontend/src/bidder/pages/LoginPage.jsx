@@ -1,16 +1,20 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { BackendNotImplementedError, continueWithGoogle, login } from "../bidderApi";
+import { useBidderSession } from "../BidderSessionContext";
 import { isValidEmail } from "../components/FormControls";
 import { BackendPendingNotice } from "../components/BackendPendingNotice";
+import { ErrorState } from "../../ui/primitives";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const { setSession } = useBidderSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [touched, setTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [pending, setPending] = useState(null);
+  const [error, setError] = useState(null);
+  const [googlePending, setGooglePending] = useState(null);
 
   const emailValid = email === "" ? null : isValidEmail(email);
   const canSubmit = emailValid && password.length > 0;
@@ -20,24 +24,31 @@ export default function LoginPage() {
     setTouched(true);
     if (!canSubmit) return;
     setSubmitting(true);
-    setPending(null);
+    setError(null);
     try {
-      await login({ email: email.trim(), password });
+      const { token, bidder } = await login({ email: email.trim(), password });
+      setSession({ token, bidder });
       navigate("/bidder/dashboard");
     } catch (err) {
-      setPending(err);
+      setError(err);
     } finally {
       setSubmitting(false);
     }
   }
 
   async function onGoogle() {
-    setPending(null);
+    setGooglePending(null);
     try {
-      await continueWithGoogle();
+      // No Google ID token is available here -- continueWithGoogle() only
+      // ever gets one from Google Identity Services' own SDK, which isn't
+      // loaded because GOOGLE_CLIENT_ID isn't configured (see bidderApi.js).
+      // Calling it anyway surfaces the real, precise reason rather than
+      // this button silently doing nothing.
+      const { token, bidder } = await continueWithGoogle(undefined);
+      setSession({ token, bidder });
       navigate("/bidder/dashboard");
     } catch (err) {
-      setPending(err);
+      setGooglePending(err);
     }
   }
 
@@ -54,7 +65,14 @@ export default function LoginPage() {
           <button type="button" className="btn-google" onClick={onGoogle}>
             <span aria-hidden="true">G</span> Continue with Google
           </button>
+          {googlePending instanceof BackendNotImplementedError && (
+            <div style={{ marginTop: 12 }}>
+              <BackendPendingNotice endpoint={googlePending.requiredEndpoint}>{googlePending.message}</BackendPendingNotice>
+            </div>
+          )}
           <div className="auth-divider">or sign in with email</div>
+
+          <ErrorState error={error} />
 
           <form className="form" onSubmit={onSubmit} noValidate>
             <div className="field">
@@ -78,14 +96,6 @@ export default function LoginPage() {
               {submitting ? "Signing in…" : "Sign in"}
             </button>
           </form>
-
-          {pending instanceof BackendNotImplementedError && (
-            <div style={{ marginTop: 16 }}>
-              <BackendPendingNotice endpoint={pending.requiredEndpoint}>
-                {pending.message} Sign-in cannot be completed until this exists — no session has been created.
-              </BackendPendingNotice>
-            </div>
-          )}
 
           <p className="text-sm text-secondary" style={{ marginTop: 20 }}>
             New here? <Link to="/bidder/signup">Create an account</Link>

@@ -5,7 +5,10 @@ import BidderShell from "./BidderShell";
 import SignUpPage from "./pages/SignUpPage";
 import LoginPage from "./pages/LoginPage";
 import VerifyEmailPage from "./pages/VerifyEmailPage";
+import VerifyEmailConfirmPage from "./pages/VerifyEmailConfirmPage";
 import VerifyMobilePage from "./pages/VerifyMobilePage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import DashboardPage from "./pages/DashboardPage";
 import TendersPage from "./pages/TendersPage";
 import TenderDetailPage from "./pages/TenderDetailPage";
@@ -37,7 +40,10 @@ function BidderRoutes() {
       <Route path="signup" element={<SignUpPage />} />
       <Route path="login" element={<LoginPage />} />
       <Route path="verify-email" element={<VerifyEmailPage />} />
+      <Route path="verify-email/confirm" element={<VerifyEmailConfirmPage />} />
       <Route path="verify-mobile" element={<VerifyMobilePage />} />
+      <Route path="forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="reset-password" element={<ResetPasswordPage />} />
 
       <Route path="dashboard" element={<DashboardPage />} />
       <Route path="tenders" element={<TendersPage />} />

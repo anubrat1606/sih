@@ -7,7 +7,7 @@ import { formatDate, parseAuditExport, rulePacksByTender } from "../../lib/audit
 import { Card, Dash, EmptyState, ErrorState, LoadingBlock, PageHeader, Stat, Tag } from "../../ui/primitives";
 
 export default function DashboardPage() {
-  const { profile, tracked } = useBidderSession();
+  const { bidder, tracked } = useBidderSession();
   const tenderIds = useApi(() => listTenders(), []);
   const audit = useApi(() => getAuditExport(), []);
 
@@ -19,16 +19,23 @@ export default function DashboardPage() {
     <div className="page">
       <PageHeader
         eyebrow="Bidder Portal"
-        title={`Welcome${profile?.fullName ? `, ${profile.fullName}` : ""}`}
+        title={`Welcome${bidder?.fullName ? `, ${bidder.fullName}` : ""}`}
         subtitle="Every figure below comes straight from the live tender register — nothing here is a sample."
       />
 
-      {!profile && (
+      {!bidder && (
         <Card>
           <p className="text-sm">
             You're browsing without an account. <Link to="/bidder/signup">Create one</Link> to track your
-            participation across sessions — note that self-service bidder accounts aren't live on the backend
-            yet, so this is a local preview only. You can still discover tenders and register directly below.
+            participation across sessions. You can still discover tenders and register directly below.
+          </p>
+        </Card>
+      )}
+      {bidder && !bidder.emailVerified && (
+        <Card>
+          <p className="text-sm">
+            Your email address isn't verified yet. <Link to="/bidder/verify-email">Verify it</Link> to make
+            sure you can recover your account and receive result notifications.
           </p>
         </Card>
       )}

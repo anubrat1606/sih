@@ -31,6 +31,13 @@ from .adapters import Registry, VerificationRequest, failure_to_judgement
 from .adapters.base import Basis, LawfulBasis
 from .auth import Role, User, decode_token, issue_token, role_at_least
 from .auth import store as auth_store
+from .bidder_auth import email_sender as bidder_email
+from .bidder_auth import google_signin as bidder_google
+from .bidder_auth import sms_sender as bidder_sms
+from .bidder_auth import store as bidder_store
+from .bidder_auth import validation as bidder_validation
+from .bidder_auth.models import BidderAccount
+from .bidder_auth.tokens import decode_bidder_token, issue_bidder_token
 from .db import close_pool, connect, get_pool, migrate, open_pool
 from .decide import fuse_and_evaluate
 from .events import Actor, append, export_jsonl, verify_chain
@@ -131,6 +138,15 @@ EXPLAINER = _build_explainer()
 from .tender_intelligence import build_from_env as _build_decomposer  # noqa: E402
 DECOMPOSER = _build_decomposer()
 
+# Same plug-in shape again, for bidder self-service accounts: with no
+# SATYAPRAMANA_SMTP_HOST set, EMAIL_SENDER stays on the honest
+# UnconfiguredEmailSender; with no SATYAPRAMANA_GOOGLE_CLIENT_ID set,
+# GOOGLE_SIGNIN stays on UnconfiguredGoogleSignIn. SMS_SENDER has no
+# provider to configure against yet at all -- see bidder_auth/sms_sender.py.
+EMAIL_SENDER = bidder_email.build_from_env()
+SMS_SENDER = bidder_sms.build_from_env()
+GOOGLE_SIGNIN = bidder_google.build_from_env()
+
 
 def db():
     """A connection checked out of the pool for the request's duration, then
@@ -197,6 +213,42 @@ class CreateUserIn(BaseModel):
     role: str = Field(pattern="^(OFFICER|SENIOR_OFFICER|ADMIN)$")
 
 
+class BidderSignUpIn(BaseModel):
+    full_name: str = Field(min_length=1)
+    email: str
+    password: str
+    mobile: str
+    company_name: str = Field(min_length=1)
+    gstin: str | None = None
+
+
+class BidderLoginIn(BaseModel):
+    email: str
+    password: str
+
+
+class BidderVerifyMobileIn(BaseModel):
+    otp: str = Field(pattern=r"^\d{6}$")
+
+
+class BidderForgotPasswordIn(BaseModel):
+    email: str
+
+
+class BidderResetPasswordIn(BaseModel):
+    token: str
+    new_password: str
+
+
+class BidderGoogleSignInIn(BaseModel):
+    id_token: str
+
+
+class BidderChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
 # --- authentication -------------------------------------------------------
 #
 # A session token is a signed JWT (Authorization: Bearer <token>), never a
@@ -218,6 +270,13 @@ def current_user(authorization: str | None = Header(default=None),
         claims = decode_token(token, JWT_SECRET)
     except _jwt.PyJWTError as exc:
         raise HTTPException(401, f"invalid or expired token: {exc}") from exc
+    # A bidder's token is signed with the same secret (there is only one),
+    # but carries "typ": "bidder" -- refused here explicitly rather than
+    # relying on claims["sub"] (a bidder account id) merely failing to match
+    # any row in the officer `users` table, which is not a security
+    # boundary, just an accident of the two tables never overlapping.
+    if claims.get("typ") == "bidder":
+        raise HTTPException(401, "not an officer session")
     user = auth_store.get_user_by_username(conn, claims["sub"])
     if not user or user.disabled:
         raise HTTPException(401, "account no longer valid")
@@ -233,6 +292,32 @@ def require_role(minimum: Role):
                                       f"you are {user.role.value}")
         return user
     return _dependency
+
+
+def current_bidder(authorization: str | None = Header(default=None),
+                    conn=Depends(db)) -> BidderAccount:
+    """The bidder-side mirror of current_user() above -- same shape, same
+    dependency-injection pattern, but a distinct function so an officer
+    route can never accidentally depend on it and a bidder route can never
+    accidentally depend on current_user(). See the "typ" check here and in
+    current_user(): the two token kinds are signed with the same secret but
+    are never interchangeable."""
+    if not JWT_SECRET:
+        raise HTTPException(503, "authentication is not configured on this "
+                                  "deployment (SATYAPRAMANA_JWT_SECRET is unset)")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "missing bearer token")
+    token = authorization.removeprefix("Bearer ").strip()
+    try:
+        claims = decode_bidder_token(token, JWT_SECRET)
+    except _jwt.PyJWTError as exc:
+        raise HTTPException(401, f"invalid or expired token: {exc}") from exc
+    if claims.get("typ") != "bidder":
+        raise HTTPException(401, "not a bidder session")
+    account = bidder_store.get_bidder_by_id(conn, int(claims["sub"]))
+    if not account or account.disabled:
+        raise HTTPException(401, "account no longer valid")
+    return account
 
 
 @app.post("/auth/login")
@@ -266,6 +351,204 @@ def create_officer_account(body: CreateUserIn, conn=Depends(db),
                                   body.display_name, Role(body.role))
     return {"username": user.username, "display_name": user.display_name,
             "role": user.role.value}
+
+
+# --- bidder self-service accounts ---------------------------------------------
+#
+# Unlike officer accounts (ADMIN-provisioned only, no self-signup -- see
+# create_officer_account above), a bidder is the general public: anyone may
+# create an account. Every route below is under /bidders/auth/... so it can
+# never collide with the existing /bidders/{bidder_id}/... compliance
+# routes (bid registration, document upload, verification) elsewhere in
+# this file -- those stay exactly as open/unauthenticated as they already
+# were; this section only adds the identity layer the bidder portal's
+# signup/login/verification screens need, it does not change how a bidder
+# is registered onto a tender or evaluated.
+
+def _bidder_profile(account: BidderAccount) -> dict[str, Any]:
+    return {
+        "id": account.id, "email": account.email, "full_name": account.full_name,
+        "mobile": account.mobile, "company_name": account.company_name,
+        "gstin": account.gstin, "email_verified": account.email_verified,
+        "mobile_verified": account.mobile_verified, "google_linked": account.google_linked,
+    }
+
+
+def _frontend_origin() -> str:
+    return os.environ.get("SATYAPRAMANA_FRONTEND_ORIGIN", "http://localhost:5173")
+
+
+def _send_bidder_email_verification(conn, account: BidderAccount) -> bidder_email.EmailSendOutcome:
+    raw_token = bidder_store.create_email_verification(conn, account.id)
+    verify_url = f"{_frontend_origin()}/bidder/verify-email/confirm?token={raw_token}"
+    return EMAIL_SENDER.send(
+        to_address=account.email, subject="Verify your SATYAPRAMĀṆ account",
+        body=(f"Hello {account.full_name},\n\n"
+              f"Confirm your email address to finish setting up your SATYAPRAMĀṆ "
+              f"bidder account:\n\n{verify_url}\n\n"
+              f"This link expires in 24 hours. If you didn't request this, ignore this email."),
+    )
+
+
+@app.post("/bidders/auth/signup", status_code=201)
+def bidder_signup(body: BidderSignUpIn, conn=Depends(db)) -> dict[str, Any]:
+    if not JWT_SECRET:
+        raise HTTPException(503, "authentication is not configured on this deployment "
+                                  "(SATYAPRAMANA_JWT_SECRET is unset)")
+    if not bidder_validation.is_valid_email(body.email):
+        raise HTTPException(422, "enter a valid email address")
+    mobile = bidder_validation.normalize_indian_mobile(body.mobile)
+    if not mobile:
+        raise HTTPException(422, "enter a valid 10-digit Indian mobile number")
+    issues = bidder_validation.password_issues(body.password)
+    if issues:
+        raise HTTPException(422, f"password must have {', '.join(issues)}")
+    if bidder_store.get_bidder_by_email(conn, body.email):
+        raise HTTPException(409, f"an account already exists for {body.email!r}")
+    if bidder_store.get_bidder_by_mobile(conn, mobile):
+        raise HTTPException(409, "an account already exists for this mobile number")
+    account = bidder_store.create_bidder_account(
+        conn, email=body.email, password=body.password, full_name=body.full_name,
+        mobile=mobile, company_name=body.company_name, gstin=body.gstin,
+    )
+    token = issue_bidder_token(account.id, JWT_SECRET)
+    outcome = _send_bidder_email_verification(conn, account)
+    return {
+        "token": token, "bidder": _bidder_profile(account),
+        "email_verification": {"delivered": outcome.delivered, "detail": outcome.detail},
+    }
+
+
+@app.post("/bidders/auth/login")
+def bidder_login(body: BidderLoginIn, conn=Depends(db)) -> dict[str, Any]:
+    if not JWT_SECRET:
+        raise HTTPException(503, "authentication is not configured on this deployment")
+    account = bidder_store.verify_login(conn, body.email, body.password)
+    if not account:
+        # Deliberately identical for "no such account" and "wrong password"
+        # -- see bidder_auth/store.py's verify_login docstring.
+        raise HTTPException(401, "invalid email or password")
+    token = issue_bidder_token(account.id, JWT_SECRET)
+    return {"token": token, "bidder": _bidder_profile(account)}
+
+
+@app.get("/bidders/auth/me")
+def bidder_me(account: BidderAccount = Depends(current_bidder)) -> dict[str, Any]:
+    return _bidder_profile(account)
+
+
+@app.post("/bidders/auth/verify-email/send")
+def bidder_send_email_verification(conn=Depends(db),
+                                    account: BidderAccount = Depends(current_bidder)) -> dict[str, Any]:
+    if account.email_verified:
+        return {"already_verified": True}
+    outcome = _send_bidder_email_verification(conn, account)
+    return {"delivered": outcome.delivered, "detail": outcome.detail}
+
+
+@app.get("/bidders/auth/verify-email/confirm")
+def bidder_confirm_email_verification(token: str, conn=Depends(db)) -> dict[str, Any]:
+    account = bidder_store.consume_email_verification(conn, token)
+    if not account:
+        raise HTTPException(400, "this verification link is invalid, already used, or has expired")
+    return _bidder_profile(account)
+
+
+@app.post("/bidders/auth/verify-mobile/send")
+def bidder_send_mobile_otp(conn=Depends(db),
+                            account: BidderAccount = Depends(current_bidder)) -> dict[str, Any]:
+    if not account.mobile:
+        raise HTTPException(422, "no mobile number is on file for this account")
+    if account.mobile_verified:
+        return {"already_verified": True}
+    raw_code = bidder_store.create_mobile_otp(conn, account.id)
+    outcome = SMS_SENDER.send(
+        to_mobile=account.mobile,
+        message=f"{raw_code} is your SATYAPRAMĀṆ verification code. It expires in 10 minutes.",
+    )
+    return {"delivered": outcome.delivered, "detail": outcome.detail}
+
+
+_OTP_FAILURE_DETAIL = {
+    "NO_ACTIVE_OTP": "no verification code was requested, or it has already been used",
+    "EXPIRED": "this code has expired -- request a new one",
+    "TOO_MANY_ATTEMPTS": "too many incorrect attempts -- request a new code",
+    "WRONG_CODE": "incorrect code",
+}
+
+
+@app.post("/bidders/auth/verify-mobile/confirm")
+def bidder_confirm_mobile_otp(body: BidderVerifyMobileIn, conn=Depends(db),
+                               account: BidderAccount = Depends(current_bidder)) -> dict[str, Any]:
+    outcome = bidder_store.verify_mobile_otp(conn, account.id, body.otp)
+    if outcome != bidder_store.OtpOutcome.OK:
+        raise HTTPException(400, _OTP_FAILURE_DETAIL[outcome])
+    return {"mobile_verified": True}
+
+
+@app.post("/bidders/auth/forgot-password")
+def bidder_forgot_password(body: BidderForgotPasswordIn, conn=Depends(db)) -> dict[str, Any]:
+    # Always the same response whether or not the email has an account --
+    # an attacker probing this endpoint learns nothing about which emails
+    # are registered.
+    account = bidder_store.get_bidder_by_email(conn, body.email)
+    if account and not account.disabled:
+        raw_token = bidder_store.create_password_reset(conn, account.id)
+        reset_url = f"{_frontend_origin()}/bidder/reset-password?token={raw_token}"
+        EMAIL_SENDER.send(
+            to_address=account.email, subject="Reset your SATYAPRAMĀṆ password",
+            body=(f"Reset your SATYAPRAMĀṆ password:\n\n{reset_url}\n\n"
+                  f"This link expires in 1 hour. If you didn't request this, ignore this email."),
+        )
+    return {"detail": "if an account exists for that email, a reset link has been sent"}
+
+
+@app.post("/bidders/auth/reset-password")
+def bidder_reset_password(body: BidderResetPasswordIn, conn=Depends(db)) -> dict[str, Any]:
+    issues = bidder_validation.password_issues(body.new_password)
+    if issues:
+        raise HTTPException(422, f"password must have {', '.join(issues)}")
+    account = bidder_store.consume_password_reset(conn, body.token, body.new_password)
+    if not account:
+        raise HTTPException(400, "this reset link is invalid, already used, or has expired")
+    return {"detail": "password updated"}
+
+
+@app.post("/bidders/auth/change-password")
+def bidder_change_password(body: BidderChangePasswordIn, conn=Depends(db),
+                            account: BidderAccount = Depends(current_bidder)) -> dict[str, Any]:
+    if not bidder_store.verify_login(conn, account.email, body.current_password):
+        raise HTTPException(401, "current password is incorrect")
+    issues = bidder_validation.password_issues(body.new_password)
+    if issues:
+        raise HTTPException(422, f"password must have {', '.join(issues)}")
+    bidder_store.set_password(conn, account.id, body.new_password)
+    return {"detail": "password updated"}
+
+
+@app.post("/bidders/auth/google")
+def bidder_google_signin(body: BidderGoogleSignInIn, conn=Depends(db)) -> dict[str, Any]:
+    if not JWT_SECRET:
+        raise HTTPException(503, "authentication is not configured on this deployment "
+                                  "(SATYAPRAMANA_JWT_SECRET is unset)")
+    if isinstance(GOOGLE_SIGNIN, bidder_google.UnconfiguredGoogleSignIn):
+        raise HTTPException(503, "Google Sign-In is not configured on this deployment "
+                                  "(SATYAPRAMANA_GOOGLE_CLIENT_ID is unset)")
+    identity = GOOGLE_SIGNIN.verify(body.id_token)
+    if not identity:
+        raise HTTPException(401, "invalid Google credential")
+    account = bidder_store.get_bidder_by_google_sub(conn, identity.sub)
+    if not account:
+        account = bidder_store.get_bidder_by_email(conn, identity.email)
+        if account:
+            bidder_store.link_google_account(conn, account.id, identity.sub)
+        else:
+            account = bidder_store.create_bidder_account_via_google(
+                conn, email=identity.email, full_name=identity.name, google_sub=identity.sub)
+    if account.disabled:
+        raise HTTPException(401, "account disabled")
+    token = issue_bidder_token(account.id, JWT_SECRET)
+    return {"token": token, "bidder": _bidder_profile(account)}
 
 
 # --- health and honest capability reporting -----------------------------------

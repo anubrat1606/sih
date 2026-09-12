@@ -1,80 +1,116 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { BackendNotImplementedError, changePassword } from "../bidderApi";
+import { Link, useNavigate } from "react-router-dom";
+import { changePassword } from "../bidderApi";
 import { useBidderSession } from "../BidderSessionContext";
 import { formatIndianMobile } from "../components/FormControls";
-import { BackendPendingInline, BackendPendingNotice } from "../components/BackendPendingNotice";
-import { Card, Field, PageHeader } from "../../ui/primitives";
+import { Card, ErrorState, Field, PageHeader } from "../../ui/primitives";
 
-export default function ProfilePage() {
-  const { profile, setProfile } = useBidderSession();
-  const [pwPending, setPwPending] = useState(null);
+function ChangePasswordForm() {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(false);
 
-  async function onChangePassword(e) {
+  async function onSubmit(e) {
     e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    setDone(false);
     try {
-      await changePassword();
+      await changePassword(currentPassword, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setDone(true);
     } catch (err) {
-      setPwPending(err);
+      setError(err);
+    } finally {
+      setSubmitting(false);
     }
   }
 
-  if (!profile) {
+  return (
+    <form className="form" onSubmit={onSubmit}>
+      <ErrorState error={error} />
+      {done && <p className="text-sm" style={{ color: "var(--status-pass-fg)" }}>Password updated.</p>}
+      <div className="field">
+        <label htmlFor="pw-current">Current password</label>
+        <input id="pw-current" type="password" autoComplete="current-password" value={currentPassword}
+               onChange={(e) => setCurrentPassword(e.target.value)} required />
+      </div>
+      <div className="field">
+        <label htmlFor="pw-new">New password</label>
+        <input id="pw-new" type="password" autoComplete="new-password" value={newPassword}
+               onChange={(e) => setNewPassword(e.target.value)} required />
+      </div>
+      <button type="submit" className="btn btn-secondary" disabled={submitting}>
+        {submitting ? "Updating…" : "Change password"}
+      </button>
+    </form>
+  );
+}
+
+export default function ProfilePage() {
+  const navigate = useNavigate();
+  const { bidder, clearSession } = useBidderSession();
+
+  if (!bidder) {
     return (
       <div className="page page-narrow" style={{ maxWidth: 680 }}>
         <PageHeader eyebrow="Bidder Portal" title="Profile" />
         <Card>
           <p className="text-sm">
-            No local profile is saved in this browser yet. <Link to="/bidder/signup">Create an account</Link> to
-            start one — note bidder accounts aren't live on the backend, so this stays a local draft until they are.
+            You're not signed in. <Link to="/bidder/login">Sign in</Link> or{" "}
+            <Link to="/bidder/signup">create an account</Link> to see your profile.
           </p>
         </Card>
       </div>
     );
   }
 
+  function signOut() {
+    clearSession();
+    navigate("/bidder/dashboard");
+  }
+
   return (
     <div className="page page-narrow" style={{ maxWidth: 680 }}>
-      <PageHeader eyebrow="Bidder Portal" title="Profile" subtitle="A local draft only — see the notice below." />
+      <PageHeader eyebrow="Bidder Portal" title="Profile" />
 
-      <BackendPendingNotice endpoint="GET /bidders/auth/me">
-        There is no bidder account system on the backend, so nothing here is a real, server-verified profile.
-        What's shown below is exactly what was entered on Sign Up, kept in this browser only.
-      </BackendPendingNotice>
-
-      <div style={{ marginTop: 20 }}>
-        <Card title="Personal information">
-          <div className="field-grid">
-            <Field label="Full name">{profile.fullName}</Field>
-            <Field label="Email">{profile.email}</Field>
-            <Field label="Mobile">{profile.mobile ? formatIndianMobile(profile.mobile) : "—"}</Field>
-            <Field label="Email verified">{profile.emailVerified ? "Yes" : "No"}</Field>
-            <Field label="Mobile verified">{profile.mobileVerified ? "Yes" : "No"}</Field>
-          </div>
-        </Card>
-      </div>
+      <Card title="Personal information">
+        <div className="field-grid">
+          <Field label="Full name">{bidder.fullName}</Field>
+          <Field label="Email">{bidder.email}</Field>
+          <Field label="Mobile">{bidder.mobile ? formatIndianMobile(bidder.mobile) : "—"}</Field>
+          <Field label="Email verified">
+            {bidder.emailVerified ? "Yes" : <>No — <Link to="/bidder/verify-email">verify now</Link></>}
+          </Field>
+          <Field label="Mobile verified">
+            {bidder.mobileVerified ? "Yes" : <>No — <Link to="/bidder/verify-mobile">verify now</Link></>}
+          </Field>
+        </div>
+      </Card>
 
       <div style={{ marginTop: 20 }}>
         <Card title="Organization">
           <div className="field-grid">
-            <Field label="Company name">{profile.companyName || "—"}</Field>
-            <Field label="GSTIN" empty={!profile.gstin}>{profile.gstin || "not provided"}</Field>
+            <Field label="Company name" empty={!bidder.companyName}>{bidder.companyName || "not provided"}</Field>
+            <Field label="GSTIN" empty={!bidder.gstin}>{bidder.gstin || "not provided"}</Field>
           </div>
         </Card>
       </div>
 
       <div style={{ marginTop: 20 }}>
         <Card title="Security">
-          <form onSubmit={onChangePassword}>
-            <button type="submit" className="btn btn-secondary">Change password</button>
-          </form>
-          {pwPending instanceof BackendNotImplementedError && (
-            <BackendPendingInline endpoint={pwPending.requiredEndpoint}>{pwPending.message}</BackendPendingInline>
+          {bidder.googleLinked && !bidder.mobile ? (
+            <p className="text-sm text-secondary" style={{ marginBottom: 12 }}>
+              This account signed up with Google and has no password set yet.
+            </p>
+          ) : (
+            <ChangePasswordForm />
           )}
           <div style={{ marginTop: 16 }}>
-            <button type="button" className="btn btn-danger" onClick={() => setProfile(null)}>
-              Clear local profile
-            </button>
+            <button type="button" className="btn btn-danger" onClick={signOut}>Sign out</button>
           </div>
         </Card>
       </div>

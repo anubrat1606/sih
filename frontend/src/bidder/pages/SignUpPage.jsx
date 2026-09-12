@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { BackendNotImplementedError, signUp } from "../bidderApi";
+import { signUp } from "../bidderApi";
 import { useBidderSession } from "../BidderSessionContext";
 import {
   formatIndianMobile, isPasswordValid, isValidEmail, isValidIndianMobile,
   normalizeIndianMobile, PasswordStrengthMeter,
 } from "../components/FormControls";
-import { BackendPendingNotice } from "../components/BackendPendingNotice";
+import { ErrorState } from "../../ui/primitives";
 
 const initial = {
   fullName: "", email: "", mobile: "", password: "", confirmPassword: "",
@@ -15,11 +15,11 @@ const initial = {
 
 export default function SignUpPage() {
   const navigate = useNavigate();
-  const { setProfile } = useBidderSession();
+  const { setSession } = useBidderSession();
   const [form, setForm] = useState(initial);
   const [touched, setTouched] = useState({});
   const [submitting, setSubmitting] = useState(false);
-  const [pending, setPending] = useState(null); // BackendNotImplementedError
+  const [error, setError] = useState(null);
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
   const touch = (key) => () => setTouched((t) => ({ ...t, [key]: true }));
@@ -37,34 +37,20 @@ export default function SignUpPage() {
     setTouched({ fullName: true, email: true, mobile: true, password: true, confirmPassword: true, companyName: true, acceptedTerms: true });
     if (!canSubmit) return;
     setSubmitting(true);
-    setPending(null);
+    setError(null);
     try {
-      await signUp({
+      const { token, bidder } = await signUp({
         fullName: form.fullName.trim(),
         email: form.email.trim(),
+        password: form.password,
         mobile: normalizeIndianMobile(form.mobile),
         companyName: form.companyName.trim(),
         gstin: form.gstin.trim() || null,
       });
-      // Unreachable until a real backend exists -- signUp() always rejects
-      // today. Left in place so this becomes correct the moment it doesn't.
+      setSession({ token, bidder });
       navigate("/bidder/verify-email");
     } catch (err) {
-      if (err instanceof BackendNotImplementedError) {
-        // The account can't be created on the backend yet, but the form the
-        // visitor filled in is real -- keep it as a local draft so the rest
-        // of the portal (which doesn't require a real session) has a name
-        // to greet, and so Verify Email/Mobile have something to preview
-        // against, without ever claiming an account was actually created.
-        setProfile({
-          fullName: form.fullName.trim(), email: form.email.trim(),
-          mobile: normalizeIndianMobile(form.mobile), companyName: form.companyName.trim(),
-          gstin: form.gstin.trim() || null, emailVerified: false, mobileVerified: false,
-        });
-        setPending(err);
-      } else {
-        setPending(err);
-      }
+      setError(err);
     } finally {
       setSubmitting(false);
     }
@@ -79,6 +65,8 @@ export default function SignUpPage() {
           <p className="text-sm text-secondary" style={{ marginBottom: 20 }}>
             Register once to discover tenders, track your submissions and view your results.
           </p>
+
+          <ErrorState error={error} />
 
           <form className="form form-wide" onSubmit={onSubmit} noValidate>
             <div className="form-row">
@@ -149,15 +137,6 @@ export default function SignUpPage() {
               {submitting ? "Creating account…" : "Create account"}
             </button>
           </form>
-
-          {pending instanceof BackendNotImplementedError && (
-            <div style={{ marginTop: 16 }}>
-              <BackendPendingNotice endpoint={pending.requiredEndpoint}>
-                {pending.message} Your details above have been kept in this browser only, so you can preview
-                the rest of the portal — nothing has been sent anywhere, and no account was actually created.
-              </BackendPendingNotice>
-            </div>
-          )}
 
           <p className="text-sm text-secondary" style={{ marginTop: 20 }}>
             Already have an account? <Link to="/bidder/login">Sign in</Link>

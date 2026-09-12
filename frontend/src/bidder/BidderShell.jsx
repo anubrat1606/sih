@@ -24,12 +24,14 @@ function initials(name) {
 }
 
 export default function BidderShell({ children }) {
-  const { profile, setProfile } = useBidderSession();
+  const { bidder, clearSession } = useBidderSession();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const isAuthRoute = ["/bidder/signup", "/bidder/login", "/bidder/verify-email", "/bidder/verify-mobile"]
-    .some((p) => location.pathname.startsWith(p));
+  const isAuthRoute = [
+    "/bidder/signup", "/bidder/login", "/bidder/verify-email", "/bidder/verify-mobile",
+    "/bidder/forgot-password", "/bidder/reset-password",
+  ].some((p) => location.pathname.startsWith(p));
 
   if (isAuthRoute) {
     // Auth pages get the minimal header, exactly like the officer portal's
@@ -79,21 +81,21 @@ export default function BidderShell({ children }) {
 
         <div className="sidebar-footer">
           <div className="sidebar-user">
-            <span className="sidebar-avatar" aria-hidden="true">{initials(profile?.fullName)}</span>
+            <span className="sidebar-avatar" aria-hidden="true">{initials(bidder?.fullName)}</span>
             <span className="sidebar-user-text">
-              <span className="sidebar-user-name">{profile?.fullName || "Guest bidder"}</span>
+              <span className="sidebar-user-name">{bidder?.fullName || "Guest"}</span>
               <span className="sidebar-user-role">
-                {profile ? (profile.emailVerified ? "Profile saved" : "Not verified") : "No profile yet"}
+                {bidder ? (bidder.emailVerified ? "Verified" : "Email not verified") : "Not signed in"}
               </span>
             </span>
           </div>
-          {profile ? (
-            <button type="button" className="sidebar-action" onClick={() => setProfile(null)}>
-              <span className="sidebar-icon" aria-hidden="true">⇥</span> Clear local profile
+          {bidder ? (
+            <button type="button" className="sidebar-action" onClick={clearSession}>
+              <span className="sidebar-icon" aria-hidden="true">⇥</span> Sign out
             </button>
           ) : (
-            <Link to="/bidder/signup" className="sidebar-action">
-              <span className="sidebar-icon" aria-hidden="true">＋</span> Create account
+            <Link to="/bidder/login" className="sidebar-action">
+              <span className="sidebar-icon" aria-hidden="true">＋</span> Sign in
             </Link>
           )}
         </div>
@@ -108,9 +110,9 @@ export default function BidderShell({ children }) {
           <Link to="/bidder/notifications" className="topbar-button" aria-label="Notifications">
             <span aria-hidden="true">◈</span>
           </Link>
-          <Link to="/bidder/profile" className="topbar-profile-trigger" style={{ textDecoration: "none" }}>
-            <span className="topbar-avatar" aria-hidden="true">{initials(profile?.fullName)}</span>
-            <span className="text-sm">{profile?.fullName || "Guest"}</span>
+          <Link to={bidder ? "/bidder/profile" : "/bidder/login"} className="topbar-profile-trigger" style={{ textDecoration: "none" }}>
+            <span className="topbar-avatar" aria-hidden="true">{initials(bidder?.fullName)}</span>
+            <span className="text-sm">{bidder?.fullName || "Sign in"}</span>
           </Link>
         </header>
         <main className="shell-main" id="main">{children}</main>

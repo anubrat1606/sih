@@ -1,24 +1,27 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { setBidderToken } from "./bidderApi";
 
-// There is no bidder identity backend yet (see bidderApi.js), so there is
-// no real session to hold here. What this context actually holds is a
-// browser-local *profile draft* -- the name/email/mobile a visitor typed
-// into Sign Up, and which bidder_id/tender_id pairs they've registered or
-// looked up in this browser -- so the portal is usable and demonstrable
-// today without pretending any of it is an authenticated account.
+// A real, authenticated bidder session now that satyapramana_store/
+// bidder_auth/ exists on the backend -- {token, bidder}, exactly the shape
+// signUp()/login()/continueWithGoogle() in bidderApi.js resolve to. Held
+// here in React state and mirrored into bidderApi.js's module-level
+// bidderToken (via setBidderToken) so every subsequent request carries it,
+// the same two-places-in-sync pattern auth.jsx/api.js already use for
+// officers.
 //
-// This is never presented as "signed in." Every page that reads it says so
-// plainly. The moment a real backend identity system exists, this whole
-// file is replaced by a real session (JWT + /auth/me, the same pattern
-// AuthProvider already uses for officers) -- nothing downstream should
-// need to change its own logic, only where the session comes from.
+// `tracked` stays a separate, purely local list of bidder_id/tender_id
+// pairs this browser has registered on -- that isn't part of the account
+// (a bidder acting from a second device wouldn't see it), it's a
+// convenience so "My Bids" has something to show without a
+// GET /bidders?email=... endpoint, which doesn't exist and would leak
+// every bidder's records to any authenticated bidder if it did.
 
-const STORAGE_KEY = "satyapramana-bidder-profile-draft";
+const STORAGE_KEY = "satyapramana-bidder-session";
 const TRACKED_KEY = "satyapramana-bidder-tracked-bids";
 
 const BidderSessionContext = createContext(null);
 
-function loadDraft() {
+function loadSession() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
@@ -37,21 +40,38 @@ function loadTracked() {
 }
 
 export function BidderSessionProvider({ children }) {
-  const [profile, setProfileState] = useState(loadDraft);
+  const [session, setSessionState] = useState(loadSession);
   const [tracked, setTrackedState] = useState(loadTracked);
 
-  const setProfile = useCallback((next) => {
-    setProfileState(next);
+  // Restore the token into bidderApi.js on first mount (and whenever the
+  // session changes) -- a page refresh must not silently drop back to an
+  // unauthenticated bidderApi module while React state still thinks
+  // there's a session.
+  useEffect(() => {
+    setBidderToken(session?.token || null);
+  }, [session]);
+
+  const setSession = useCallback((next) => {
+    setSessionState(next);
     try {
       if (next) localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       else localStorage.removeItem(STORAGE_KEY);
     } catch { /* private browsing / storage blocked */ }
   }, []);
 
-  // Remember a bidder_id/tender_id pair this browser has actually
-  // participated in or looked up for real, so "My Bids" has something
-  // genuine to show without a real account system -- never a fabricated
-  // entry, only ones a real registerBidder() call actually produced.
+  // Merges a fresh bidder profile (e.g. after verifying email/mobile) into
+  // the current session without requiring a full re-login.
+  const updateBidder = useCallback((patch) => {
+    setSessionState((cur) => {
+      if (!cur) return cur;
+      const next = { ...cur, bidder: { ...cur.bidder, ...patch } };
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* blocked */ }
+      return next;
+    });
+  }, []);
+
+  const clearSession = useCallback(() => setSession(null), [setSession]);
+
   const trackBid = useCallback((tenderId, bidderId) => {
     setTrackedState((cur) => {
       const next = [
@@ -71,12 +91,11 @@ export function BidderSessionProvider({ children }) {
     });
   }, []);
 
-  useEffect(() => {
-    setTrackedState(loadTracked());
-  }, []);
-
   return (
-    <BidderSessionContext.Provider value={{ profile, setProfile, tracked, trackBid, forgetBid }}>
+    <BidderSessionContext.Provider value={{
+      session, bidder: session?.bidder || null, isAuthenticated: Boolean(session),
+      setSession, updateBidder, clearSession, tracked, trackBid, forgetBid,
+    }}>
       {children}
     </BidderSessionContext.Provider>
   );
