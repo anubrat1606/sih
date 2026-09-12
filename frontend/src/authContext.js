@@ -11,7 +11,8 @@ export function useAuth() {
   return ctx;
 }
 
-const ROLE_ORDER = { OFFICER: 0, SENIOR_OFFICER: 1, ADMIN: 2 };
+// Mirrors satyapramana_store/auth/models.py's _ORDER exactly.
+const ROLE_ORDER = { BIDDER: 0, OFFICER: 1, SENIOR_OFFICER: 2, ADMIN: 3 };
 
 export function roleAtLeast(role, minimum) {
   return (ROLE_ORDER[role] ?? -1) >= ROLE_ORDER[minimum];

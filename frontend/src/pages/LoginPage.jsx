@@ -14,7 +14,8 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (session) {
-    return <Navigate to={location.state?.from?.pathname || "/dashboard"} replace />;
+    const home = session.role === "BIDDER" ? "/portal" : "/dashboard";
+    return <Navigate to={location.state?.from?.pathname || home} replace />;
   }
 
   async function onSubmit(e) {

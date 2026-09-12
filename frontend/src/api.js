@@ -26,7 +26,10 @@ export function setAuthToken(token) {
   authToken = token;
 }
 
-async function call(path, options = {}) {
+// Exported so bidder/bidderApi.js can reuse this exact fetch wrapper
+// (auth header, error shape, JSON/text negotiation) instead of a second
+// hand-rolled copy of it.
+export async function call(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
   const resp = await fetch(`${BACKEND_URL}${path}`, { ...options, headers });

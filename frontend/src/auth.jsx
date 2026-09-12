@@ -92,3 +92,19 @@ export function RequireAuth({ children }) {
   if (!session) return <Navigate to="/login" state={{ from: location }} replace />;
   return children;
 }
+
+// Wrap a route tree that belongs to exactly one side of the app. Unlike
+// RequireAuth, this checks the LITERAL role, not a minimum -- an officer
+// hitting a bidder route is a wrong-portal mistake, not a permission gap,
+// so they're sent to their own home rather than refused outright, and the
+// same the other way round. Signed-out visitors still go to /login first.
+export function RequireRole({ role, children }) {
+  const { session, checking } = useAuth();
+  const location = useLocation();
+  if (checking) return <div className="page"><p className="hint">Checking session…</p></div>;
+  if (!session) return <Navigate to="/login" state={{ from: location }} replace />;
+  if (session.role !== role) {
+    return <Navigate to={session.role === "BIDDER" ? "/portal" : "/dashboard"} replace />;
+  }
+  return children;
+}
