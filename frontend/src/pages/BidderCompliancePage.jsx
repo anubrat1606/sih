@@ -2,13 +2,14 @@ import { useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   evaluateBidder, getAutopsy, getBidder, getBidderEvidence, getExplanation,
-  getProvenance, getRepairPlan, overrideVerdict, recordDecision,
+  getProvenance, getRepairPlan, overrideVerdict,
 } from "../api";
 import { roleAtLeast, useAuth } from "../authContext";
 import { useApi } from "../lib/useApi";
 import { formatTimestamp } from "../lib/audit";
 import { useToast } from "../notifications";
 import PdfEvidenceViewer from "../features/PdfEvidenceViewer";
+import FinalisePanel from "../officer/review/FinalisePanel";
 import {
   Callout, Card, ConfirmDialog, CoverageMetric, Dash, Drawer, EmptyState, ErrorState,
   EvidenceChain, Field, LoadingBlock, MetricCard, PageHeader, RiskBadge, Section,
@@ -136,9 +137,6 @@ export default function BidderCompliancePage() {
   const [explanation, setExplanation] = useState(null);
   const [explaining, setExplaining] = useState(false);
   const [bidDate, setBidDate] = useState("");
-  const [decisionNote, setDecisionNote] = useState("");
-  const [lastDecision, setLastDecision] = useState(null);
-  const [confirmDisqualify, setConfirmDisqualify] = useState(false);
   const [confirmOverride, setConfirmOverride] = useState(false);
   const [overrideForm, setOverrideForm] = useState({ requirement_id: "", verdict_after: "PASS", justification: "" });
   const [actionError, setActionError] = useState(null);
@@ -193,18 +191,6 @@ export default function BidderCompliancePage() {
       setActionError(err);
     } finally {
       setExplaining(false);
-    }
-  }
-
-  async function onDecision(decision) {
-    setActionError(null);
-    try {
-      const result = await recordDecision(bidderId, tenderId, decision, decisionNote);
-      setLastDecision(result);
-      notify(`Recorded: ${decision}.`, { kind: decision === "QUALIFY" ? "success" : "info" });
-    } catch (err) {
-      setActionError(err);
-      notify("Could not record the decision.", { kind: "error" });
     }
   }
 
@@ -494,28 +480,7 @@ export default function BidderCompliancePage() {
                 </form>
               </Card>
 
-              <Card title="Record an officer decision">
-                <p className="text-secondary text-sm" style={{ marginBottom: 12 }}>
-                  Recorded as {session.displayName} ({session.role.replace("_", " ")}). The system's own
-                  dossier is never overwritten — a decision is a separate, permanent event.
-                </p>
-                <div className="form">
-                  <div className="field">
-                    <label htmlFor="dec-note">Note <span className="field-hint">optional</span></label>
-                    <input id="dec-note" value={decisionNote} onChange={(e) => setDecisionNote(e.target.value)} />
-                  </div>
-                  <div className="btn-group">
-                    <button type="button" className="btn btn-primary" onClick={() => onDecision("QUALIFY")}>Qualify</button>
-                    <button type="button" className="btn btn-danger" onClick={() => setConfirmDisqualify(true)}>Disqualify</button>
-                  </div>
-                </div>
-                {lastDecision && (
-                  <Callout strong>
-                    Recorded {lastDecision.decision} — event #{lastDecision.seq},
-                    hash <span className="mono">{lastDecision.hash.slice(0, 16)}…</span>
-                  </Callout>
-                )}
-              </Card>
+              <FinalisePanel bidderId={bidderId} tenderId={tenderId} />
 
               <Card title="Officer summary">
                 <p className="text-secondary text-sm" style={{ marginBottom: 12 }}>
@@ -586,16 +551,6 @@ export default function BidderCompliancePage() {
           onClose={() => setOpenRequirement(null)}
         />
       )}
-
-      <ConfirmDialog
-        open={confirmDisqualify}
-        title="Disqualify this bidder?"
-        body={`This records a DISQUALIFY decision for ${bidderId} on ${tenderId}, attributed to ${session.displayName}. The system's own dossier is never overwritten — this is a separate, permanent event.`}
-        confirmLabel="Disqualify"
-        danger
-        onConfirm={() => { setConfirmDisqualify(false); onDecision("DISQUALIFY"); }}
-        onCancel={() => setConfirmDisqualify(false)}
-      />
 
       <ConfirmDialog
         open={confirmOverride}
