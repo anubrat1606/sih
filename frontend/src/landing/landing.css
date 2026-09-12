@@ -5,9 +5,17 @@
 .landing {
   --lp-max: 1180px;
   --lp-gutter: clamp(16px, 4vw, 40px);
+  --lp-sweep-opacity: 0.66;
+  --lp-sweep-line-opacity: 0.9;
+  /* z-index scale: decor -1 · content 0 · header 50 · nav sheet 60 */
   min-height: 100dvh; display: flex; flex-direction: column;
   background: var(--color-bg); color: var(--color-text); overflow-x: clip;
 }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .landing { --lp-sweep-opacity: 0.34; --lp-sweep-line-opacity: 0.6; }
+}
+:root[data-theme="dark"] .landing { --lp-sweep-opacity: 0.34; --lp-sweep-line-opacity: 0.6; }
+.lp-section, .lp-verdicts { scroll-margin-top: 84px; }
 .landing .lp-wrap { width: min(var(--lp-max), 100% - 2 * var(--lp-gutter)); margin-inline: auto; }
 .lp-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
@@ -57,14 +65,16 @@
   background: linear-gradient(90deg, var(--india-saffron) 0 33.3%, var(--chakra-ink) 33.3% 66.6%, var(--india-green) 66.6%);
   transform: scaleX(0); transform-origin: left; transition: transform var(--duration-slow) var(--ease-standard);
 }
-.lp-nav a:hover { color: var(--color-text); text-decoration: none; }
-.lp-nav a:hover::after, .lp-nav a:focus-visible::after { transform: scaleX(1); }
+.lp-nav a:hover, .lp-nav a.is-current { color: var(--color-text); text-decoration: none; }
+.lp-nav a:hover::after, .lp-nav a:focus-visible::after, .lp-nav a.is-current::after { transform: scaleX(1); }
 .lp-header-actions { display: flex; gap: var(--space-2); align-items: center; }
 .lp-menu-btn { display: none; min-height: 40px; }
 
 /* ---- buttons (landing sizes) ------------------------------------------ */
 .landing .btn { transition: background var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard); }
 .landing .btn:active { transform: scale(0.98); }
+.landing .btn-lg:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.landing .btn-lg:active { transform: scale(0.98); box-shadow: none; }
 .landing .btn-lg { min-height: 48px; padding: 0 22px; font-size: var(--text-md); font-weight: 600; border-radius: var(--radius-lg); }
 .landing .btn-primary { min-height: 40px; }
 
@@ -80,6 +90,34 @@
     radial-gradient(60% 55% at 0% 0%, color-mix(in srgb, var(--india-saffron) 11%, transparent), transparent 70%),
     radial-gradient(55% 55% at 100% 100%, color-mix(in srgb, var(--india-green) 9%, transparent), transparent 70%);
 }
+/* The saffron sweep: one soft band of the flag's saffron flowing across the
+ * hero's diagonal, with a crisp hairline along its axis. Blurred and low
+ * opacity so body text over it keeps AA contrast; the gradient drifts
+ * slowly along the band and holds still under reduced motion. */
+.lp-hero-sweep, .lp-hero-sweep-line {
+  position: absolute; z-index: -1; pointer-events: none;
+  left: -12%; width: 124%; transform: rotate(-16deg); transform-origin: center;
+}
+.lp-hero-sweep {
+  top: 44%; height: clamp(150px, 20vw, 260px); margin-top: calc(clamp(150px, 20vw, 260px) / -2);
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--india-saffron) 45%, transparent) 18%,
+    color-mix(in srgb, var(--india-saffron) 78%, transparent) 42%,
+    color-mix(in srgb, var(--india-saffron) 60%, transparent) 62%,
+    color-mix(in srgb, var(--india-saffron) 30%, transparent) 84%,
+    transparent 100%);
+  background-size: 220% 100%;
+  filter: blur(34px); opacity: var(--lp-sweep-opacity);
+  animation: lp-flow 18s ease-in-out infinite alternate;
+}
+.lp-hero-sweep-line {
+  top: 44%; height: 3px; border-radius: 2px; opacity: var(--lp-sweep-line-opacity);
+  background: linear-gradient(90deg, transparent 4%, var(--india-saffron) 22%, var(--india-saffron) 78%, transparent 96%);
+  background-size: 220% 100%;
+  animation: lp-flow 18s ease-in-out infinite alternate;
+}
+@keyframes lp-flow { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
 .lp-hero-chakra {
   position: absolute; right: -6%; top: 50%; translate: 0 -50%; z-index: -1;
   width: min(60vw, 720px); height: auto; color: var(--chakra-ink); opacity: 0.06; pointer-events: none;
@@ -130,6 +168,14 @@
 }
 .lp-pill-state { font-family: var(--font-text); font-weight: 500; color: var(--color-text-secondary); font-size: var(--text-xs); }
 .lp-live-note { margin-top: var(--space-3); font-size: var(--text-sm); color: var(--color-text-muted); }
+.lp-skeleton-pills { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+.lp-skeleton {
+  display: block; height: 36px; width: 112px; border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--color-surface-sunken) 0%, var(--color-border) 50%, var(--color-surface-sunken) 100%);
+  background-size: 200% 100%; animation: lp-shimmer 1.4s linear infinite;
+}
+.lp-skeleton:nth-child(4) { width: 168px; }
+@keyframes lp-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
 /* ---- pipeline illustration ------------------------------------------- */
 .lp-pipe { background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 14px; box-shadow: var(--shadow-lg); overflow: hidden; }
@@ -292,8 +338,9 @@
 }
 @media (max-width: 720px) {
   .lp-nav { display: none; }
+  .lp-hero-sweep, .lp-hero-sweep-line { transform: rotate(-22deg); left: -30%; width: 160%; top: 30%; }
   .lp-nav.is-open {
-    display: flex; flex-direction: column; gap: 0; position: absolute; left: 0; right: 0; top: 100%;
+    display: flex; flex-direction: column; gap: 0; position: absolute; left: 0; right: 0; top: 100%; z-index: 60;
     background: var(--color-surface); border-bottom: 1px solid var(--color-border); box-shadow: var(--shadow-md);
     padding: var(--space-2) var(--lp-gutter) var(--space-3);
   }
@@ -310,7 +357,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lp-hero-chakra, .lp-cta-chakra, .lp-pill-dot { animation: none !important; }
+  .lp-hero-chakra, .lp-cta-chakra, .lp-pill-dot, .lp-hero-sweep, .lp-hero-sweep-line, .lp-skeleton { animation: none !important; }
   .landing.js-reveal .lp-reveal { opacity: 1; transform: none; transition: none; }
   .lp-fade-in { animation: none; }
   .lp-step, .lp-principle, .landing .btn, .lp-link-arrow svg, .lp-pipe-fill { transition: none; }
