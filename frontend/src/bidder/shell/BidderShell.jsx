@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../authContext";
+import { useApi } from "../../lib/useApi";
 import { useToast } from "../../notifications";
+import { deriveNotifications, loadNotificationSource } from "../notifications/deriveNotifications";
+import { NotificationBell } from "../notifications/NotificationBell";
 
 // The bidder-facing shell. Deliberately the same structural primitives as
 // the officer shell (shell/AppShell.jsx) -- sidebar, topbar, shell-main --
@@ -33,6 +36,16 @@ export default function BidderShell({ children, breadcrumbs }) {
   const { notify } = useToast();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Fetched once per shell mount, not per page -- the bell needs a live
+  // count on every bidder page, not just NotificationsPage.jsx (which
+  // fetches the same source itself when actually opened, since navigating
+  // there is a real page load with its own loading/error state; this is
+  // just for the ambient badge count elsewhere).
+  const source = useApi(loadNotificationSource, []);
+  const notifications = source.data
+    ? deriveNotifications(source.data.myTenders, source.data.submissionsByTender, source.data.resultsByTender)
+    : [];
 
   const trail = breadcrumbs?.length ? breadcrumbs : [{ label: "Home", to: "/portal" }];
 
@@ -91,6 +104,9 @@ export default function BidderShell({ children, breadcrumbs }) {
               </span>
             ))}
           </nav>
+          <div className="topbar-right">
+            <NotificationBell notifications={notifications} />
+          </div>
         </header>
 
         <main id="main" className="shell-main">{children}</main>

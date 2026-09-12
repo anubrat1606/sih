@@ -1,9 +1,9 @@
 import { useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { getMyResult, getMySubmission, getMyTenders, getScheduledNotifications } from "../bidderApi";
+import { getScheduledNotifications } from "../bidderApi";
 import { useApi } from "../../lib/useApi";
 import { Card, EmptyState, ErrorState, LoadingBlock, PageHeader, UnavailableNote } from "../../ui/primitives";
-import { deriveNotifications } from "../notifications/deriveNotifications";
+import { deriveNotifications, loadNotificationSource } from "../notifications/deriveNotifications";
 import { markNotificationsSeen } from "../notifications/lastSeen";
 
 const KIND_GLYPH = {
@@ -12,26 +12,6 @@ const KIND_GLYPH = {
   document_received: "▥",
   decision_recorded: "✓",
 };
-
-// Fetches exactly what deriveNotifications.js needs and nothing more --
-// getMySubmission/getMyResult only for tenders this bidder is actually
-// registered on, since those endpoints are scoped to the caller's own
-// bidder_id and there is nothing to ask for on a tender not yet joined.
-async function loadNotificationSource() {
-  const myTenders = await getMyTenders();
-  const registered = (myTenders.tenders || []).filter((t) => t.registered);
-  const [submissions, results] = await Promise.all([
-    Promise.all(registered.map((t) => getMySubmission(t.tender_id))),
-    Promise.all(registered.map((t) => getMyResult(t.tender_id))),
-  ]);
-  const submissionsByTender = {};
-  const resultsByTender = {};
-  registered.forEach((t, i) => {
-    submissionsByTender[t.tender_id] = submissions[i];
-    resultsByTender[t.tender_id] = results[i];
-  });
-  return { myTenders, submissionsByTender, resultsByTender };
-}
 
 function formatDayLabel(iso) {
   return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" });
