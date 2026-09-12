@@ -105,6 +105,21 @@ def test_requirements_is_honestly_empty_with_no_adopted_pack(client, conn):
     assert r.json() == {"tender_id": "T2", "requirements": []}
 
 
+def test_submission_status_is_scoped_to_its_own_tender(client, conn):
+    """Found by Rishika during round-6 live testing: proj_verdicts was
+    queried by bidder_id alone, so a bidder with a verdict on one tender
+    showed UNDER_EVALUATION on every other tender they're registered on
+    too, even ones with zero activity."""
+    register_and_adopt(client, conn, "A")
+    client.post("/tenders/T2/bidders", json={"bidder_id": "A"})
+    client.post("/bidders/A/verify", params={"tender_id": "T1"})
+    client.post("/bidders/A/evaluate", params={"tender_id": "T1"}, json=EVAL)
+    t1 = client.get("/me/tenders/T1/submission", headers=bidder_headers(conn, "A")).json()
+    t2 = client.get("/me/tenders/T2/submission", headers=bidder_headers(conn, "A")).json()
+    assert t1["status"] == "UNDER_EVALUATION"
+    assert t2["status"] == "REGISTERED"
+
+
 def test_a_bidder_reads_their_own_submission_and_status_progresses(client, conn):
     register_and_adopt(client, conn, "A")
     r = client.get("/me/tenders/T1/submission", headers=bidder_headers(conn, "A"))
