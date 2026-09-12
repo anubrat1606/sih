@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, RequireAuth } from "./auth";
 import { ToastProvider } from "./notifications";
 import AppShell from "./shell/AppShell";
+import BidderApp from "./bidder/BidderApp";
 
 import LoginPage from "./pages/LoginPage";
 import MissionControlPage from "./pages/MissionControlPage";
@@ -49,16 +50,30 @@ function AppRoutes() {
   );
 }
 
+// The officer/admin application, entirely unchanged from before the bidder
+// portal existed — same providers, same shell, same routes.
+function OfficerApp() {
+  return (
+    <ToastProvider>
+      <AuthProvider>
+        <AppShell>
+          <AppRoutes />
+        </AppShell>
+      </AuthProvider>
+    </ToastProvider>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
-      <ToastProvider>
-        <AuthProvider>
-          <AppShell>
-            <AppRoutes />
-          </AppShell>
-        </AuthProvider>
-      </ToastProvider>
+      <Routes>
+        {/* The bidder portal is a fully separate application tree — its own
+            session model, shell and routes — mounted alongside the officer
+            app rather than inside it, so neither can regress the other. */}
+        <Route path="/bidder/*" element={<BidderApp />} />
+        <Route path="/*" element={<OfficerApp />} />
+      </Routes>
     </BrowserRouter>
   );
 }

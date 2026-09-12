@@ -4,6 +4,7 @@ import "./design/tokens.css";
 import "./design/base.css";
 import "./design/components.css";
 import "./design/shell.css";
+import "./design/bidder.css";
 import "./notifications/notifications.css";
 import App from "./App.jsx";
 
