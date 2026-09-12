@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { BACKEND_URL } from "../api";
+import { BACKEND_URL, authHeaders } from "../api";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -22,7 +22,10 @@ function PdfCanvas({ documentSha256, page, region, scale, onNumPages }) {
       setLoading(true);
       setError(null);
       try {
-        const doc = await pdfjsLib.getDocument(`${BACKEND_URL}/documents/${documentSha256}`).promise;
+        const doc = await pdfjsLib.getDocument({
+          url: `${BACKEND_URL}/documents/${documentSha256}`,
+          httpHeaders: authHeaders(),
+        }).promise;
         if (cancelled) return;
         onNumPages?.(doc.numPages);
         const pdfPage = await doc.getPage(page);

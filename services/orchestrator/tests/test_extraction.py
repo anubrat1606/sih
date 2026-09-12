@@ -33,6 +33,10 @@ CIN = valid_cin()
 def client(conn):
     app.dependency_overrides[db] = lambda: conn
     with TestClient(app) as c:
+        # Default senior-officer header: every non-public route requires a
+        # login now. Per-request lower-role headers in gate tests override it.
+        from .conftest import auth_headers
+        c.headers.update(auth_headers(conn, username="fixture_senior"))
         yield c
     app.dependency_overrides.clear()
 
@@ -952,6 +956,7 @@ def test_extracted_evidence_is_labelled_a_claim_not_an_authority_answer(client, 
 def test_decompose_endpoint_requires_authentication(client):
     pdf = text_pdf(["A tender document."])
     body = upload(client, pdf).json()
+    client.headers.pop("Authorization", None)  # upload needed auth; decompose must not have it
     r = client.post("/tenders/T1/decompose", json={"document_sha256": body["document_sha256"]})
     assert r.status_code == 401
 

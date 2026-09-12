@@ -8,6 +8,20 @@ export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost
 // request actually leaves the browser, and a module-level value is the
 // simplest thing that can be read synchronously from a plain function.
 let authToken = null;
+
+// For the two places that can't go through call(): pdf.js fetches the PDF
+// itself (it accepts httpHeaders), and "View source" opens the raw file --
+// GET /documents/{sha} requires a login now, so a bare <a href> would 401.
+export function authHeaders() {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+}
+
+export async function openDocument(sha256) {
+  const resp = await fetch(`${BACKEND_URL}/documents/${encodeURIComponent(sha256)}`, { headers: authHeaders() });
+  if (!resp.ok) throw new Error(`could not fetch document (${resp.status})`);
+  const url = URL.createObjectURL(await resp.blob());
+  window.open(url, "_blank", "noopener");
+}
 export function setAuthToken(token) {
   authToken = token;
 }

@@ -41,11 +41,22 @@ _pool: ConnectionPool | None = None
 
 
 def open_pool(dsn: str | None = None) -> ConnectionPool:
+    """Discovered live, 2026-09-12: Neon (and any Postgres that suspends or
+    idle-times-out a connection server-side) can silently kill a pooled
+    connection while it sits unused between requests. Without `check`, the
+    pool doesn't know and hands the next request a connection whose socket
+    is already dead -- `psycopg.OperationalError: consuming input failed:
+    SSL connection has been closed unexpectedly`, on the very first query.
+    `check_connection` runs a cheap liveness probe on checkout and silently
+    replaces a dead connection instead of handing it out -- exactly the
+    "opening a connection is a real cost" problem the pool fixed, minus the
+    new failure mode a low-traffic deployment against a suspending Postgres
+    actually hits."""
     global _pool
     if _pool is None:
         _pool = ConnectionPool(
             _dsn(dsn), open=False, min_size=1, max_size=10,
-            kwargs={"autocommit": True},
+            kwargs={"autocommit": True}, check=ConnectionPool.check_connection,
         )
         _pool.open()
     return _pool

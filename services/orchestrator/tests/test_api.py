@@ -14,6 +14,12 @@ from .conftest import auth_headers
 def client(conn):
     app.dependency_overrides[db] = lambda: conn
     with TestClient(app) as c:
+        # Every non-public route requires a login now; a default senior-officer
+        # header keeps the existing call sites honest without touching each one.
+        # Tests proving a gate refuses a too-low role still pass their own
+        # lower-role headers per request, which override this default.
+        from .conftest import auth_headers
+        c.headers.update(auth_headers(conn, username="fixture_senior"))
         yield c
     app.dependency_overrides.clear()
 
@@ -149,6 +155,7 @@ def test_listing_tenders_with_none_registered_is_an_empty_list(client):
 # --- tender management ------------------------------------------------------
 
 def test_creating_a_tender_requires_authentication(client):
+    client.headers.pop("Authorization", None)  # this one request must be anonymous
     r = client.post("/tenders", json={"tender_id": "T-NEW", "title": "Supply of X",
                                       "issuing_authority": "CPCL"})
     assert r.status_code == 401
@@ -241,6 +248,7 @@ def test_creating_a_tender_is_recorded_as_the_real_authenticated_officer(client,
 # --- dashboard ------------------------------------------------------------
 
 def test_dashboard_requires_authentication(client):
+    client.headers.pop("Authorization", None)  # this one request must be anonymous
     assert client.get("/dashboard").status_code == 401
 
 
@@ -332,6 +340,7 @@ def test_an_override_without_a_justification_is_refused(client, conn):
 
 def test_a_decision_without_a_token_is_refused(client):
     register(client, "T1", "A")
+    client.headers.pop("Authorization", None)  # registration needed auth; the decision must not have it
     r = client.post("/bidders/A/decision", params={"tender_id": "T1"},
                     json={"decision": "QUALIFY"})
     assert r.status_code == 401

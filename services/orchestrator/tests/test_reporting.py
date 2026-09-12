@@ -203,6 +203,10 @@ def test_unevaluated_bidder_yields_no_actions_with_the_same_honest_note():
 def client(conn):
     app.dependency_overrides[db] = lambda: conn
     with TestClient(app) as c:
+        # Default senior-officer header: every non-public route requires a
+        # login now. Per-request lower-role headers in gate tests override it.
+        from .conftest import auth_headers
+        c.headers.update(auth_headers(conn, username="fixture_senior"))
         yield c
     app.dependency_overrides.clear()
 

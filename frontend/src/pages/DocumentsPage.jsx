@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { BACKEND_URL, getAuditExport } from "../api";
+import { getAuditExport, openDocument } from "../api";
 import { useApi } from "../lib/useApi";
 import { documentsFrom, formatBytes, formatTimestamp, parseAuditExport } from "../lib/audit";
 import { DataTable } from "../ui/DataTable";
@@ -96,10 +96,10 @@ export default function DocumentsPage() {
           {
             key: "actions", header: "", align: "right",
             render: (d) => (
-              <a className="btn btn-sm btn-secondary" href={`${BACKEND_URL}/documents/${d.sha256}`}
-                 target="_blank" rel="noreferrer">
+              <button type="button" className="btn btn-sm btn-secondary"
+                      onClick={() => openDocument(d.sha256).catch((err) => alert(err.message))}>
                 View source
-              </a>
+              </button>
             ),
           },
         ]}
