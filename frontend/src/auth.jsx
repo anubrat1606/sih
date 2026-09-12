@@ -85,11 +85,25 @@ export function AuthProvider({ children }) {
 // Wrap any route element that needs a signed-in officer. Redirects to
 // /login and remembers where the visitor was headed, so a successful login
 // returns them there instead of dumping them on the tenders list.
+//
+// Found live (round 6, browser walkthrough, not caught by any API-level
+// check): a BIDDER session could render inside the officer shell entirely
+// -- officer sidebar, officer nav, wrong branding -- whenever
+// location.state.from pointed at an officer route (e.g. an officer was on
+// /bidders/X, signed out, and a bidder logged in from that same tab; the
+// stale `from` sent them there instead of /portal). The backend already
+// refuses every real call a bidder makes from there (require_role(OFFICER)
+// on every one), so nothing was ever exposed -- but the *page* a bidder
+// landed on was never one they should see the shell of. A session merely
+// existing was never actually "a signed-in officer," so this checks that
+// literally, the same reasoning RequireRole/current_bidder already apply
+// server-side and on the bidder side of this same file.
 export function RequireAuth({ children }) {
   const { session, checking } = useAuth();
   const location = useLocation();
   if (checking) return <div className="page"><p className="hint">Checking session…</p></div>;
   if (!session) return <Navigate to="/login" state={{ from: location }} replace />;
+  if (session.role === "BIDDER") return <Navigate to="/portal" replace />;
   return children;
 }
 
