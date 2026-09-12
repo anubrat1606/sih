@@ -1228,7 +1228,8 @@ def _bidder_submission_status(conn, tender_id: str, bidder_id: str) -> str:
         if cur.fetchone():
             return "DECIDED"
         cur.execute(
-            "SELECT 1 FROM proj_verdicts WHERE bidder_id=%s LIMIT 1", (bidder_id,))
+            "SELECT 1 FROM proj_verdicts WHERE bidder_id=%s AND tender_id=%s LIMIT 1",
+            (bidder_id, tender_id))
         if cur.fetchone():
             return "UNDER_EVALUATION"
         cur.execute(
