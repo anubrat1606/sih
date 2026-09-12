@@ -74,6 +74,25 @@ function useScrollReveal(rootRef) {
   }, [rootRef]);
 }
 
+const SECTION_IDS = ["how", "authorities", "principles", "roles"];
+
+// Which section is in view, for the header nav's current-location state.
+function useActiveSection() {
+  const [current, setCurrent] = useState(null);
+  useEffect(() => {
+    if (!("IntersectionObserver" in window)) return undefined;
+    const els = SECTION_IDS.map((id) => document.getElementById(id)).filter(Boolean);
+    const io = new IntersectionObserver((entries) => {
+      const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+      if (visible[0]) setCurrent(visible[0].target.id);
+      else if (window.scrollY < 200) setCurrent(null);
+    }, { rootMargin: "-35% 0px -55% 0px", threshold: [0, 0.2, 0.5] });
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
+  return current;
+}
+
 function ThemeToggle() {
   const [theme, setTheme] = useTheme();
   const next = { system: "light", light: "dark", dark: "system" };
@@ -88,7 +107,13 @@ function ThemeToggle() {
 }
 
 function AuthorityPills({ caps }) {
-  if (caps.loading) return <p className="lp-live-note" aria-live="polite">Checking which authorities are reachable…</p>;
+  if (caps.loading) {
+    return (
+      <div className="lp-skeleton-pills" role="status" aria-label="Checking which authorities are reachable">
+        {[0, 1, 2, 3].map((i) => <span key={i} className="lp-skeleton" />)}
+      </div>
+    );
+  }
   if (caps.error || !caps.data) {
     return <p className="lp-live-note">The verification service could not be reached just now, so no authority status is shown.</p>;
   }
@@ -143,6 +168,7 @@ export default function LandingPage() {
   const headerRef = useRef(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const caps = useApi(getCapabilities, []);
+  const currentSection = useActiveSection();
   useScrollReveal(rootRef);
 
   useEffect(() => {
@@ -181,10 +207,10 @@ export default function LandingPage() {
             </span>
           </a>
           <nav className={`lp-nav${menuOpen ? " is-open" : ""}`} id="lp-nav" aria-label="Sections" onClick={() => setMenuOpen(false)}>
-            <a href="#how">How it works</a>
-            <a href="#authorities">Authorities</a>
-            <a href="#principles">Principles</a>
-            <a href="#roles">Who uses it</a>
+            {[["how", "How it works"], ["authorities", "Authorities"], ["principles", "Principles"], ["roles", "Who uses it"]].map(([id, label]) => (
+              <a key={id} href={`#${id}`} className={currentSection === id ? "is-current" : undefined}
+                 aria-current={currentSection === id ? "location" : undefined}>{label}</a>
+            ))}
           </nav>
           <div className="lp-header-actions">
             <Link to="/login" className="btn btn-primary">Sign in</Link>
@@ -198,6 +224,8 @@ export default function LandingPage() {
 
       <main id="main">
         <section className="lp-hero" id="top">
+          <div className="lp-hero-sweep" aria-hidden="true" />
+          <div className="lp-hero-sweep-line" aria-hidden="true" />
           <AshokaChakra className="lp-hero-chakra" size={720} />
           <div className="lp-wrap lp-hero-grid">
             <div className="lp-hero-copy">

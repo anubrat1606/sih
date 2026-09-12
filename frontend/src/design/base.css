@@ -5,6 +5,11 @@
 *, *::before, *::after { box-sizing: border-box; }
 
 html { -webkit-text-size-adjust: 100%; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+
+/* Removes the legacy 300ms tap delay on touch devices without disabling
+ * pinch-zoom (which `user-scalable=no` would, and must not). */
+a, button, [role="button"], input, select, textarea, label { touch-action: manipulation; }
 
 body {
   margin: 0;
