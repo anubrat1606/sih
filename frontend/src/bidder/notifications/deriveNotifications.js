@@ -1,5 +1,10 @@
-// Turns the bidder-scoped API responses (already fetched elsewhere -- this
-// module makes no calls of its own) into a flat, sorted notification list.
+// Turns the bidder-scoped API responses into a flat, sorted notification
+// list. loadNotificationSource() is the one place that fetches them --
+// moved here during A6 integration so both NotificationsPage.jsx and
+// BidderShell.jsx's NotificationBell (which needs a live count on every
+// page, not just this one) share a single fetch implementation instead of
+// two copies drifting apart.
+import { getMyResult, getMySubmission, getMyTenders } from "../bidderApi";
 // Nothing here is delivered: there is no scheduler and no email/SMS
 // provider on this deployment (see bidderApi.js's getScheduledNotifications
 // and NotificationsPage.jsx). Every entry restates a fact the backend
@@ -90,4 +95,24 @@ export function deriveNotifications(myTenders, submissionsByTender = {}, results
   const dated = items.filter((i) => i.at).sort((a, b) => new Date(b.at) - new Date(a.at));
   const undated = items.filter((i) => !i.at);
   return [...dated, ...undated];
+}
+
+// Fetches exactly what deriveNotifications() needs and nothing more --
+// getMySubmission/getMyResult only for tenders this bidder is actually
+// registered on, since those endpoints are scoped to the caller's own
+// bidder_id and there is nothing to ask for on a tender not yet joined.
+export async function loadNotificationSource() {
+  const myTenders = await getMyTenders();
+  const registered = (myTenders.tenders || []).filter((t) => t.registered);
+  const [submissions, results] = await Promise.all([
+    Promise.all(registered.map((t) => getMySubmission(t.tender_id))),
+    Promise.all(registered.map((t) => getMyResult(t.tender_id))),
+  ]);
+  const submissionsByTender = {};
+  const resultsByTender = {};
+  registered.forEach((t, i) => {
+    submissionsByTender[t.tender_id] = submissions[i];
+    resultsByTender[t.tender_id] = results[i];
+  });
+  return { myTenders, submissionsByTender, resultsByTender };
 }

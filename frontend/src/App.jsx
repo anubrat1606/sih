@@ -6,6 +6,16 @@ import AppShell from "./shell/AppShell";
 import BidderShell from "./bidder/shell/BidderShell";
 import "./bidder/bidder.css";
 
+import BidderDashboardPage from "./bidder/pages/DashboardPage";
+import BidderTendersPage from "./bidder/pages/TendersPage";
+import BidderTenderDetailPage from "./bidder/pages/TenderDetailPage";
+import SubmissionsPage from "./bidder/pages/SubmissionsPage";
+import SubmitDocumentsPage from "./bidder/pages/SubmitDocumentsPage";
+import ResultsPage from "./bidder/pages/ResultsPage";
+import NotificationsPage from "./bidder/pages/NotificationsPage";
+import ProfilePage from "./bidder/pages/ProfilePage";
+import HelpPage from "./bidder/pages/HelpPage";
+
 import LoginPage from "./pages/LoginPage";
 import MissionControlPage from "./pages/MissionControlPage";
 import TendersPage from "./pages/TendersPage";
@@ -62,20 +72,25 @@ function OfficerRoutes() {
   );
 }
 
-// A bidder's whole tree, mounted at /portal/*. Empty-but-real for now (A2)
-// -- Rishika, Suhani, and Kevin's pages (round 6) get added here as their
-// own PRs land; nothing here fabricates a page that isn't built yet.
+// A bidder's whole tree, mounted at /portal/*. Round 6, A6: every page
+// Rishika (R1-R4), Suhani (S1-S3), and Kevin (K1-K3) built in their own
+// isolated files, wired together here in the one integration commit --
+// the same pattern used all through this project's earlier rounds.
 function PortalRoutes() {
   return (
     <RequireRole role="BIDDER">
       <BidderShell>
         <Routes>
-          <Route index element={
-            <div className="page">
-              <h1>Bidder Dashboard</h1>
-              <p className="hint">This round's pages are landing one PR at a time — check back shortly.</p>
-            </div>
-          } />
+          <Route index element={<BidderDashboardPage />} />
+          <Route path="tenders" element={<BidderTendersPage />} />
+          <Route path="tenders/:tenderId" element={<BidderTenderDetailPage />} />
+          <Route path="tenders/:tenderId/submit" element={<SubmitDocumentsPage />} />
+          <Route path="submissions" element={<SubmissionsPage />} />
+          <Route path="results" element={<ResultsPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="profile" element={<ProfilePage />} />
+          <Route path="help" element={<HelpPage />} />
+          <Route path="*" element={<Navigate to="/portal" replace />} />
         </Routes>
       </BidderShell>
     </RequireRole>
