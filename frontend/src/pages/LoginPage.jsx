@@ -14,8 +14,17 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (session) {
-    const home = session.role === "BIDDER" ? "/portal" : "/dashboard";
-    return <Navigate to={location.state?.from?.pathname || home} replace />;
+    const isBidder = session.role === "BIDDER";
+    const home = isBidder ? "/portal" : "/dashboard";
+    const from = location.state?.from?.pathname;
+    // Only honor "return to where you came from" if that place actually
+    // belongs to the portal this session's role gets. A stale `from` from
+    // a *different* person's earlier session in the same tab (officer
+    // signs out on an officer page, a bidder logs in next) must not send
+    // the new session to a page meant for the other role -- see
+    // RequireAuth's own comment in auth.jsx for how this showed up live.
+    const fromMatchesRole = from && (isBidder ? from.startsWith("/portal") : !from.startsWith("/portal"));
+    return <Navigate to={fromMatchesRole ? from : home} replace />;
   }
 
   async function onSubmit(e) {
