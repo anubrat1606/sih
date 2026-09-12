@@ -52,6 +52,23 @@ def pan_card_lines(
     return result
 
 
+def epan_lines(
+    pan: str = "AAAPA0000A",
+    name: str | None = "RAHUL KUMAR SHARMA",
+    father: str | None = "SURESH SHARMA",
+    dob: str | None = "15/08/1990",
+) -> list[str]:
+    """The text layer of an e-PAN whose labels are part of the card artwork:
+    no 'Name' / 'Date of Birth' lines at all, only the values in the card's
+    fixed order -- PAN, holder's name, father's name, date of birth.
+
+    Not a card -- filler PAN (structurally valid so the anchor validates),
+    synthetic names, synthetic date. Pass None to drop a line and simulate a
+    layout that does not match.
+    """
+    return [pan] + [v for v in (name, father, dob) if v is not None]
+
+
 def gst_certificate_lines(
     issue: str | None = "01/04/2023",
     expiry: str | None = "31/03/2028",
