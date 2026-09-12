@@ -31,7 +31,7 @@ from .adapters import Registry, VerificationRequest, failure_to_judgement
 from .adapters.base import Basis, LawfulBasis
 from .auth import Role, User, decode_token, issue_token, role_at_least
 from .auth import store as auth_store
-from .db import connect, migrate
+from .db import close_pool, connect, get_pool, migrate, open_pool
 from .decide import fuse_and_evaluate
 from .events import Actor, append, export_jsonl, verify_chain
 from .evidence import ProjectionResolver, rebuild_evidence
@@ -60,7 +60,11 @@ async def lifespan(_: FastAPI):
         # everywhere neither is configured -- see auth/store.py.
         auth_store.bootstrap_admin(conn)
         conn.close()
-    yield
+    open_pool()
+    try:
+        yield
+    finally:
+        close_pool()
 
 
 app = FastAPI(
@@ -129,11 +133,11 @@ DECOMPOSER = _build_decomposer()
 
 
 def db():
-    conn = connect()
-    try:
+    """A connection checked out of the pool for the request's duration, then
+    returned (not closed) -- see db.py. Tests bypass this entirely via
+    app.dependency_overrides[db], so this change has no effect on them."""
+    with get_pool().connection() as conn:
         yield conn
-    finally:
-        conn.close()
 
 
 # --- request models -----------------------------------------------------------
@@ -369,13 +373,20 @@ def dashboard(conn=Depends(db), user: User = Depends(current_user)) -> dict[str,
 
     Composes list_tenders/list_tender_bidders/capabilities rather than
     recomputing anything -- every number here traces back to a real read
-    model this system already serves elsewhere."""
+    model this system already serves elsewhere.
+
+    Projections are rebuilt once, up front, for the whole dashboard --
+    `rebuild_projections` folds the entire event log for every tenant in one
+    pass, so it was never tender-scoped work; running it again for every
+    tender in the system on every dashboard load was pure waste.
+    """
+    rebuild_projections(conn)
     tenders = list_tenders(conn)["tenders"]
     risk_counts = {"LOW": 0, "MEDIUM": 0, "HIGH": 0}
     bidder_count = 0
     flagged_bidder_count = 0
     for tender_id in tenders:
-        for b in list_tender_bidders(tender_id, conn)["bidders"]:
+        for b in _list_tender_bidders(tender_id, conn)["bidders"]:
             bidder_count += 1
             risk_counts[b["risk"]["level"]] += 1
             if b.get("collusion", {}).get("flagged"):
@@ -555,18 +566,26 @@ def verify(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
 
 
 @app.post("/bidders/{bidder_id}/documents", status_code=201)
-async def upload_document(bidder_id: str, tender_id: str,
-                          declared_type: str | None = None,
-                          file: UploadFile = File(...),
-                          conn=Depends(db)) -> dict[str, Any]:
+def upload_document(bidder_id: str, tender_id: str,
+                    declared_type: str | None = None,
+                    file: UploadFile = File(...),
+                    conn=Depends(db)) -> dict[str, Any]:
     """Ingest a document and extract what can be read from it deterministically.
 
     For a PDF with a text layer this needs no model at all: identifiers are
     located by grammar, validated structurally, and recorded with the exact page
     and region their characters occupy. A page with no text layer is recorded as
     EXTRACTION_FAILED with a stated reason -- never a guessed value.
+
+    Declared as a sync `def`, not `async def`: FastAPI runs a sync route in a
+    worker thread automatically, which is what actually needs to happen here --
+    `ingest_document` below does blocking DB calls and CPU-bound PDF parsing
+    (pdfplumber), and running that inside an `async def` would block the whole
+    event loop, freezing every other concurrent request for the duration of
+    every upload. `file.file.read()` is the sync counterpart to `await
+    file.read()` -- same bytes, off the event loop instead of blocking it.
     """
-    data = await file.read()
+    data = file.file.read()
     if not data:
         raise HTTPException(400, "empty upload")
     result = ingest_document(conn, tender_id=tender_id, bidder_id=bidder_id,
@@ -602,8 +621,8 @@ def get_document(document_sha256: str, conn=Depends(db)):
 
 
 @app.post("/tenders/{tender_id}/documents", status_code=201)
-async def upload_tender_document(tender_id: str, file: UploadFile = File(...),
-                                 conn=Depends(db), user: User = Depends(current_user)) -> dict[str, Any]:
+def upload_tender_document(tender_id: str, file: UploadFile = File(...),
+                           conn=Depends(db), user: User = Depends(current_user)) -> dict[str, Any]:
     """Ingest the tender's own source document -- the original notice/RFP PDF,
     as opposed to a bidder's compliance document (`POST /bidders/{id}/documents`).
 
@@ -625,8 +644,13 @@ async def upload_tender_document(tender_id: str, file: UploadFile = File(...),
     records who triggered it -- just in the payload, the same place
     `TENDER_CREATED` already puts `created_by`, not in the event's actor
     field.
+
+    Declared as a sync `def`, not `async def`, for the same reason as
+    `upload_document` above: `store_document` (disk I/O + hashing) and
+    `append` (a blocking DB call) both belong off the event loop, in
+    FastAPI's automatic worker thread for a sync route.
     """
-    data = await file.read()
+    data = file.file.read()
     if not data:
         raise HTTPException(400, "empty upload")
     digest, storage_ref = store_document(data, tender_id, file.filename or "tender.pdf")
@@ -801,18 +825,33 @@ def _fetch_verdict_rows(conn, bidder_id: str) -> list[dict[str, Any]]:
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
-@app.get("/tenders/{tender_id}/bidders")
-def list_tender_bidders(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
-    """Every bidder registered on this tender, each with the same summary
-    `GET /bidders/{id}` returns -- one round trip for a dashboard instead of
-    one per card."""
+def _list_tender_bidders(tender_id: str, conn) -> dict[str, Any]:
+    """The actual bidder-listing query, assuming projections are already
+    fresh -- split out so a caller that's about to list bidders across
+    several tenders in one request (the dashboard) can rebuild once for the
+    whole request instead of once per tender. `rebuild_projections` folds
+    the entire event log for every tenant, not just one, so it was never
+    actually tender-scoped work to begin with."""
     with conn.cursor() as cur:
         cur.execute(
             "SELECT bidder_id FROM bidder_in_tender WHERE tender_id=%s ORDER BY bidder_id",
             (tender_id,))
         bidder_ids = [row[0] for row in cur.fetchall()]
+
+    pack = active_pack(conn, tender_id)
+    clusters = {c.bidder_id: c for c in collusion_clusters(conn, tender_id)}
     return {"tender_id": tender_id,
-            "bidders": [get_bidder(bidder_id, tender_id, conn) for bidder_id in bidder_ids]}
+            "bidders": [_bidder_snapshot(bidder_id, tender_id, conn, pack=pack, cluster=clusters.get(bidder_id))
+                       for bidder_id in bidder_ids]}
+
+
+@app.get("/tenders/{tender_id}/bidders")
+def list_tender_bidders(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+    """Every bidder registered on this tender, each with the same summary
+    `GET /bidders/{id}` returns -- one round trip for a dashboard instead of
+    one per card."""
+    rebuild_projections(conn)
+    return _list_tender_bidders(tender_id, conn)
 
 
 @app.get("/tenders/{tender_id}/report")
@@ -841,25 +880,39 @@ def tender_blockers(tender_id: str, conn=Depends(db)) -> dict[str, Any]:
     """Across every bidder on this tender, which requirement is blocking the
     most of them -- aggregating each bidder's own Bid Autopsy. Useful for an
     officer deciding whether a requirement needs relaxing, or which document
-    type to chase bidders for. See reporting/blocker_summary.py."""
+    type to chase bidders for. See reporting/blocker_summary.py.
+
+    `list_tender_bidders` below already does one projection rebuild for the
+    whole tender; autopsy only needs the pack fetched once more here, not
+    once per bidder via the full `bidder_autopsy` route function.
+    """
     found = active_pack(conn, tender_id)
     if not found:
         raise HTTPException(409, f"no rule pack adopted for tender {tender_id}")
+    _, pack = found
     bidder_ids = list_tender_bidders(tender_id, conn)["bidders"]
-    autopsies = [bidder_autopsy(b["bidder_id"], tender_id, conn) for b in bidder_ids]
+    autopsies = [_bidder_autopsy_result(b["bidder_id"], tender_id, conn, pack=pack) for b in bidder_ids]
     return {"tender_id": tender_id, "blockers": blocker_summary(autopsies)}
 
 
-@app.get("/bidders/{bidder_id}")
-def get_bidder(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
-    rebuild_projections(conn)
+def _bidder_snapshot(bidder_id: str, tender_id: str, conn, *, pack, cluster) -> dict[str, Any]:
+    """The actual per-bidder computation behind `GET /bidders/{id}`, given the
+    tender-scoped inputs (the active rule pack, and this bidder's own
+    collusion cluster if any) already fetched by the caller.
+
+    Split out so `list_tender_bidders` can compute the active pack and every
+    bidder's cluster ONCE per request and pass them in here per bidder,
+    instead of every bidder on the tender separately re-querying the exact
+    same pack and re-running collusion_clusters() (whose result is identical
+    for all of them -- it's scoped to the tender, not the bidder). For a
+    tender with N bidders this was N redundant queries each; now it's one.
+    """
     verdicts = _fetch_verdict_rows(conn, bidder_id)
 
     resolver = ProjectionResolver(conn, bidder_id)
-    found = active_pack(conn, tender_id)
     obligations, bindings = {}, {}
-    if found:
-        for req in found[1]["requirements"]:
+    if pack:
+        for req in pack[1]["requirements"]:
             obligations[req["id"]] = Obligation(req["obligation"])
             bindings[req["id"]] = derived_bindings(req)
 
@@ -877,8 +930,6 @@ def get_bidder(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, An
             tier=max(tiers, key=lambda t: {Tier.A: 3, Tier.B: 2, Tier.C: 1}[t])
                  if tiers else None))
     metrics = compute(results, CONSTANTS)
-    clusters = {c.bidder_id: c for c in collusion_clusters(conn, tender_id)}
-    cluster = clusters.get(bidder_id)
     self_declared = tuple(
         r.requirement_id for r in results
         if r.obligation is Obligation.MANDATORY and r.tier is Tier.C)
@@ -906,7 +957,23 @@ def get_bidder(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, An
     }
 
 
+@app.get("/bidders/{bidder_id}")
+def get_bidder(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
+    rebuild_projections(conn)
+    pack = active_pack(conn, tender_id)
+    clusters = {c.bidder_id: c for c in collusion_clusters(conn, tender_id)}
+    return _bidder_snapshot(bidder_id, tender_id, conn, pack=pack, cluster=clusters.get(bidder_id))
+
+
 # --- reporting: Bid Autopsy and Compliance Repair -----------------------------
+
+def _bidder_autopsy_result(bidder_id: str, tender_id: str, conn, *, pack) -> dict[str, Any]:
+    """The per-bidder computation behind `GET /bidders/{id}/autopsy`, given
+    the tender's active pack already fetched by the caller -- see
+    `_bidder_snapshot` above for why this split exists."""
+    verdicts = _fetch_verdict_rows(conn, bidder_id)
+    return {"bidder_id": bidder_id, "tender_id": tender_id, **autopsy(pack, verdicts)}
+
 
 @app.get("/bidders/{bidder_id}/autopsy")
 def bidder_autopsy(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str, Any]:
@@ -918,8 +985,7 @@ def bidder_autopsy(bidder_id: str, tender_id: str, conn=Depends(db)) -> dict[str
         raise HTTPException(409, f"no rule pack adopted for tender {tender_id}")
     _, pack = found
     rebuild_projections(conn)
-    verdicts = _fetch_verdict_rows(conn, bidder_id)
-    return {"bidder_id": bidder_id, "tender_id": tender_id, **autopsy(pack, verdicts)}
+    return _bidder_autopsy_result(bidder_id, tender_id, conn, pack=pack)
 
 
 @app.get("/bidders/{bidder_id}/repair-plan")
