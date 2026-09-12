@@ -1,8 +1,16 @@
 import { useState } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../authContext";
+import { AshokaChakra, Icon } from "../landing/Emblems";
 import { useToast } from "../notifications";
 import { ErrorState } from "../ui/primitives";
+import "./login.css";
+
+const ASSURANCES = [
+  { icon: "shield", text: "PAN, GST and CIN are checked with the issuing authority, live." },
+  { icon: "chain", text: "Every action you take is an event on an append-only, hash-chained log." },
+  { icon: "ban", text: "Nothing here is simulated. Where an authority can't be reached, the answer is UNKNOWN with a reason." },
+];
 
 export default function LoginPage() {
   const { session, login } = useAuth();
@@ -10,6 +18,7 @@ export default function LoginPage() {
   const location = useLocation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -42,40 +51,66 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="page" style={{ display: "grid", placeItems: "center", minHeight: "calc(100vh - 64px)" }}>
-      <div className="card" style={{ width: "100%", maxWidth: 420 }}>
-        <div className="card-body">
-          <div className="page-eyebrow">Officer sign-in</div>
-          <h1 className="section-title" style={{ marginBottom: 6 }}>SATYAPRAMĀṆ</h1>
-          <p className="text-sm text-secondary" style={{ marginBottom: 20 }}>
-            There is no self-signup. Every officer account is created by an administrator, and every action
-            you take is recorded against your identity.
-          </p>
+    <div className="login">
+      <div className="lp-ribbon" aria-hidden="true"><span /><span /><span /></div>
+      <div className="login-grid">
+        <aside className="login-brand">
+          <AshokaChakra className="login-chakra" size={560} />
+          <Link to="/" className="login-back"><Icon name="arrow" size={16} className="login-back-icon" /> Back to overview</Link>
+          <div className="login-brand-body">
+            <p className="login-eyebrow">Tender compliance verification</p>
+            <h1 className="login-title">
+              <span lang="hi" className="login-devanagari">सत्यप्रमाण</span>
+              <span className="login-latin">Satyapramāṇ</span>
+            </h1>
+            <ul className="login-assurances">
+              {ASSURANCES.map((a) => (
+                <li key={a.icon}><span className="login-assurance-icon"><Icon name={a.icon} size={18} /></span><span>{a.text}</span></li>
+              ))}
+            </ul>
+          </div>
+          <p className="login-brand-foot">Prototype · Smart India Hackathon 2026 · SIH26100</p>
+        </aside>
 
-          <ErrorState error={error} />
+        <section className="login-panel" aria-labelledby="login-heading">
+          <div className="login-card">
+            <p className="page-eyebrow">Sign in</p>
+            <h2 id="login-heading" className="login-heading">Officers and bidders</h2>
+            <p className="login-lede">
+              Accounts are provisioned by an administrator — there is no self-signup. Your role decides where you land:
+              Mission Control for officers, the portal for bidders.
+            </p>
 
-          <form className="form" onSubmit={onSubmit}>
-            <div className="field">
-              <label htmlFor="login-user">Username</label>
-              <input id="login-user" value={username} autoComplete="username" required
-                     onChange={(e) => setUsername(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="login-pass">Password</label>
-              <input id="login-pass" type="password" value={password} autoComplete="current-password" required
-                     onChange={(e) => setPassword(e.target.value)} />
-            </div>
-            <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
-              {submitting ? "Signing in…" : "Sign in"}
-            </button>
-          </form>
-        </div>
-        <div className="card-footer">
-          <p className="text-xs text-muted">
-            Sessions are signed and expire. Nothing you see in this application is simulated — where an
-            authority cannot be reached, the answer is UNKNOWN with a stated reason.
-          </p>
-        </div>
+            <ErrorState error={error} />
+
+            <form className="form login-form" onSubmit={onSubmit}>
+              <div className="field">
+                <label htmlFor="login-user">Username</label>
+                <input id="login-user" value={username} autoComplete="username" required autoFocus
+                       onChange={(e) => setUsername(e.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor="login-pass">Password</label>
+                <div className="login-password">
+                  <input id="login-pass" type={showPassword ? "text" : "password"} value={password}
+                         autoComplete="current-password" required onChange={(e) => setPassword(e.target.value)} />
+                  <button type="button" className="login-password-toggle" onClick={() => setShowPassword((v) => !v)}
+                          aria-pressed={showPassword} aria-label={showPassword ? "Hide password" : "Show password"}>
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
+              </div>
+              <button type="submit" className="btn btn-primary btn-block login-submit" disabled={submitting}>
+                {submitting ? "Signing in…" : "Sign in"}
+              </button>
+            </form>
+
+            <p className="login-foot text-xs text-muted">
+              Sessions are signed and expire. Every action is recorded against your identity — a decision is never
+              attributed to a client-supplied name.
+            </p>
+          </div>
+        </section>
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { getCapabilities, listTenders } from "../api";
 import { roleAtLeast, useAuth } from "../authContext";
+import { useTheme } from "../lib/useTheme";
 import { useToast } from "../notifications";
 
 // The shell: a fixed navy sidebar, a quiet top bar, and the working area.
@@ -23,19 +24,6 @@ const NAV = [
 function initials(name) {
   if (!name) return "?";
   return name.trim().slice(0, 2).toUpperCase();
-}
-
-function useTheme() {
-  const [theme, setTheme] = useState(() => {
-    try { return localStorage.getItem("satyapramana-theme") || "system"; } catch { return "system"; }
-  });
-  function apply(next) {
-    setTheme(next);
-    if (next === "system") delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = next;
-    try { localStorage.setItem("satyapramana-theme", next); } catch { /* storage blocked */ }
-  }
-  return [theme, apply];
 }
 
 // Global search over the tender list the session has already loaded — a

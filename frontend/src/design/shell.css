@@ -190,7 +190,8 @@
 
 /* ---- signed out -------------------------------------------------------- */
 
-.signed-out { min-height: 100vh; display: flex; flex-direction: column; background: var(--color-bg); }
+.signed-out { min-height: 100dvh; display: flex; flex-direction: column; background: var(--color-bg); }
+.signed-out > main { flex: 1 1 auto; display: flex; flex-direction: column; }
 .signed-out-header {
   display: flex; align-items: center; gap: var(--space-4);
   padding: var(--space-4) var(--space-6);
@@ -200,6 +201,7 @@
 .signed-out-note {
   margin-left: auto; font-size: var(--text-xs); color: var(--color-text-on-dark-muted);
 }
+@media (max-width: 720px) { .signed-out-note { display: none; } }
 
 /* ---- mobile ------------------------------------------------------------ */
 

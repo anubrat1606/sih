@@ -142,11 +142,25 @@
   --duration-base: 160ms;
   --duration-slow: 220ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---- national colours — public landing and sign-in surfaces only ----
+   * Flag Code of India values. The flag's bands are fixed and never
+   * themed; only the chakra's ink swaps in dark so the emblem stays legible
+   * on a dark ground. Never used as verdict, risk or action colour. */
+  --india-saffron: #ff9933;
+  --india-white: #ffffff;
+  --india-green: #138808;
+  --india-navy: #000080;
+  --chakra-ink: var(--india-navy);
+
+  --font-landing-display: "Lexend", var(--font-text);
+  --font-devanagari: "Noto Serif Devanagari", "Kohinoor Devanagari", "Devanagari MT", "Nirmala UI", serif;
 }
 
 /* System preference: dark, when the viewer hasn't chosen explicitly. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    --chakra-ink: #b9c9e0;
     --color-bg: #0d1520;
     --color-surface: #141d2b;
     --color-surface-sunken: #101825;
@@ -193,6 +207,7 @@
 
 /* Explicit choice wins in both directions, regardless of system setting. */
 :root[data-theme="dark"] {
+  --chakra-ink: #b9c9e0;
   --color-bg: #0d1520;
   --color-surface: #141d2b;
   --color-surface-sunken: #101825;
