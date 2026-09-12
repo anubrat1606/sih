@@ -1,0 +1,245 @@
+/* SATYAPRAMĀṆ design tokens — the single typed source for every colour,
+ * space, radius, shadow, motion timing and type size in this application.
+ * No hard-coded hex belongs anywhere else.
+ *
+ * Visual character: a government procurement command centre. Institutional
+ * navy, procurement blue for action, white surfaces on a cool-gray ground,
+ * thin borders, restrained shadows. No gradients, no glassmorphism, no glow,
+ * no decorative colour. Density and alignment carry the seriousness, not
+ * ornament.
+ *
+ * Light is the default (daylight office use); dark is a first-class second
+ * theme, not a filter over the first. `prefers-color-scheme` picks the
+ * default; `[data-theme]` on <html> is the explicit override.
+ */
+
+:root {
+  /* ---- brand: institutional navy ------------------------------------- */
+  --navy-900: #071a2f;
+  --navy-800: #0a2540;
+  --navy-700: #0f3054;
+  --navy-600: #143d6b;
+  --navy-100: #e7edf5;
+
+  /* ---- action: procurement blue (links, primary buttons) ------------- */
+  --blue-700: #134a87;
+  --blue-600: #1b5faa;
+  --blue-500: #2472c8;
+  --blue-100: #e8f1fb;
+
+  /* ---- surfaces & ground --------------------------------------------- */
+  --color-bg: #f4f6f9;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #fafbfc;
+  --color-surface-inverse: var(--navy-800);
+
+  --color-border: #e3e8ef;
+  --color-border-strong: #cdd5e0;
+  --color-border-focus: var(--blue-600);
+
+  /* ---- type ----------------------------------------------------------- */
+  --color-text: #0f1b2d;
+  --color-text-secondary: #566578;
+  --color-text-muted: #7b8798;
+  --color-text-on-dark: #ffffff;
+  --color-text-on-dark-muted: #a9bdd4;
+
+  --color-accent: var(--blue-600);
+  --color-accent-hover: var(--blue-700);
+  --color-accent-bg: var(--blue-100);
+  --color-brand: var(--navy-800);
+  --color-brand-bg: var(--navy-100);
+
+  /* ---- the locked four-state verdict scale ---------------------------
+   * PASS / FAIL / PARTIAL / UNKNOWN only. Never reused decoratively.
+   * Every pair meets WCAG AA (>= 4.5:1) for normal text on its own
+   * background. Colour is never the only carrier of meaning — every badge
+   * renders a glyph and a text label too (ui/primitives.jsx).
+   */
+  --status-pass-fg: #14713d;
+  --status-pass-bg: #e7f4ec;
+  --status-pass-border: #b5ddc5;
+
+  --status-fail-fg: #b3261e;
+  --status-fail-bg: #fdecea;
+  --status-fail-border: #f2c0bb;
+
+  --status-partial-fg: #93590a;
+  --status-partial-bg: #fdf3e2;
+  --status-partial-border: #edd3a4;
+
+  --status-unknown-fg: #566578;
+  --status-unknown-bg: #eef1f5;
+  --status-unknown-border: #d5dce5;
+
+  /* ---- risk: a distinct 3-value scale, never conflated with verdicts -- */
+  --risk-low-fg: var(--status-pass-fg);
+  --risk-low-bg: var(--status-pass-bg);
+  --risk-medium-fg: var(--status-partial-fg);
+  --risk-medium-bg: var(--status-partial-bg);
+  --risk-high-fg: var(--status-fail-fg);
+  --risk-high-bg: var(--status-fail-bg);
+
+  /* Evidence highlight drawn over a PDF page — translucent so the page
+   * text underneath stays readable through the box. */
+  --highlight-overlay-bg: rgba(179, 38, 30, 0.13);
+  --highlight-overlay-border: #b3261e;
+
+  /* ---- type scale ------------------------------------------------------
+   * One text family (Inter), one tabular mono (JetBrains Mono). Statutory
+   * identifiers, dates, amounts and scores are ALWAYS mono with tabular
+   * figures, so a column of GSTINs or scores aligns down the column.
+   */
+  --font-text: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-text);
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 28px;
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* ---- spacing (4px base) ---------------------------------------------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  /* ---- radius / elevation ----------------------------------------------
+   * 6px is the default, 8-10px for cards and dialogs. Elevation is a
+   * hairline border plus a short, low-contrast shadow — never a heavy drop
+   * shadow, never a glow. */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-full: 999px;
+
+  --shadow-xs: 0 1px 2px rgba(15, 27, 45, 0.05);
+  --shadow-sm: 0 1px 3px rgba(15, 27, 45, 0.07), 0 1px 2px rgba(15, 27, 45, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 27, 45, 0.09);
+  --shadow-lg: 0 12px 32px rgba(15, 27, 45, 0.16);
+
+  /* ---- layout ---------------------------------------------------------- */
+  --sidebar-width: 248px;
+  --topbar-height: 56px;
+  --content-max: 1440px;
+
+  /* ---- motion: functional only, nothing decorative, nothing looping ---- */
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --duration-slow: 220ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* System preference: dark, when the viewer hasn't chosen explicitly. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #0d1520;
+    --color-surface: #141d2b;
+    --color-surface-sunken: #101825;
+    --color-surface-inverse: #0a1220;
+
+    --color-border: #263244;
+    --color-border-strong: #364357;
+
+    --color-text: #e6ecf3;
+    --color-text-secondary: #9fb0c4;
+    --color-text-muted: #7d8fa6;
+
+    --color-accent: #62a0e0;
+    --color-accent-hover: #86b8ea;
+    --color-accent-bg: #16304c;
+    --color-brand: #0a1220;
+    --color-brand-bg: #16243a;
+
+    --status-pass-fg: #5cc98d;
+    --status-pass-bg: #10301f;
+    --status-pass-border: #1f5638;
+
+    --status-fail-fg: #f38b82;
+    --status-fail-bg: #35140f;
+    --status-fail-border: #6a2a22;
+
+    --status-partial-fg: #e0aa54;
+    --status-partial-bg: #33260c;
+    --status-partial-border: #61471a;
+
+    --status-unknown-fg: #9fb0c4;
+    --status-unknown-bg: #1c2837;
+    --status-unknown-border: #2e3c4f;
+
+    --highlight-overlay-bg: rgba(243, 139, 130, 0.18);
+    --highlight-overlay-border: #f38b82;
+
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* Explicit choice wins in both directions, regardless of system setting. */
+:root[data-theme="dark"] {
+  --color-bg: #0d1520;
+  --color-surface: #141d2b;
+  --color-surface-sunken: #101825;
+  --color-surface-inverse: #0a1220;
+
+  --color-border: #263244;
+  --color-border-strong: #364357;
+
+  --color-text: #e6ecf3;
+  --color-text-secondary: #9fb0c4;
+  --color-text-muted: #7d8fa6;
+
+  --color-accent: #62a0e0;
+  --color-accent-hover: #86b8ea;
+  --color-accent-bg: #16304c;
+  --color-brand: #0a1220;
+  --color-brand-bg: #16243a;
+
+  --status-pass-fg: #5cc98d;
+  --status-pass-bg: #10301f;
+  --status-pass-border: #1f5638;
+
+  --status-fail-fg: #f38b82;
+  --status-fail-bg: #35140f;
+  --status-fail-border: #6a2a22;
+
+  --status-partial-fg: #e0aa54;
+  --status-partial-bg: #33260c;
+  --status-partial-border: #61471a;
+
+  --status-unknown-fg: #9fb0c4;
+  --status-unknown-bg: #1c2837;
+  --status-unknown-border: #2e3c4f;
+
+  --highlight-overlay-bg: rgba(243, 139, 130, 0.18);
+  --highlight-overlay-border: #f38b82;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
+}

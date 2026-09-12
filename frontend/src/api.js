@@ -144,6 +144,14 @@ export const decomposeTender = (tenderId, documentSha256) =>
 export const getAuditExport = () => call("/audit/export");
 export const getAuditVerify = () => call("/audit/verify");
 
+// The Compliance Dossier and the tender-wide JSON report: both live backend
+// features that had no frontend caller at all before the Reports area.
+export const getBidderDossier = (bidderId, tenderId) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/dossier?${new URLSearchParams({ tender_id: tenderId })}`);
+
+export const getTenderReport = (tenderId) =>
+  call(`/tenders/${encodeURIComponent(tenderId)}/report`);
+
 export const getTenderReportCsv = (tenderId) =>
   call(`/tenders/${encodeURIComponent(tenderId)}/report/csv`);
 

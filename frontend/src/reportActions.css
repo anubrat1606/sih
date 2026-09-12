@@ -1,4 +1,0 @@
-/* <ReportActions> -- round 4, R4. */
-.report-actions { margin: var(--space-4) 0; }
-.report-actions-row { display: flex; gap: var(--space-3); flex-wrap: wrap; }
-.report-actions table { margin-top: var(--space-3); }
