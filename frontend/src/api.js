@@ -63,9 +63,15 @@ export const login = (username, password) =>
 
 export const getMe = () => call("/auth/me");
 
-export const createOfficerAccount = (username, password, displayName, role) =>
+export const createOfficerAccount = (username, password, displayName, role, bidderId) =>
   call("/auth/users", { method: "POST",
-    ...json({ username, password, display_name: displayName, role }) });
+    ...json({ username, password, display_name: displayName, role,
+             bidder_id: bidderId || undefined }) });
+
+// Every registered bidder_id and which tender(s) it's on -- populates the
+// bidder-account form's select (round 6, A5) so an admin picks a real,
+// existing bidder rather than typing an id that might not exist.
+export const listBidderIds = () => call("/bidder-ids");
 
 export const listTenders = () => call("/tenders");
 

@@ -239,3 +239,21 @@ def test_result_preview_requires_an_officer(client, conn):
     register_and_adopt(client, conn, "A")
     r = client.get("/tenders/T1/bidders/A/result-preview", headers=bidder_headers(conn, "A"))
     assert r.status_code == 403
+
+
+# --- bidder-id lookup for the admin's account-creation form -------------------
+
+def test_bidder_ids_lists_every_bidder_with_its_tenders(client, conn):
+    register_and_adopt(client, conn, "A")
+    client.post("/tenders/T2/bidders", json={"bidder_id": "B"})
+    r = client.get("/bidder-ids")
+    assert r.status_code == 200
+    by_id = {row["bidder_id"]: row["tender_ids"] for row in r.json()["bidders"]}
+    assert by_id["A"] == ["T1"]
+    assert by_id["B"] == ["T2"]
+
+
+def test_bidder_ids_requires_an_officer(client, conn):
+    register_and_adopt(client, conn, "A")
+    r = client.get("/bidder-ids", headers=bidder_headers(conn, "A"))
+    assert r.status_code == 403

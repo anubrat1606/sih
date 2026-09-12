@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createOfficerAccount, getCapabilities } from "../api";
+import { createOfficerAccount, getCapabilities, listBidderIds } from "../api";
 import { roleAtLeast, useAuth } from "../authContext";
 import { useApi } from "../lib/useApi";
 import { useToast } from "../notifications";
@@ -8,6 +8,7 @@ import {
 } from "../ui/primitives";
 
 const ROLES = [
+  { value: "BIDDER", label: "Bidder", note: "Signs in as one specific registered bidder — their own tenders, requirements, submissions and results only." },
   { value: "OFFICER", label: "Officer", note: "Register bidders, upload documents, record QUALIFY / DISQUALIFY decisions." },
   { value: "SENIOR_OFFICER", label: "Senior officer", note: "Everything an officer can do, plus adopt rule packs and override verdicts." },
   { value: "ADMIN", label: "Administrator", note: "Everything, plus creating officer accounts." },
@@ -18,8 +19,9 @@ export default function SettingsPage() {
   const { notify } = useToast();
   const isAdmin = roleAtLeast(session.role, "ADMIN");
   const capabilities = useApi(() => getCapabilities(), []);
+  const bidderIds = useApi(() => listBidderIds(), [], { skip: !isAdmin });
 
-  const [form, setForm] = useState({ username: "", password: "", display_name: "", role: "OFFICER" });
+  const [form, setForm] = useState({ username: "", password: "", display_name: "", role: "OFFICER", bidder_id: "" });
   const [error, setError] = useState(null);
   const [created, setCreated] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -30,9 +32,9 @@ export default function SettingsPage() {
     setCreated(null);
     setSubmitting(true);
     try {
-      const user = await createOfficerAccount(form.username, form.password, form.display_name, form.role);
+      const user = await createOfficerAccount(form.username, form.password, form.display_name, form.role, form.bidder_id);
       setCreated(user);
-      setForm({ username: "", password: "", display_name: "", role: "OFFICER" });
+      setForm({ username: "", password: "", display_name: "", role: "OFFICER", bidder_id: "" });
       notify(`Created account for ${user.display_name}.`, { kind: "success" });
     } catch (err) {
       setError(err);
@@ -109,11 +111,39 @@ export default function SettingsPage() {
                 </div>
                 <div className="field">
                   <label htmlFor="a-role">Role</label>
-                  <select id="a-role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                  <select id="a-role" value={form.role}
+                          onChange={(e) => setForm({ ...form, role: e.target.value, bidder_id: "" })}>
                     {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
                   <span className="field-hint">{ROLES.find((r) => r.value === form.role)?.note}</span>
                 </div>
+                {form.role === "BIDDER" && (
+                  <div className="field">
+                    <label htmlFor="a-bidder">Bidder</label>
+                    {bidderIds.loading ? (
+                      <p className="text-sm text-secondary">Loading registered bidders…</p>
+                    ) : bidderIds.error ? (
+                      <ErrorState error={bidderIds.error} onRetry={bidderIds.reload} />
+                    ) : !bidderIds.data.bidders.length ? (
+                      <p className="text-sm text-secondary">
+                        No bidder is registered on any tender yet — register one first.
+                      </p>
+                    ) : (
+                      <select id="a-bidder" value={form.bidder_id} required
+                              onChange={(e) => setForm({ ...form, bidder_id: e.target.value })}>
+                        <option value="">— pick a registered bidder —</option>
+                        {bidderIds.data.bidders.map((b) => (
+                          <option key={b.bidder_id} value={b.bidder_id}>
+                            {b.bidder_id} ({b.tender_ids.join(", ")})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <span className="field-hint">
+                      This account signs in as this bidder — their own tenders and results only.
+                    </span>
+                  </div>
+                )}
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
                   {submitting ? "Creating…" : "Create account"}
                 </button>
@@ -121,8 +151,9 @@ export default function SettingsPage() {
               {created && (
                 <Callout strong>
                   Created {created.display_name} (<span className="mono">{created.username}</span>),
-                  {" "}{created.role.replace("_", " ")}. Share the temporary password with them directly —
-                  it is not shown again here.
+                  {" "}{created.role.replace("_", " ")}
+                  {created.bidder_id && <> as bidder <span className="mono">{created.bidder_id}</span></>}.
+                  {" "}Share the temporary password with them directly — it is not shown again here.
                 </Callout>
               )}
             </Card>
