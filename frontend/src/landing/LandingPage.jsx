@@ -5,6 +5,7 @@ import { useApi } from "../lib/useApi";
 import { useTheme } from "../lib/useTheme";
 import { AshokaChakra, EmblemRoundel, Icon, IndianFlag } from "./Emblems";
 import Pipeline from "./Pipeline";
+import Tilt3D from "./Tilt3D";
 import "./landing.css";
 
 // The public front door. Signed-out visitors only — App.jsx sends any live
@@ -250,7 +251,7 @@ export default function LandingPage() {
               </div>
             </div>
             <div className="lp-hero-visual">
-              <Pipeline />
+              <Tilt3D strength={7} lift={14}><Pipeline /></Tilt3D>
             </div>
           </div>
         </section>
@@ -260,13 +261,14 @@ export default function LandingPage() {
             <h2 id="lp-verdicts-h" className="lp-visually-hidden">The four verdicts</h2>
             <div className="lp-verdict-grid">
               {VERDICTS.map((v, i) => (
-                <div key={v.id} className={`lp-verdict lp-verdict-${v.id.toLowerCase()} lp-reveal`} data-delay={i}>
+                <Tilt3D as="div" key={v.id} strength={12} lift={10}
+                        className={`lp-verdict lp-verdict-${v.id.toLowerCase()} lp-reveal`} data-delay={i}>
                   <span className="lp-verdict-glyph" aria-hidden="true">{v.glyph}</span>
                   <div>
                     <h3 className="mono">{v.id}</h3>
                     <p>{v.text}</p>
                   </div>
-                </div>
+                </Tilt3D>
               ))}
             </div>
           </div>
@@ -281,13 +283,13 @@ export default function LandingPage() {
             </div>
             <ol className="lp-steps">
               {STEPS.map((s, i) => (
-                <li key={s.title} className="lp-step lp-reveal" data-delay={i}>
+                <Tilt3D as="li" key={s.title} strength={9} lift={12} className="lp-step lp-reveal" data-delay={i}>
                   <span className="lp-step-num mono">0{i + 1}</span>
                   <span className="lp-step-icon"><Icon name={s.icon} size={20} /></span>
                   <h3>{s.title}</h3>
                   <p>{s.text}</p>
                   <span className="lp-step-actor">{s.actor}</span>
-                </li>
+                </Tilt3D>
               ))}
             </ol>
           </div>
@@ -312,11 +314,11 @@ export default function LandingPage() {
             </div>
             <div className="lp-principles">
               {PRINCIPLES.map((p, i) => (
-                <article key={p.title} className="lp-principle lp-reveal" data-delay={i}>
+                <Tilt3D as="article" key={p.title} strength={8} lift={14} className="lp-principle lp-reveal" data-delay={i}>
                   <span className="lp-principle-icon"><Icon name={p.icon} size={22} /></span>
                   <h3>{p.title}</h3>
                   <p>{p.text}</p>
-                </article>
+                </Tilt3D>
               ))}
             </div>
           </div>
@@ -343,14 +345,14 @@ export default function LandingPage() {
 
         <section className="lp-cta">
           <div className="lp-wrap">
-            <div className="lp-cta-inner lp-reveal">
+            <Tilt3D strength={4} lift={10} glare={false} className="lp-cta-inner lp-reveal">
               <AshokaChakra className="lp-cta-chakra" size={320} />
               <div>
                 <h2>Sign in to the workspace your role gets.</h2>
                 <p>Officers land on Mission Control and the review queue. Bidders land on their portal: tenders, requirements, submissions and results. Same sign-in, different door.</p>
               </div>
               <Link to="/login" className="btn btn-primary btn-lg">Sign in <Icon name="arrow" size={16} /></Link>
-            </div>
+            </Tilt3D>
           </div>
         </section>
       </main>

@@ -120,10 +120,17 @@
 @keyframes lp-flow { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
 .lp-hero-chakra {
   position: absolute; right: -6%; top: 50%; translate: 0 -50%; z-index: -1;
-  width: min(60vw, 720px); height: auto; color: var(--chakra-ink); opacity: 0.06; pointer-events: none;
-  animation: lp-spin 140s linear infinite;
+  width: min(60vw, 720px); height: auto; color: var(--chakra-ink); opacity: 0.07; pointer-events: none;
+  animation: lp-spin-3d 42s linear infinite;
+  filter: drop-shadow(0 30px 40px rgba(0, 0, 0, 0.12));
 }
-@keyframes lp-spin { to { transform: rotate(360deg); } }
+/* A true 3D turn, not a flat rotate -- perspective() foreshortens the disc
+ * into an ellipse as it turns, the same way a coin spinning on a table
+ * reads as three-dimensional. Hardware-accelerated, one element, no canvas. */
+@keyframes lp-spin-3d {
+  from { transform: perspective(1400px) rotateY(0deg); }
+  to   { transform: perspective(1400px) rotateY(360deg); }
+}
 .lp-hero-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: clamp(28px, 5vw, 64px); align-items: center; }
 
 .lp-eyebrow { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-xs); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-secondary); }
@@ -220,6 +227,29 @@
 .lp-fade-in { animation: lp-fade 320ms var(--ease-standard) both; }
 @keyframes lp-fade { from { opacity: 0; transform: translateY(4px); } }
 
+/* ---- 3D tilt (Tilt3D.jsx) ----------------------------------------------
+ * The wrapped element's own visual styles (border/shadow/radius) are
+ * untouched -- this only adds the mechanics: a smoothed transform, a
+ * stacking context for the glare layer, and the glare itself, a soft
+ * highlight that follows the pointer to sell the illusion of a lit,
+ * physical surface catching the light as it tilts. */
+.tilt-3d {
+  position: relative;
+  transform: perspective(900px) rotateX(0deg) rotateY(0deg) translateZ(0px);
+  transition: transform 260ms cubic-bezier(0.22, 0.9, 0.3, 1), box-shadow 260ms ease;
+  will-change: transform;
+}
+.tilt-3d-glare::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 2;
+  background: radial-gradient(circle at var(--tilt-glare-x, 50%) var(--tilt-glare-y, 50%),
+              rgba(255, 255, 255, 0.5), transparent 45%);
+  opacity: var(--tilt-glare-o, 0);
+  transition: opacity 260ms ease;
+  mix-blend-mode: overlay;
+}
+:root[data-theme="dark"] .tilt-3d-glare::after,
+:root:not([data-theme="light"]) .tilt-3d-glare::after { mix-blend-mode: soft-light; }
+
 /* ---- verdict strip ---------------------------------------------------- */
 .lp-verdicts { padding-block: clamp(28px, 4vw, 44px); }
 .lp-verdict-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--space-4); }
@@ -302,7 +332,7 @@
   padding: clamp(32px, 5vw, 56px); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-6); align-items: center;
 }
 .lp-cta-inner::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: linear-gradient(180deg, var(--india-saffron) 0 33.3%, var(--india-white) 33.3% 66.6%, var(--india-green) 66.6%); }
-.lp-cta-chakra { position: absolute; right: -70px; bottom: -110px; width: 340px; height: auto; color: #fff; opacity: 0.08; z-index: -1; animation: lp-spin 120s linear infinite; }
+.lp-cta-chakra { position: absolute; right: -70px; bottom: -110px; width: 340px; height: auto; color: #fff; opacity: 0.09; z-index: -1; animation: lp-spin-3d 30s linear infinite reverse; }
 .lp-cta h2 { font-family: var(--font-landing-display); color: inherit; font-size: clamp(24px, 3vw, 34px); font-weight: 700; letter-spacing: -0.02em; text-wrap: balance; line-height: 1.15; }
 .lp-cta p { margin-top: var(--space-3); color: var(--color-text-on-dark-muted); max-width: 56ch; font-size: var(--text-md); line-height: 1.6; }
 .lp-cta .btn-primary { background: #fff; color: var(--navy-800); border-color: #fff; }
@@ -361,4 +391,5 @@
   .landing.js-reveal .lp-reveal { opacity: 1; transform: none; transition: none; }
   .lp-fade-in { animation: none; }
   .lp-step, .lp-principle, .landing .btn, .lp-link-arrow svg, .lp-pipe-fill { transition: none; }
+  .tilt-3d { transform: none !important; transition: none; }
 }
