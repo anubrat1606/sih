@@ -312,6 +312,51 @@ def create_officer_account(body: CreateUserIn, conn=Depends(db),
     return out
 
 
+def _user_out(user: User) -> dict[str, Any]:
+    out = {"username": user.username, "display_name": user.display_name,
+           "role": user.role.value, "disabled": user.disabled}
+    if user.bidder_id:
+        out["bidder_id"] = user.bidder_id
+    if user.created_at:
+        out["created_at"] = user.created_at.isoformat()
+    return out
+
+
+@app.get("/auth/users")
+def list_accounts(conn=Depends(db),
+                  admin: User = Depends(require_role(Role.ADMIN))) -> dict[str, Any]:
+    """ADMIN-only account directory -- every account this deployment has,
+    provisioned or bidder, disabled or not. There is no path to this list
+    for anyone below ADMIN; even a senior officer manages nobody."""
+    return {"users": [_user_out(u) for u in auth_store.list_users(conn)]}
+
+
+@app.post("/auth/users/{username}/disable", status_code=200)
+def disable_account(username: str, conn=Depends(db),
+                    admin: User = Depends(require_role(Role.ADMIN))) -> dict[str, Any]:
+    """A disabled account's session is already refused at current_user() and
+    a fresh login already fails at verify_login() -- both existed before
+    this route ever gave an admin a way to flip the bit. An admin disabling
+    their own only account would strand this deployment with no way back
+    in (no self-signup, no password-recovery email), so that one case is
+    refused rather than left as a footgun."""
+    if username == admin.username:
+        raise HTTPException(422, "you cannot disable your own account")
+    user = auth_store.set_disabled(conn, username, True)
+    if not user:
+        raise HTTPException(404, f"no account {username!r}")
+    return _user_out(user)
+
+
+@app.post("/auth/users/{username}/enable", status_code=200)
+def enable_account(username: str, conn=Depends(db),
+                   admin: User = Depends(require_role(Role.ADMIN))) -> dict[str, Any]:
+    user = auth_store.set_disabled(conn, username, False)
+    if not user:
+        raise HTTPException(404, f"no account {username!r}")
+    return _user_out(user)
+
+
 # --- health and honest capability reporting -----------------------------------
 
 @app.get("/health")

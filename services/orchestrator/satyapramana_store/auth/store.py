@@ -55,6 +55,40 @@ def verify_login(conn, username: str, password: str) -> User | None:
                 role=Role(role), disabled=disabled, bidder_id=bidder_id)
 
 
+def list_users(conn) -> list[User]:
+    """Every account, oldest first. Ordinary CRUD read against `users` --
+    see sql/005_users.sql's own comment for why this table is deliberately
+    not part of the append-only event log. Admin-only at the route level
+    (app.py); nothing here checks a caller's role."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT id, username, display_name, role, disabled, bidder_id, created_at
+               FROM users ORDER BY created_at""")
+        rows = cur.fetchall()
+    return [User(id=uid, username=uname, display_name=display_name, role=Role(role),
+                 disabled=disabled, bidder_id=bidder_id, created_at=created_at)
+            for uid, uname, display_name, role, disabled, bidder_id, created_at in rows]
+
+
+def set_disabled(conn, username: str, disabled: bool) -> User | None:
+    """Flips the account's `disabled` bit -- an ordinary UPDATE, not an
+    event: see the module docstring for why this table sits outside the
+    evidentiary log. Returns None if no such account exists, exactly like
+    get_user_by_username, so the caller (an admin-only route) can 404
+    rather than assume success."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE users SET disabled=%s WHERE username=%s
+               RETURNING id, username, display_name, role, disabled, bidder_id, created_at""",
+            (disabled, username))
+        row = cur.fetchone()
+    if not row:
+        return None
+    uid, uname, display_name, role, disabled, bidder_id, created_at = row
+    return User(id=uid, username=uname, display_name=display_name, role=Role(role),
+                disabled=disabled, bidder_id=bidder_id, created_at=created_at)
+
+
 def bootstrap_admin(conn) -> User | None:
     """Creates the first ADMIN account from environment variables,
     idempotently, if one with that username doesn't already exist.

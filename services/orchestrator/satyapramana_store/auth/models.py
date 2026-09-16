@@ -17,6 +17,7 @@ is backwards for "must literally be a bidder acting as themselves." See
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 
 
@@ -45,3 +46,7 @@ class User:
     #: as. None for every other role, always, even if somehow set in the
     #: database; app.py's current_bidder is the only place this is trusted.
     bidder_id: str | None = None
+    #: Only populated by list_users() -- every other constructor (login,
+    #: token lookup, create) has no use for it and leaves it None, since
+    #: nothing about "when was this account created" belongs in a session.
+    created_at: datetime | None = None
