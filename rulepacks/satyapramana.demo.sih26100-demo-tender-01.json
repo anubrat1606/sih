@@ -1,0 +1,142 @@
+{
+  "rule_pack_id": "satyapramana.demo.sih26100-demo-tender-01",
+  "semver": "1.0.0",
+  "tender_reference": {
+    "tender_id": "SIH26100-DEMO-TENDER-01",
+    "source_document_sha256": "bab5189153a00c4225e98334eca52f0f9c7beb61bf5fd1f644257e31dbe63713",
+    "issuing_authority": "Satyapramana Demo Procuring Authority (fictional -- for testing only)"
+  },
+  "constants": {
+    "partial_credit": 0.5,
+    "w_mandatory": 1.0,
+    "w_desirable": 0.3,
+    "recency_floor": 0.5,
+    "corroboration_step": 0.1,
+    "coverage_floor_high": 50,
+    "coverage_floor_medium": 80,
+    "confidence_floor": 70,
+    "freshness_days": {"PAN_STATUS": 90, "GST_STATUS": 30, "CIN_STATUS": 90, "UDYAM_STATUS": 180}
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Bidder shall submit valid statutory registration documents establishing PAN, GST registration and Certificate of Incorporation.",
+      "source": {"page": 10},
+      "obligation": "mandatory",
+      "operator": "ALL_OF",
+      "children": ["R1.1", "R1.2", "R1.3"]
+    },
+    {
+      "id": "R1.1",
+      "text": "Bidder shall submit a copy of a valid Permanent Account Number (PAN).",
+      "source": {"page": 10},
+      "obligation": "mandatory",
+      "operator": "LEAF",
+      "predicate": {"op": "exists", "subject": {"field": "bidder.pan.pan_number"}}
+    },
+    {
+      "id": "R1.2",
+      "text": "Bidder shall submit a valid GST registration certificate.",
+      "source": {"page": 10},
+      "obligation": "mandatory",
+      "operator": "LEAF",
+      "predicate": {"op": "exists", "subject": {"field": "bidder.gst.gstin"}}
+    },
+    {
+      "id": "R1.3",
+      "text": "Bidder shall submit a valid Certificate of Incorporation bearing the Corporate Identity Number (CIN).",
+      "source": {"page": 11},
+      "obligation": "mandatory",
+      "operator": "LEAF",
+      "predicate": {"op": "exists", "subject": {"field": "bidder.entity.cin"}}
+    },
+    {
+      "id": "R2",
+      "text": "Each statutory registration submitted under R1 shall be confirmed active with its issuing authority as on the bid submission date.",
+      "source": {"page": 12},
+      "obligation": "mandatory",
+      "operator": "ALL_OF",
+      "children": ["R2.1", "R2.2", "R2.3"]
+    },
+    {
+      "id": "R2.1",
+      "text": "Bidder's PAN shall be recorded as valid by the Income Tax Department.",
+      "source": {"page": 12},
+      "obligation": "mandatory",
+      "operator": "LEAF",
+      "predicate": {"op": "eq", "left": {"field": "bidder.pan.status"}, "right": {"literal": "VALID"}}
+    },
+    {
+      "id": "R2.2",
+      "text": "Bidder's GST registration shall be Active, as on the bid submission date.",
+      "source": {"page": 12},
+      "obligation": "mandatory",
+      "operator": "LEAF",
+      "predicate": {"op": "active_on", "subject": {"field": "bidder.gst.status_history"}, "at": {"context": "bid_submission_date"}}
+    },
+    {
+      "id": "R2.3",
+      "text": "Bidder's company shall be recorded as Active by the Ministry of Corporate Affairs.",
+      "source": {"page": 13},
+      "obligation": "mandatory",
+      "operator": "LEAF",
+      "predicate": {"op": "eq", "left": {"field": "bidder.entity.status"}, "right": {"literal": "ACTIVE"}}
+    },
+    {
+      "id": "R3",
+      "text": "The GST registration certificate submitted shall not have expired before the bid submission date.",
+      "source": {"page": 14},
+      "obligation": "mandatory",
+      "operator": "LEAF",
+      "predicate": {"op": "date_after", "left": {"field": "bidder.gst.date_of_expiry"}, "right": {"context": "bid_submission_date"}}
+    },
+    {
+      "id": "R4",
+      "text": "The name recorded on the bidder's PAN shall match the entity's registered legal name.",
+      "source": {"page": 15},
+      "obligation": "mandatory",
+      "operator": "LEAF",
+      "predicate": {"op": "eq", "left": {"field": "bidder.pan.holder_name_canonical"}, "right": {"field": "bidder.entity.legal_name_canonical"}}
+    },
+    {
+      "id": "R5",
+      "text": "Micro and Small Enterprise (MSE) bidders are encouraged to submit Udyam registration to avail applicable benefits under public procurement policy.",
+      "source": {"page": 16},
+      "obligation": "desirable",
+      "operator": "LEAF",
+      "predicate": {"op": "exists", "subject": {"field": "bidder.udyam.udyam_number"}}
+    },
+    {
+      "id": "R6",
+      "text": "Where Udyam registration is submitted, it shall be recorded as Active by the Ministry of MSME.",
+      "source": {"page": 16},
+      "obligation": "desirable",
+      "operator": "LEAF",
+      "predicate": {"op": "eq", "left": {"field": "bidder.udyam.status"}, "right": {"literal": "Active"}}
+    },
+    {
+      "id": "R7",
+      "text": "Bidder shall state the date of issue of the GST registration certificate submitted.",
+      "source": {"page": 17},
+      "obligation": "mandatory",
+      "operator": "LEAF",
+      "predicate": {"op": "exists", "subject": {"field": "bidder.gst.date_of_issue"}}
+    },
+    {
+      "id": "R8",
+      "text": "Bidder's registered legal or trade name as declared on the GST registration certificate shall be stated.",
+      "source": {"page": 17},
+      "obligation": "mandatory",
+      "operator": "LEAF",
+      "predicate": {"op": "exists", "subject": {"field": "bidder.gst.claimed_legal_name"}}
+    },
+    {
+      "id": "R9",
+      "text": "Bidder's PAN holder name shall be legible and recorded from the submitted PAN card.",
+      "source": {"page": 18},
+      "obligation": "mandatory",
+      "operator": "LEAF",
+      "predicate": {"op": "exists", "subject": {"field": "bidder.pan.holder_name"}}
+    }
+  ]
+}
