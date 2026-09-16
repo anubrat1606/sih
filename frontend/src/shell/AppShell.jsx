@@ -259,7 +259,7 @@ export default function AppShell({ children }) {
   }
 
   const nav = roleAtLeast(session.role, "ADMIN")
-    ? [...NAV, { to: "/settings", label: "Settings", glyph: "⚙" }]
+    ? [...NAV, { to: "/admin", label: "Admin console", glyph: "◑" }, { to: "/settings", label: "Settings", glyph: "⚙" }]
     : NAV;
 
   return (

@@ -5,6 +5,10 @@ import { ToastProvider } from "./notifications";
 import AppShell from "./shell/AppShell";
 import BidderShell from "./bidder/shell/BidderShell";
 import "./bidder/bidder.css";
+import AdminShell from "./admin/shell/AdminShell";
+import "./admin/admin.css";
+import AdminOverviewPage from "./admin/pages/OverviewPage";
+import AdminAccountsPage from "./admin/pages/AccountsPage";
 
 import BidderDashboardPage from "./bidder/pages/DashboardPage";
 import BidderTendersPage from "./bidder/pages/TendersPage";
@@ -98,6 +102,27 @@ function PortalRoutes() {
   );
 }
 
+// The admin console: a third portal (round 7), structurally identical to
+// PortalRoutes above -- its own shell, its own route tree, reached only by
+// the literal ADMIN role via RequireRole (the same "wrong-portal mistake,
+// not a permission gap" reasoning auth.jsx documents for the bidder side).
+// Every read here goes through the same OFFICER-or-above-gated endpoints
+// the rest of the app uses; nothing in this tree has its own permission
+// logic to get subtly out of sync with app.py's.
+function AdminRoutes() {
+  return (
+    <RequireRole role="ADMIN">
+      <AdminShell>
+        <Routes>
+          <Route index element={<AdminOverviewPage />} />
+          <Route path="accounts" element={<AdminAccountsPage />} />
+          <Route path="*" element={<Navigate to="/admin" replace />} />
+        </Routes>
+      </AdminShell>
+    </RequireRole>
+  );
+}
+
 // "/" is the public landing page for anyone signed out. A live session
 // skips it: bidders go to /portal, everyone else to /dashboard -- a plain
 // unconditional redirect would send a bidder into an officer page that
@@ -121,6 +146,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<RootGate />} />
             <Route path="/portal/*" element={<PortalRoutes />} />
+            <Route path="/admin/*" element={<AdminRoutes />} />
             <Route path="/*" element={<OfficerRoutes />} />
           </Routes>
         </AuthProvider>
