@@ -73,6 +73,17 @@ export const createOfficerAccount = (username, password, displayName, role, bidd
 // existing bidder rather than typing an id that might not exist.
 export const listBidderIds = () => call("/bidder-ids");
 
+// Admin console (round 7): the full account directory, and the two ways
+// an admin can act on one -- disable (refuses every future login and any
+// already-issued token immediately) and enable. The backend itself
+// refuses an admin disabling their own account, so the UI doesn't need to
+// duplicate that rule to stay correct.
+export const listAccounts = () => call("/auth/users");
+export const disableAccount = (username) =>
+  call(`/auth/users/${encodeURIComponent(username)}/disable`, { method: "POST" });
+export const enableAccount = (username) =>
+  call(`/auth/users/${encodeURIComponent(username)}/enable`, { method: "POST" });
+
 export const listTenders = () => call("/tenders");
 
 export const createTender = (tenderId, title, issuingAuthority, bidSubmissionDeadline, description,

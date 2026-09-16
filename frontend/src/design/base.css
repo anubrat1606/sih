@@ -82,6 +82,8 @@ a:hover { text-decoration: underline; }
 /* ---- small text utilities ---------------------------------------------- */
 .text-secondary { color: var(--color-text-secondary); }
 .text-muted { color: var(--color-text-muted); }
+.text-pass { color: var(--status-pass-fg); }
+.text-fail { color: var(--status-fail-fg); }
 .text-sm { font-size: var(--text-sm); }
 .text-xs { font-size: var(--text-xs); }
 .nowrap { white-space: nowrap; }

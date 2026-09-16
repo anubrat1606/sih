@@ -1,55 +1,32 @@
-import { useState } from "react";
-import { createOfficerAccount, getCapabilities, listBidderIds } from "../api";
-import { roleAtLeast, useAuth } from "../authContext";
+import { Link } from "react-router-dom";
+import { getCapabilities } from "../api";
+import { useAuth } from "../authContext";
 import { useApi } from "../lib/useApi";
-import { useToast } from "../notifications";
-import {
-  Callout, Card, CapabilityBadge, ErrorState, Field, PageHeader, Section, Tag, UnavailableNote,
-} from "../ui/primitives";
+import { Card, CapabilityBadge, ErrorState, Field, PageHeader, Tag } from "../ui/primitives";
 
 const ROLES = [
   { value: "BIDDER", label: "Bidder", note: "Signs in as one specific registered bidder — their own tenders, requirements, submissions and results only." },
   { value: "OFFICER", label: "Officer", note: "Register bidders, upload documents, record QUALIFY / DISQUALIFY decisions." },
   { value: "SENIOR_OFFICER", label: "Senior officer", note: "Everything an officer can do, plus adopt rule packs and override verdicts." },
-  { value: "ADMIN", label: "Administrator", note: "Everything, plus creating officer accounts." },
+  { value: "ADMIN", label: "Administrator", note: "Everything, plus the admin console: every account, and this deployment's live posture." },
 ];
 
+// Account creation, the account directory, and disable/enable moved to the
+// admin console (round 7, /admin/accounts) -- a second copy of that form
+// here would just be one more place for the two to drift apart. This page
+// stays what it was for everyone else: your own session, and what this
+// deployment can currently verify.
 export default function SettingsPage() {
   const { session } = useAuth();
-  const { notify } = useToast();
-  const isAdmin = roleAtLeast(session.role, "ADMIN");
+  const isAdmin = session.role === "ADMIN";
   const capabilities = useApi(() => getCapabilities(), []);
-  const bidderIds = useApi(() => listBidderIds(), [], { skip: !isAdmin });
-
-  const [form, setForm] = useState({ username: "", password: "", display_name: "", role: "OFFICER", bidder_id: "" });
-  const [error, setError] = useState(null);
-  const [created, setCreated] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  async function onSubmit(e) {
-    e.preventDefault();
-    setError(null);
-    setCreated(null);
-    setSubmitting(true);
-    try {
-      const user = await createOfficerAccount(form.username, form.password, form.display_name, form.role, form.bidder_id);
-      setCreated(user);
-      setForm({ username: "", password: "", display_name: "", role: "OFFICER", bidder_id: "" });
-      notify(`Created account for ${user.display_name}.`, { kind: "success" });
-    } catch (err) {
-      setError(err);
-      notify("Could not create the account.", { kind: "error" });
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   return (
     <div className="page">
       <PageHeader
         eyebrow="Administration"
         title="Settings"
-        subtitle="Your session, this deployment's verification posture, and officer account management."
+        subtitle="Your session and this deployment's verification posture."
       />
 
       <div className="grid-2">
@@ -62,6 +39,11 @@ export default function SettingsPage() {
           <p className="text-xs text-muted" style={{ marginTop: 14 }}>
             Every write you make is attributed to this identity in the audit trail, permanently.
           </p>
+          {isAdmin && (
+            <p className="text-sm" style={{ marginTop: 14 }}>
+              <Link to="/admin/accounts">Manage accounts in the admin console →</Link>
+            </p>
+          )}
         </Card>
 
         <Card title="Deployment verification posture">
@@ -80,99 +62,20 @@ export default function SettingsPage() {
         </Card>
       </div>
 
-      <Section title="Officer accounts"
-               note="There is no self-signup. Every account is created here, by an administrator, with an explicit role.">
-        {!isAdmin ? (
-          <UnavailableNote title="Creating accounts requires ADMIN">
-            You are signed in as {session.role.replace("_", " ")}. Ask an administrator to create an account
-            for a new officer.
-          </UnavailableNote>
-        ) : (
+      <div style={{ marginTop: 24 }}>
+        <Card title="What each role can do">
           <div className="grid-2">
-            <Card title="Create an officer account">
-              <ErrorState error={error} />
-              <form className="form" onSubmit={onSubmit}>
-                <div className="field">
-                  <label htmlFor="a-user">Username</label>
-                  <input id="a-user" className="mono" value={form.username} required
-                         onChange={(e) => setForm({ ...form, username: e.target.value })} />
+            {ROLES.map((r) => (
+              <div key={r.value}>
+                <div className="row" style={{ gap: 8, marginBottom: 4 }}>
+                  <Tag accent={r.value === "ADMIN"}>{r.label}</Tag>
                 </div>
-                <div className="field">
-                  <label htmlFor="a-name">Display name</label>
-                  <input id="a-name" value={form.display_name} required
-                         onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
-                </div>
-                <div className="field">
-                  <label htmlFor="a-pass">
-                    Temporary password <span className="field-hint">at least 8 characters</span>
-                  </label>
-                  <input id="a-pass" type="password" value={form.password} required minLength={8}
-                         onChange={(e) => setForm({ ...form, password: e.target.value })} />
-                </div>
-                <div className="field">
-                  <label htmlFor="a-role">Role</label>
-                  <select id="a-role" value={form.role}
-                          onChange={(e) => setForm({ ...form, role: e.target.value, bidder_id: "" })}>
-                    {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                  </select>
-                  <span className="field-hint">{ROLES.find((r) => r.value === form.role)?.note}</span>
-                </div>
-                {form.role === "BIDDER" && (
-                  <div className="field">
-                    <label htmlFor="a-bidder">Bidder</label>
-                    {bidderIds.loading ? (
-                      <p className="text-sm text-secondary">Loading registered bidders…</p>
-                    ) : bidderIds.error ? (
-                      <ErrorState error={bidderIds.error} onRetry={bidderIds.reload} />
-                    ) : !bidderIds.data.bidders.length ? (
-                      <p className="text-sm text-secondary">
-                        No bidder is registered on any tender yet — register one first.
-                      </p>
-                    ) : (
-                      <select id="a-bidder" value={form.bidder_id} required
-                              onChange={(e) => setForm({ ...form, bidder_id: e.target.value })}>
-                        <option value="">— pick a registered bidder —</option>
-                        {bidderIds.data.bidders.map((b) => (
-                          <option key={b.bidder_id} value={b.bidder_id}>
-                            {b.bidder_id} ({b.tender_ids.join(", ")})
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    <span className="field-hint">
-                      This account signs in as this bidder — their own tenders and results only.
-                    </span>
-                  </div>
-                )}
-                <button type="submit" className="btn btn-primary" disabled={submitting}>
-                  {submitting ? "Creating…" : "Create account"}
-                </button>
-              </form>
-              {created && (
-                <Callout strong>
-                  Created {created.display_name} (<span className="mono">{created.username}</span>),
-                  {" "}{created.role.replace("_", " ")}
-                  {created.bidder_id && <> as bidder <span className="mono">{created.bidder_id}</span></>}.
-                  {" "}Share the temporary password with them directly — it is not shown again here.
-                </Callout>
-              )}
-            </Card>
-
-            <Card title="What each role can do">
-              <div className="stack">
-                {ROLES.map((r) => (
-                  <div key={r.value}>
-                    <div className="row" style={{ gap: 8, marginBottom: 4 }}>
-                      <Tag accent={r.value === "ADMIN"}>{r.label}</Tag>
-                    </div>
-                    <p className="text-sm text-secondary">{r.note}</p>
-                  </div>
-                ))}
+                <p className="text-sm text-secondary">{r.note}</p>
               </div>
-            </Card>
+            ))}
           </div>
-        )}
-      </Section>
+        </Card>
+      </div>
     </div>
   );
 }
