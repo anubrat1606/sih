@@ -16,7 +16,7 @@ from satyapramana_store.app import app, db
 from satyapramana_store.auth.models import Role, User, role_at_least
 from satyapramana_store.auth.passwords import hash_password, verify_password
 from satyapramana_store.auth.store import (
-    bootstrap_admin, create_user, get_user_by_username, verify_login,
+    bootstrap_admin, create_user, get_user_by_username, list_users, set_disabled, verify_login,
 )
 from satyapramana_store.auth.tokens import decode_token, issue_token
 
@@ -197,6 +197,75 @@ def test_creating_a_duplicate_username_is_refused(client, conn):
                           "display_name": "Duplicate", "role": "OFFICER"},
                     headers=auth_headers(conn, username="admin_1", role=Role.ADMIN))
     assert r.status_code == 409
+
+
+def test_list_users_returns_every_account_oldest_first(conn):
+    create_user(conn, "zed_officer", "a-real-password-1", "Zed", Role.OFFICER)
+    create_user(conn, "amy_officer", "a-real-password-1", "Amy", Role.OFFICER)
+    users = list_users(conn)
+    usernames = [u.username for u in users]
+    assert usernames.index("zed_officer") < usernames.index("amy_officer")
+    assert all(u.created_at is not None for u in users)
+
+
+def test_set_disabled_flips_the_bit_and_login_then_fails(conn):
+    create_user(conn, "to_disable", "a-real-password-1", "Disable Me", Role.OFFICER)
+    assert verify_login(conn, "to_disable", "a-real-password-1") is not None
+    updated = set_disabled(conn, "to_disable", True)
+    assert updated.disabled
+    assert verify_login(conn, "to_disable", "a-real-password-1") is None
+    reenabled = set_disabled(conn, "to_disable", False)
+    assert not reenabled.disabled
+    assert verify_login(conn, "to_disable", "a-real-password-1") is not None
+
+
+def test_set_disabled_on_an_unknown_username_is_none_not_an_error(conn):
+    assert set_disabled(conn, "nobody-here", True) is None
+
+
+def test_only_an_admin_can_list_accounts(client, conn):
+    r = client.get("/auth/users",
+                   headers=auth_headers(conn, username="senior_2", role=Role.SENIOR_OFFICER))
+    assert r.status_code == 403
+
+
+def test_an_admin_can_list_accounts(client, conn):
+    create_user(conn, "listed_officer", "a-real-password-1", "Listed", Role.OFFICER)
+    r = client.get("/auth/users", headers=auth_headers(conn, username="admin_2", role=Role.ADMIN))
+    assert r.status_code == 200
+    usernames = {u["username"] for u in r.json()["users"]}
+    assert {"listed_officer", "admin_2"} <= usernames
+
+
+def test_an_admin_can_disable_and_reenable_another_account(client, conn):
+    create_user(conn, "disable_target", "a-real-password-1", "Target", Role.OFFICER)
+    headers = auth_headers(conn, username="admin_3", role=Role.ADMIN)
+    r = client.post("/auth/users/disable_target/disable", headers=headers)
+    assert r.status_code == 200 and r.json()["disabled"] is True
+    assert verify_login(conn, "disable_target", "a-real-password-1") is None
+    r = client.post("/auth/users/disable_target/enable", headers=headers)
+    assert r.status_code == 200 and r.json()["disabled"] is False
+    assert verify_login(conn, "disable_target", "a-real-password-1") is not None
+
+
+def test_an_admin_cannot_disable_their_own_account(client, conn):
+    headers = auth_headers(conn, username="admin_4", role=Role.ADMIN)
+    r = client.post("/auth/users/admin_4/disable", headers=headers)
+    assert r.status_code == 422
+    assert verify_login(conn, "admin_4", "correct horse battery staple") is not None
+
+
+def test_disabling_an_unknown_account_is_404(client, conn):
+    r = client.post("/auth/users/nobody-here/disable",
+                    headers=auth_headers(conn, username="admin_5", role=Role.ADMIN))
+    assert r.status_code == 404
+
+
+def test_a_non_admin_cannot_disable_an_account(client, conn):
+    create_user(conn, "untouchable", "a-real-password-1", "Untouchable", Role.OFFICER)
+    r = client.post("/auth/users/untouchable/disable",
+                    headers=auth_headers(conn, username="senior_3", role=Role.SENIOR_OFFICER))
+    assert r.status_code == 403
 
 
 def test_adopting_a_rule_pack_requires_senior_officer(client, conn):
