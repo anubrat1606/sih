@@ -54,6 +54,14 @@ FIELD_PATHS = {
     # step can compare the bidder's own claim against the authority instead.
     "gst_claimed_legal_name": "bidder.gst.claimed_legal_name",
     "gst_claimed_trade_name": "bidder.gst.claimed_trade_name",
+    # Financial-statement extraction (extract/financials.py). Self-declared
+    # -- no authority exists to verify a claimed turnover or net worth
+    # against, so a mandatory requirement built on either path stays
+    # capped at PARTIAL regardless (requirement_types.py's own notes).
+    "turnover": "bidder.financials.turnover",
+    "turnover_financial_year": "bidder.financials.turnover_financial_year",
+    "net_worth": "bidder.financials.net_worth",
+    "net_worth_financial_year": "bidder.financials.net_worth_financial_year",
 }
 
 
@@ -428,13 +436,22 @@ def ingest_document(
                 "rejected": [], "unreadable_pages": [],
                 "error": f"could not read as PDF: {exc}"}
 
+    # Deferred: extract/financials.py imports Candidate from this module,
+    # so importing it at module load time here would be circular. By the
+    # time ingest_document() actually runs, this module has finished
+    # initializing (Candidate included), so a local import resolves fine.
+    from .financials import find_financial_fields
+
     candidates, unreadable = find_candidates(pages)
     # Label/value fields (name, date of birth, issue/expiry dates, claimed
     # business name) are a different lookup method (layout, not grammar) but
     # the same Candidate shape, so they join the same list and flow through
-    # the one emission loop below unchanged.
+    # the one emission loop below unchanged. find_financial_fields is a
+    # third technique again (table extraction, needs the raw bytes rather
+    # than the already-parsed `pages`) but produces the same Candidate
+    # shape too, so it joins here rather than getting a second loop.
     candidates = (candidates + find_pan_holder_fields(pages) + find_document_dates(pages)
-                  + find_gst_claimed_names(pages))
+                  + find_gst_claimed_names(pages) + find_financial_fields(data))
 
     extracted, rejected = [], []
     for candidate in candidates:

@@ -112,16 +112,32 @@ def test_requirement_types_marks_identity_documents_as_evidence_backed(client):
 
 
 def test_requirement_types_honestly_flags_unbacked_types(client):
-    """No fabricated evidence path for the nine types nothing in this system
-    can currently produce -- each says so, with a real reason, not a bare
-    false."""
+    """No fabricated evidence path for the seven types nothing in this
+    system can currently produce -- each says so, with a real reason, not
+    a bare false. MIN_TURNOVER/NET_WORTH moved out of this list once
+    extract/financials.py gave them a real evidence path (round 8) -- see
+    test_requirement_types_marks_financial_types_as_evidence_backed."""
     body = client.get("/requirement-types").json()
     by_id = {t["id"]: t for t in body["requirement_types"]}
-    for unbacked in ("MIN_TURNOVER", "NET_WORTH", "ITR", "EXPERIENCE", "SIMILAR_WORK",
+    for unbacked in ("ITR", "EXPERIENCE", "SIMILAR_WORK",
                      "OEM_AUTHORIZATION", "CERTIFICATION", "EPFO_ESIC", "DECLARATION"):
         assert by_id[unbacked]["evidence_backed"] is False
         assert by_id[unbacked]["backed_fields"] == []
         assert by_id[unbacked]["note"]  # a real, non-empty explanation
+
+
+def test_requirement_types_marks_financial_types_as_evidence_backed(client):
+    """MIN_TURNOVER/NET_WORTH are extracted from a submitted financial
+    statement (extract/financials.py) -- real evidence, though self-
+    declared (no authority exists to verify a claimed turnover or net
+    worth against), which the note must say plainly rather than implying
+    a path to a verified PASS."""
+    body = client.get("/requirement-types").json()
+    by_id = {t["id"]: t for t in body["requirement_types"]}
+    for backed in ("MIN_TURNOVER", "NET_WORTH"):
+        assert by_id[backed]["evidence_backed"] is True
+        assert by_id[backed]["backed_fields"]
+        assert "self-declared" in by_id[backed]["note"].lower()
 
 
 def test_requirement_types_endpoint_needs_no_authentication(client):
