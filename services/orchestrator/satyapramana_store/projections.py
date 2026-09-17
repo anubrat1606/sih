@@ -71,6 +71,69 @@ def rebuild_projections(conn, up_to_seq: int | None = None) -> dict[str, int]:
         return _rebuild_locked(conn, up_to_seq)
 
 
+def fold_verdicts_as_of(conn, up_to_seq: int, bidder_id: str | None = None) -> dict[tuple[str, str], dict[str, Any]]:
+    """The pure computation half of the verdicts fold: reads events up to a
+    ceiling and returns the folded `(bidder_id, requirement_id) -> row` dict
+    -- no cursor writes, no table touched. `_rebuild_locked` below is the
+    only caller that persists this (to `proj_verdicts`, for every bidder,
+    always at the live tip); the Temporal Scrubber's `as-of` endpoint
+    (app.py) is the other caller, scoped to one bidder and a past `up_to_seq`,
+    and never writes anything -- reading history must never risk the state
+    every other concurrent request's `GET /bidders/{id}` reads, which is
+    exactly the class of bug fixed here for the live path (see
+    `rebuild_projections`'s own docstring).
+    """
+    with conn.cursor() as cur:
+        if bidder_id is None:
+            cur.execute(
+                """SELECT event_id, event_type, tender_id, bidder_id, payload, seq
+                   FROM events
+                   WHERE event_type IN ('REQUIREMENT_EVALUATED','VERDICT_OVERRIDDEN')
+                     AND seq <= %s
+                   ORDER BY seq""",
+                (up_to_seq,),
+            )
+        else:
+            cur.execute(
+                """SELECT event_id, event_type, tender_id, bidder_id, payload, seq
+                   FROM events
+                   WHERE event_type IN ('REQUIREMENT_EVALUATED','VERDICT_OVERRIDDEN')
+                     AND bidder_id = %s AND seq <= %s
+                   ORDER BY seq""",
+                (bidder_id, up_to_seq),
+            )
+        rows = cur.fetchall()
+
+    verdicts: dict[tuple[str, str], dict[str, Any]] = {}
+    for event_id, etype, tender, bidder, payload, seq in rows:
+        key = (bidder, payload["requirement_id"])
+        if etype == "REQUIREMENT_EVALUATED":
+            verdicts[key] = {
+                "bidder_id": bidder, "tender_id": tender,
+                "requirement_id": payload["requirement_id"],
+                "verdict_system": payload["verdict"],
+                "reason_system": payload["reason_code"],
+                "verdict_effective": payload["verdict"],
+                "reason_effective": payload["reason_code"],
+                "overridden_by": None, "override_justification": None,
+                "rule_pack_version": payload["rule_pack_version"],
+                "causation_event": event_id, "built_from_seq": seq,
+            }
+        else:
+            row = verdicts.get(key)
+            if row is None:
+                # An override with no prior evaluation is a real anomaly.
+                # Recording it beats silently dropping it.
+                continue
+            # The system's own conclusion is preserved, never overwritten.
+            row["verdict_effective"] = payload["verdict_after"]
+            row["reason_effective"] = payload.get("reason_after", row["reason_system"])
+            row["overridden_by"] = payload["officer_id"]
+            row["override_justification"] = payload["justification"]
+            row["built_from_seq"] = seq
+    return verdicts
+
+
 def _rebuild_locked(conn, up_to_seq: int | None) -> dict[str, int]:
     ceiling = up_to_seq if up_to_seq is not None else _tip(conn)
     counts = {"proj_verdicts": 0, "proj_collusion": 0, "proj_tenders": 0}
@@ -83,41 +146,7 @@ def _rebuild_locked(conn, up_to_seq: int | None) -> dict[str, int]:
         cur.execute("DELETE FROM proj_collusion")
         cur.execute("DELETE FROM proj_tenders")
 
-        cur.execute(
-            """SELECT event_id, event_type, tender_id, bidder_id, payload, seq
-               FROM events
-               WHERE event_type IN ('REQUIREMENT_EVALUATED','VERDICT_OVERRIDDEN')
-                 AND seq <= %s
-               ORDER BY seq""",
-            (ceiling,),
-        )
-        verdicts: dict[tuple[str, str], dict[str, Any]] = {}
-        for event_id, etype, tender, bidder, payload, seq in cur.fetchall():
-            key = (bidder, payload["requirement_id"])
-            if etype == "REQUIREMENT_EVALUATED":
-                verdicts[key] = {
-                    "bidder_id": bidder, "tender_id": tender,
-                    "requirement_id": payload["requirement_id"],
-                    "verdict_system": payload["verdict"],
-                    "reason_system": payload["reason_code"],
-                    "verdict_effective": payload["verdict"],
-                    "reason_effective": payload["reason_code"],
-                    "overridden_by": None, "override_justification": None,
-                    "rule_pack_version": payload["rule_pack_version"],
-                    "causation_event": event_id, "built_from_seq": seq,
-                }
-            else:
-                row = verdicts.get(key)
-                if row is None:
-                    # An override with no prior evaluation is a real anomaly.
-                    # Recording it beats silently dropping it.
-                    continue
-                # The system's own conclusion is preserved, never overwritten.
-                row["verdict_effective"] = payload["verdict_after"]
-                row["reason_effective"] = payload.get("reason_after", row["reason_system"])
-                row["overridden_by"] = payload["officer_id"]
-                row["override_justification"] = payload["justification"]
-                row["built_from_seq"] = seq
+        verdicts = fold_verdicts_as_of(conn, ceiling)
 
         for row in verdicts.values():
             cur.execute(

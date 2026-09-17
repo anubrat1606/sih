@@ -35,13 +35,15 @@ from .auth import store as auth_store
 from .db import close_pool, connect, get_pool, migrate, open_pool
 from .decide import fuse_and_evaluate
 from .events import Actor, append, export_jsonl, verify_chain
-from .evidence import ProjectionResolver, rebuild_evidence
+from .evidence import ProjectionResolver, fold_evidence_as_of, rebuild_evidence
 from .explain import Unavailable
 from .extract import ingest_document, read_pdf
 from .extract.ingest import INGEST, store_document
 from .requirement_types import requirement_type_catalog
 from .tender_intelligence import Unavailable as DecomposeUnavailable
-from .projections import collusion_clusters, provenance_trail, rebuild_projections
+from .projections import (
+    collusion_clusters, fold_verdicts_as_of, provenance_trail, rebuild_projections,
+)
 from .reporting.bid_autopsy import autopsy
 from .reporting.blocker_summary import blocker_summary
 from .reporting.compliance_repair import repair_plan
@@ -49,7 +51,7 @@ from .reporting.csv_export import bidders_to_csv
 from .reporting.dossier import build_dossier, render_dossier_text
 from .reporting.evidence_graph import build_evidence_graph
 from .reporting.tender_report import render_tender_report_text, tender_report
-from .rulepacks import NotAdoptable, active_pack, adopt, validate_only
+from .rulepacks import NotAdoptable, active_pack, active_pack_as_of, adopt, validate_only
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -1017,7 +1019,8 @@ def tender_blockers(tender_id: str, conn=Depends(db), _user: User = Depends(requ
     return {"tender_id": tender_id, "blockers": blocker_summary(autopsies)}
 
 
-def _bidder_snapshot(bidder_id: str, tender_id: str, conn, *, pack, cluster) -> dict[str, Any]:
+def _bidder_snapshot(bidder_id: str, tender_id: str, conn, *, pack, cluster,
+                     verdicts=None, resolver=None) -> dict[str, Any]:
     """The actual per-bidder computation behind `GET /bidders/{id}`, given the
     tender-scoped inputs (the active rule pack, and this bidder's own
     collusion cluster if any) already fetched by the caller.
@@ -1028,10 +1031,19 @@ def _bidder_snapshot(bidder_id: str, tender_id: str, conn, *, pack, cluster) -> 
     same pack and re-running collusion_clusters() (whose result is identical
     for all of them -- it's scoped to the tender, not the bidder). For a
     tender with N bidders this was N redundant queries each; now it's one.
-    """
-    verdicts = _fetch_verdict_rows(conn, bidder_id)
 
-    resolver = ProjectionResolver(conn, bidder_id)
+    `verdicts`/`resolver` are optional so the Temporal Scrubber's `as-of`
+    endpoint can pass a past, purely-computed pair (fold_verdicts_as_of +
+    ProjectionResolver.from_records -- neither touches a table) through the
+    exact same metrics/risk computation the live path uses below, instead
+    of a second, possibly-drifting copy of it. Every existing caller leaves
+    both unset and gets today's live-tip behaviour, unchanged.
+    """
+    if verdicts is None:
+        verdicts = _fetch_verdict_rows(conn, bidder_id)
+    if resolver is None:
+        resolver = ProjectionResolver(conn, bidder_id)
+
     obligations, bindings = {}, {}
     if pack:
         for req in pack[1]["requirements"]:
@@ -1085,6 +1097,91 @@ def get_bidder(bidder_id: str, tender_id: str, conn=Depends(db), _user: User = D
     pack = active_pack(conn, tender_id)
     clusters = {c.bidder_id: c for c in collusion_clusters(conn, tender_id)}
     return _bidder_snapshot(bidder_id, tender_id, conn, pack=pack, cluster=clusters.get(bidder_id))
+
+
+#: Event types that mark a real checkpoint in one bidder's own history --
+#: the Temporal Scrubber's timeline is exactly this set, nothing invented.
+_TIMELINE_EVENT_TYPES = (
+    "FIELD_EXTRACTED", "EXTRACTION_FAILED", "VERIFICATION_OBSERVED",
+    "VERIFICATION_FAILED", "REQUIREMENT_EVALUATED", "VERDICT_OVERRIDDEN",
+    "DECISION_RECORDED",
+)
+
+
+@app.get("/bidders/{bidder_id}/timeline")
+def bidder_timeline(bidder_id: str, tender_id: str, conn=Depends(db),
+                    _user: User = Depends(require_role(Role.OFFICER))) -> dict[str, Any]:
+    """Every event that changed something about this bidder, in order --
+    the real checkpoints `GET /bidders/{id}/as-of/{seq}` can be asked
+    about. Not evenly spaced: however sparse or clustered the bidder's
+    real history actually is, is what this returns."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT seq, event_type, occurred_at FROM events
+               WHERE bidder_id=%s AND tender_id=%s
+                 AND event_type = ANY(%s)
+               ORDER BY seq""",
+            (bidder_id, tender_id, list(_TIMELINE_EVENT_TYPES)))
+        rows = cur.fetchall()
+    return {"checkpoints": [
+        {"seq": seq, "event_type": etype, "occurred_at": occurred_at.isoformat()}
+        for seq, etype, occurred_at in rows
+    ]}
+
+
+@app.get("/bidders/{bidder_id}/as-of/{seq}")
+def bidder_as_of(bidder_id: str, seq: int, tender_id: str, conn=Depends(db),
+                 _user: User = Depends(require_role(Role.OFFICER))) -> dict[str, Any]:
+    """The Temporal Scrubber: the same shape `GET /bidders/{id}` returns,
+    computed as of a past event instead of the live tip -- via the pure
+    fold functions (fold_verdicts_as_of, fold_evidence_as_of,
+    active_pack_as_of), never the tables every concurrent `GET
+    /bidders/{id}` reads. See projections.fold_verdicts_as_of's docstring
+    for why that distinction is load-bearing, not stylistic.
+
+    Collusion is the one honest exception: collusion_clusters() has no
+    `up_to_seq` of its own (it reads SHARED_ATTRIBUTE_OBSERVED events and
+    current tender membership directly, with no time dimension) -- so the
+    collusion figure below is today's, not this checkpoint's, and the
+    response says so plainly rather than presenting it as if it were
+    historical.
+    """
+    tip = _tip_seq(conn)
+    if seq < 0 or seq > tip:
+        raise HTTPException(422, f"seq {seq} is outside this log's range (0..{tip})")
+
+    raw_verdicts = fold_verdicts_as_of(conn, seq, bidder_id=bidder_id)
+    # Same 8-key shape _fetch_verdict_rows returns for the live endpoint --
+    # fold_verdicts_as_of carries extra bookkeeping fields (bidder_id,
+    # tender_id, causation_event, built_from_seq) that _rebuild_locked
+    # needs for its INSERT and this response does not; trimmed here so
+    # both endpoints' "verdicts" field is the same shape for a frontend
+    # that renders either one.
+    verdicts = [
+        {k: v[k] for k in ("requirement_id", "verdict_system", "reason_system",
+                           "verdict_effective", "reason_effective", "overridden_by",
+                           "override_justification", "rule_pack_version")}
+        for v in raw_verdicts.values()
+    ]
+    evidence_records = fold_evidence_as_of(conn, bidder_id, REGISTRY, seq)
+    resolver = ProjectionResolver.from_records(evidence_records)
+    pack = active_pack_as_of(conn, tender_id, seq)
+    cluster = {c.bidder_id: c for c in collusion_clusters(conn, tender_id)}.get(bidder_id)
+
+    snapshot = _bidder_snapshot(bidder_id, tender_id, conn, pack=pack, cluster=cluster,
+                                verdicts=verdicts, resolver=resolver)
+    snapshot["as_of_seq"] = seq
+    snapshot["collusion_note"] = (
+        "Collusion status reflects current shared-attribute detection, not "
+        "this checkpoint -- collusion history isn't retroactively computed."
+    )
+    return snapshot
+
+
+def _tip_seq(conn) -> int:
+    with conn.cursor() as cur:
+        cur.execute("SELECT COALESCE(MAX(seq), 0) FROM events")
+        return cur.fetchone()[0]
 
 
 # --- reporting: Bid Autopsy and Compliance Repair -----------------------------
