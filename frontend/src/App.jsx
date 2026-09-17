@@ -9,6 +9,7 @@ import AdminShell from "./admin/shell/AdminShell";
 import "./admin/admin.css";
 import AdminOverviewPage from "./admin/pages/OverviewPage";
 import AdminAccountsPage from "./admin/pages/AccountsPage";
+import AdminAuditPage from "./admin/pages/AuditPage";
 
 import BidderDashboardPage from "./bidder/pages/DashboardPage";
 import BidderTendersPage from "./bidder/pages/TendersPage";
@@ -116,6 +117,7 @@ function AdminRoutes() {
         <Routes>
           <Route index element={<AdminOverviewPage />} />
           <Route path="accounts" element={<AdminAccountsPage />} />
+          <Route path="audit" element={<AdminAuditPage />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
       </AdminShell>

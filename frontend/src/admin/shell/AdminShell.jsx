@@ -12,6 +12,7 @@ import { useToast } from "../../notifications";
 const NAV = [
   { to: "/admin", label: "Overview", glyph: "▦" },
   { to: "/admin/accounts", label: "Accounts", glyph: "◑" },
+  { to: "/admin/audit", label: "Audit & System", glyph: "≣" },
 ];
 
 function initials(name) {
