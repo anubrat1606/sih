@@ -182,6 +182,15 @@ export const getBidderEvidenceGraph = (bidderId, tenderId) =>
 export const getRepairPlan = (bidderId, tenderId) =>
   call(`/bidders/${encodeURIComponent(bidderId)}/repair-plan?${new URLSearchParams({ tender_id: tenderId })}`);
 
+// Temporal Scrubber (round 8): every real event that changed something
+// about this bidder, and the same shape GET /bidders/{id} returns folded
+// only up to one of those checkpoints instead of the live tip.
+export const getBidderTimeline = (bidderId, tenderId) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/timeline?${new URLSearchParams({ tender_id: tenderId })}`);
+
+export const getBidderAsOf = (bidderId, tenderId, seq) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/as-of/${encodeURIComponent(seq)}?${new URLSearchParams({ tender_id: tenderId })}`);
+
 export const getExplanation = (bidderId, tenderId) =>
   call(`/bidders/${encodeURIComponent(bidderId)}/explain?${new URLSearchParams({ tender_id: tenderId })}`);
 

@@ -9,6 +9,7 @@ import { useApi } from "../lib/useApi";
 import { formatTimestamp } from "../lib/audit";
 import { useToast } from "../notifications";
 import PdfEvidenceViewer from "../features/PdfEvidenceViewer";
+import BidderHistoryTimeline from "../features/BidderHistoryTimeline";
 import FinalisePanel from "../officer/review/FinalisePanel";
 import {
   Callout, Card, ConfirmDialog, CoverageMetric, Dash, Drawer, EmptyState, ErrorState,
@@ -22,6 +23,7 @@ const TABS = [
   { id: "repair", label: "Compliance Repair" },
   { id: "evidence", label: "Evidence" },
   { id: "decision", label: "Officer Decision" },
+  { id: "history", label: "History" },
 ];
 
 function EvidencePanel({ bidderId, requirementId, verdict, onClose }) {
@@ -539,6 +541,13 @@ export default function BidderCompliancePage() {
                 )}
               </Card>
             </div>
+          )}
+
+          {activeTab === "history" && (
+            <Section title="History"
+                     note="This bidder's compliance picture at any real point in its own event history — nothing here is edited or deleted, so any past state is exactly reconstructible.">
+              <BidderHistoryTimeline bidderId={bidderId} tenderId={tenderId} currentVerdicts={verdicts} />
+            </Section>
           )}
         </>
       )}
