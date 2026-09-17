@@ -68,15 +68,20 @@ class EvidenceRecord:
     source_event: str | None = None
 
 
-def rebuild_evidence(conn, bidder_id: str, registry: Registry,
-                     up_to_seq: int | None = None) -> int:
-    """Fold this bidder's evidence. Later events win, so a re-verification
-    supersedes an earlier failure without either being erased from the log."""
+def fold_evidence_as_of(conn, bidder_id: str, registry: Registry,
+                        up_to_seq: int | None = None) -> dict[str, dict[str, Any]]:
+    """The pure computation half of the evidence fold: reads this bidder's
+    events up to a ceiling and returns the folded `path -> record dict` --
+    no cursor writes, no table touched. `rebuild_evidence` below is the only
+    caller that persists this (to `proj_evidence`, always at the live tip
+    unless a caller explicitly asks otherwise); the Temporal Scrubber's
+    `as-of` endpoint (app.py) is the other caller, and never writes -- same
+    reasoning as `projections.fold_verdicts_as_of`, which this mirrors.
+    """
     with conn.cursor() as cur:
         cur.execute("SELECT COALESCE(MAX(seq),0) FROM events")
         ceiling = up_to_seq if up_to_seq is not None else cur.fetchone()[0]
 
-        cur.execute("DELETE FROM proj_evidence WHERE bidder_id=%s", (bidder_id,))
         cur.execute(
             """SELECT event_id, event_type, payload, occurred_at, seq
                FROM events
@@ -134,7 +139,20 @@ def rebuild_evidence(conn, bidder_id: str, registry: Registry,
                         "source_event": event_id, "built_from_seq": seq,
                     }
 
-        import json as _json
+    return records
+
+
+def rebuild_evidence(conn, bidder_id: str, registry: Registry,
+                     up_to_seq: int | None = None) -> int:
+    """Fold this bidder's evidence and persist it to `proj_evidence`. Later
+    events win, so a re-verification supersedes an earlier failure without
+    either being erased from the log. The fold itself is
+    `fold_evidence_as_of`, above -- this is only its live, persisted use;
+    an `as-of` read never calls this, only the pure function."""
+    records = fold_evidence_as_of(conn, bidder_id, registry, up_to_seq)
+    import json as _json
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM proj_evidence WHERE bidder_id=%s", (bidder_id,))
         for rec in records.values():
             cur.execute(
                 """INSERT INTO proj_evidence (bidder_id,path,resolved,value,
@@ -170,6 +188,27 @@ class ProjectionResolver:
                     channel=Channel(channel) if channel else None,
                     capability_id=capability_id,
                     source_event=str(source_event) if source_event else None)
+
+    @classmethod
+    def from_records(cls, records: dict[str, dict[str, Any]]) -> "ProjectionResolver":
+        """The Temporal Scrubber's pure alternate constructor: builds the
+        same resolver `__init__` does, but from `fold_evidence_as_of`'s
+        already-in-memory fold instead of a `proj_evidence` query -- no
+        connection, no table touched, safe to build for a past `up_to_seq`
+        without any risk to what a concurrent live request reads. Shares
+        every method below with the live path; only construction differs."""
+        self = cls.__new__(cls)
+        self._records = {
+            path: EvidenceRecord(
+                path=rec["path"], resolved=rec["resolved"], value=rec["value"],
+                unresolved_reason=Reason(rec["unresolved_reason"]) if rec["unresolved_reason"] else None,
+                tier=Tier(rec["tier"]) if rec["tier"] else None,
+                channel=Channel(rec["channel"]) if rec["channel"] else None,
+                capability_id=rec["capability_id"],
+                source_event=str(rec["source_event"]) if rec["source_event"] else None)
+            for path, rec in records.items()
+        }
+        return self
 
     def record(self, path: str) -> EvidenceRecord | None:
         return self._records.get(path)

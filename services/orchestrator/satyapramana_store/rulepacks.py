@@ -117,6 +117,28 @@ def active_pack(conn, tender_id: str) -> tuple[str, dict[str, Any]] | None:
     return (row[0], row[1]) if row else None
 
 
+def active_pack_as_of(conn, tender_id: str, up_to_seq: int) -> tuple[str, dict[str, Any]] | None:
+    """`active_pack`'s Temporal Scrubber counterpart: the pack that was
+    active as of a past event, not the one active now. A tender can have
+    more than one adoption over its life (a correction, a new version) --
+    this picks the most recent one whose *adoption event* had already
+    happened by `up_to_seq`, via the same `adoption_event` link `adopt()`
+    already records, joined against `events` for its real sequence number.
+    Read-only, no table touched -- `rule_packs` is itself insert-only
+    (nothing here is ever superseded out of existence), so this is safe
+    against a concurrent adoption the same way any other read of an
+    append-only table is."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT rp.rule_pack_version, rp.body
+               FROM rule_packs rp JOIN events e ON e.event_id = rp.adoption_event
+               WHERE rp.tender_id=%s AND e.seq <= %s
+               ORDER BY e.seq DESC LIMIT 1""",
+            (tender_id, up_to_seq))
+        row = cur.fetchone()
+    return (row[0], row[1]) if row else None
+
+
 def get_pack(conn, rule_pack_version: str) -> dict[str, Any] | None:
     with conn.cursor() as cur:
         cur.execute("SELECT body FROM rule_packs WHERE rule_pack_version=%s",
