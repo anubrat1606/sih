@@ -89,6 +89,24 @@ def set_disabled(conn, username: str, disabled: bool) -> User | None:
                 disabled=disabled, bidder_id=bidder_id, created_at=created_at)
 
 
+def set_password(conn, username: str, new_password: str) -> User | None:
+    """Overwrites the stored hash -- an ordinary UPDATE, not an event, same
+    reasoning as set_disabled's own docstring. Returns None if no such
+    account exists, exactly like set_disabled, so the caller (an
+    admin-only route) can 404 rather than assume success."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE users SET password_hash=%s WHERE username=%s
+               RETURNING id, username, display_name, role, disabled, bidder_id, created_at""",
+            (hash_password(new_password), username))
+        row = cur.fetchone()
+    if not row:
+        return None
+    uid, uname, display_name, role, disabled, bidder_id, created_at = row
+    return User(id=uid, username=uname, display_name=display_name, role=Role(role),
+                disabled=disabled, bidder_id=bidder_id, created_at=created_at)
+
+
 def bootstrap_admin(conn) -> User | None:
     """Creates the first ADMIN account from environment variables,
     idempotently, if one with that username doesn't already exist.
