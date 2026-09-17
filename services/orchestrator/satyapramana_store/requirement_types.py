@@ -81,13 +81,20 @@ _CATALOG: tuple[RequirementType, ...] = (
         "requirement will be saved with review_required and cannot be "
         "adopted until one is registered."),
     RequirementType("MIN_TURNOVER", "Minimum annual turnover",
-        (), ("gte",),
-        "No financial-statement extraction or capability exists yet. Saved "
-        "for review; not adoptable until a real evidence path is built."),
+        ("bidder.financials.turnover", "bidder.financials.turnover_financial_year"),
+        ("gte",),
+        "Extracted from a submitted financial statement's own table (turnover "
+        "for its most recent reported year, normalized to INR paise using the "
+        "statement's own stated unit). There is no authority to verify a "
+        "claimed turnover against, so a mandatory requirement built on this "
+        "stays capped at PARTIAL (self-declared ceiling) -- extracted, not "
+        "yet independently verifiable, never a path to a clean PASS."),
     RequirementType("NET_WORTH", "Minimum net worth",
-        (), ("gte",),
-        "No financial-statement extraction or capability exists yet. Saved "
-        "for review; not adoptable until a real evidence path is built."),
+        ("bidder.financials.net_worth", "bidder.financials.net_worth_financial_year"),
+        ("gte",),
+        "Extracted from a submitted financial statement's own table, the "
+        "same way as minimum turnover -- and capped at PARTIAL for the same "
+        "reason: self-declared, with no authority to verify it against."),
     RequirementType("ITR", "Income Tax Return filing",
         (), ("exists", "gte"),
         "No ITR extraction or capability exists yet. Saved for review; not "
