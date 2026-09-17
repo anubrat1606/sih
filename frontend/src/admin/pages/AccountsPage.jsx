@@ -1,11 +1,65 @@
 import { useMemo, useState } from "react";
-import { createOfficerAccount, disableAccount, enableAccount, listAccounts, listBidderIds } from "../../api";
+import {
+  createOfficerAccount, disableAccount, enableAccount, listAccounts, listBidderIds, resetPassword,
+} from "../../api";
 import { useAuth } from "../../authContext";
 import { useApi } from "../../lib/useApi";
 import { useToast } from "../../notifications";
 import {
   Card, ConfirmDialog, EmptyState, ErrorState, LoadingBlock, PageHeader, Section, Tag,
 } from "../../ui/primitives";
+
+// The one place on this deployment a real secret is ever shown -- exactly
+// once, right after the server generates it, never stored or re-fetchable
+// afterward. Styled with the app's own .dialog-* classes (see
+// ui/primitives.jsx's ConfirmDialog) rather than a bespoke look, but built
+// separately from ConfirmDialog since this needs one acknowledgement
+// button and a copy affordance, not a confirm/cancel pair.
+function PasswordRevealDialog({ result, onClose }) {
+  const [copied, setCopied] = useState(false);
+  if (!result) return null;
+
+  async function onCopy() {
+    try {
+      await navigator.clipboard.writeText(result.new_password);
+      setCopied(true);
+    } catch {
+      // Clipboard access can be blocked (permissions, insecure context) --
+      // the password stays visible and selectable in the box regardless,
+      // so this never blocks the admin from getting it out.
+    }
+  }
+
+  return (
+    <div className="dialog-backdrop" onClick={onClose}>
+      <div className="dialog" role="dialog" aria-modal="true" aria-label="Password reset"
+           onClick={(e) => e.stopPropagation()}>
+        <div className="dialog-header"><h2 className="section-title">Password reset</h2></div>
+        <div className="dialog-body">
+          <p>New password for <strong>{result.username}</strong>:</p>
+          <div className="row" style={{ gap: "var(--space-2)", alignItems: "center", marginTop: "var(--space-3)" }}>
+            <code className="mono" style={{
+              flex: 1, padding: "var(--space-2) var(--space-3)",
+              background: "var(--color-surface-sunken)", border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-sm)", userSelect: "all", wordBreak: "break-all",
+            }}>
+              {result.new_password}
+            </code>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={onCopy}>
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <p className="text-xs text-secondary" style={{ marginTop: "var(--space-3)" }}>
+            This won't be shown again — make sure {result.username} has it before you close this.
+          </p>
+        </div>
+        <div className="dialog-footer">
+          <button type="button" className="btn btn-primary" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const ROLES = [
   { value: "BIDDER", label: "Bidder" },
@@ -32,7 +86,8 @@ export default function AccountsPage() {
 
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
-  const [pending, setPending] = useState(null); // {username, action}
+  const [pending, setPending] = useState(null); // {username, action: "disable"|"enable"|"reset"}
+  const [revealed, setRevealed] = useState(null); // {username, new_password} from a completed reset
 
   const [form, setForm] = useState({ username: "", password: "", display_name: "", role: "OFFICER", bidder_id: "" });
   const [formError, setFormError] = useState(null);
@@ -64,15 +119,22 @@ export default function AccountsPage() {
     }
   }
 
-  async function confirmToggle() {
+  async function confirmPending() {
     const { username, action } = pending;
     setPending(null);
     try {
-      await (action === "disable" ? disableAccount(username) : enableAccount(username));
-      notify(`${username} ${action}d.`, { kind: "success" });
+      if (action === "reset") {
+        const result = await resetPassword(username);
+        setRevealed(result);
+        notify(`Password reset for ${username}.`, { kind: "success" });
+      } else {
+        await (action === "disable" ? disableAccount(username) : enableAccount(username));
+        notify(`${username} ${action}d.`, { kind: "success" });
+      }
       accounts.reload();
     } catch (err) {
-      notify(`Could not ${action} ${username}: ${err.message}`, { kind: "error" });
+      notify(`Could not ${action === "reset" ? "reset the password for" : action} ${username}: ${err.message}`,
+             { kind: "error" });
     }
   }
 
@@ -130,14 +192,19 @@ export default function AccountsPage() {
                                 {u.created_at ? new Date(u.created_at).toLocaleDateString() : <span>—</span>}
                               </td>
                               <td>
-                                {self ? (
-                                  <span className="text-xs text-muted">this is you</span>
-                                ) : (
-                                  <button type="button" className={`btn btn-sm ${u.disabled ? "btn-secondary" : "btn-danger"}`}
-                                          onClick={() => setPending({ username: u.username, action: u.disabled ? "enable" : "disable" })}>
-                                    {u.disabled ? "Enable" : "Disable"}
+                                <div className="btn-group" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                  {!self && (
+                                    <button type="button" className={`btn btn-sm ${u.disabled ? "btn-secondary" : "btn-danger"}`}
+                                            onClick={() => setPending({ username: u.username, action: u.disabled ? "enable" : "disable" })}>
+                                      {u.disabled ? "Enable" : "Disable"}
+                                    </button>
+                                  )}
+                                  <button type="button" className="btn btn-sm btn-secondary"
+                                          onClick={() => setPending({ username: u.username, action: "reset" })}>
+                                    Reset password
                                   </button>
-                                )}
+                                  {self && <span className="text-xs text-muted">this is you</span>}
+                                </div>
                               </td>
                             </tr>
                           );
@@ -205,15 +272,22 @@ export default function AccountsPage() {
 
       <ConfirmDialog
         open={!!pending}
-        title={pending?.action === "disable" ? "Disable this account?" : "Re-enable this account?"}
+        title={pending?.action === "disable" ? "Disable this account?"
+          : pending?.action === "enable" ? "Re-enable this account?"
+          : "Reset this account's password?"}
         body={pending?.action === "disable"
           ? `${pending?.username} will be signed out immediately and cannot sign in again until re-enabled.`
-          : `${pending?.username} will be able to sign in again.`}
-        confirmLabel={pending?.action === "disable" ? "Disable" : "Enable"}
+          : pending?.action === "enable"
+          ? `${pending?.username} will be able to sign in again.`
+          : `A new random password will be generated for ${pending?.username}. Their current password stops working immediately, and the new one is shown to you only once, right after this.`}
+        confirmLabel={pending?.action === "disable" ? "Disable"
+          : pending?.action === "enable" ? "Enable" : "Reset password"}
         danger={pending?.action === "disable"}
-        onConfirm={confirmToggle}
+        onConfirm={confirmPending}
         onCancel={() => setPending(null)}
       />
+
+      <PasswordRevealDialog result={revealed} onClose={() => setRevealed(null)} />
     </div>
   );
 }

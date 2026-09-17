@@ -10,6 +10,7 @@ compliance state, because there is no code path that writes a verdict directly.
 from __future__ import annotations
 
 import os
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
@@ -355,6 +356,23 @@ def enable_account(username: str, conn=Depends(db),
     if not user:
         raise HTTPException(404, f"no account {username!r}")
     return _user_out(user)
+
+
+@app.post("/auth/users/{username}/reset-password", status_code=200)
+def reset_password(username: str, conn=Depends(db),
+                   _admin: User = Depends(require_role(Role.ADMIN))) -> dict[str, Any]:
+    """No self-service recovery exists (no self-signup -- round 6), so this
+    is the only way anyone gets back into a forgotten account. Generated
+    server-side, never accepted from the request body -- an admin
+    resetting someone else's password shouldn't get to choose what it
+    becomes, or see it typed into a browser field twice. Returned exactly
+    once, here, in the response body; never stored or logged anywhere in
+    the clear -- only set_password's hash survives past this call."""
+    new_password = secrets.token_urlsafe(12)
+    user = auth_store.set_password(conn, username, new_password)
+    if not user:
+        raise HTTPException(404, f"no account {username!r}")
+    return {**_user_out(user), "new_password": new_password}
 
 
 # --- health and honest capability reporting -----------------------------------

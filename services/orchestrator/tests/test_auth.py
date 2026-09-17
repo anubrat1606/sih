@@ -16,7 +16,8 @@ from satyapramana_store.app import app, db
 from satyapramana_store.auth.models import Role, User, role_at_least
 from satyapramana_store.auth.passwords import hash_password, verify_password
 from satyapramana_store.auth.store import (
-    bootstrap_admin, create_user, get_user_by_username, list_users, set_disabled, verify_login,
+    bootstrap_admin, create_user, get_user_by_username, list_users, set_disabled,
+    set_password, verify_login,
 )
 from satyapramana_store.auth.tokens import decode_token, issue_token
 
@@ -223,6 +224,19 @@ def test_set_disabled_on_an_unknown_username_is_none_not_an_error(conn):
     assert set_disabled(conn, "nobody-here", True) is None
 
 
+def test_set_password_changes_the_password_and_old_one_stops_working(conn):
+    create_user(conn, "to_reset", "the-old-password-1", "Reset Me", Role.OFFICER)
+    assert verify_login(conn, "to_reset", "the-old-password-1") is not None
+    updated = set_password(conn, "to_reset", "a-brand-new-password-2")
+    assert updated is not None
+    assert verify_login(conn, "to_reset", "the-old-password-1") is None
+    assert verify_login(conn, "to_reset", "a-brand-new-password-2") is not None
+
+
+def test_set_password_on_an_unknown_username_is_none_not_an_error(conn):
+    assert set_password(conn, "nobody-here", "whatever-password-1") is None
+
+
 def test_only_an_admin_can_list_accounts(client, conn):
     r = client.get("/auth/users",
                    headers=auth_headers(conn, username="senior_2", role=Role.SENIOR_OFFICER))
@@ -265,6 +279,31 @@ def test_a_non_admin_cannot_disable_an_account(client, conn):
     create_user(conn, "untouchable", "a-real-password-1", "Untouchable", Role.OFFICER)
     r = client.post("/auth/users/untouchable/disable",
                     headers=auth_headers(conn, username="senior_3", role=Role.SENIOR_OFFICER))
+    assert r.status_code == 403
+
+
+def test_an_admin_can_reset_another_accounts_password(client, conn):
+    create_user(conn, "reset_target", "the-old-password-1", "Target", Role.OFFICER)
+    headers = auth_headers(conn, username="admin_6", role=Role.ADMIN)
+    r = client.post("/auth/users/reset_target/reset-password", headers=headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["username"] == "reset_target"
+    new_password = body["new_password"]
+    assert verify_login(conn, "reset_target", "the-old-password-1") is None
+    assert verify_login(conn, "reset_target", new_password) is not None
+
+
+def test_resetting_an_unknown_accounts_password_is_404(client, conn):
+    r = client.post("/auth/users/nobody-here/reset-password",
+                    headers=auth_headers(conn, username="admin_7", role=Role.ADMIN))
+    assert r.status_code == 404
+
+
+def test_a_non_admin_cannot_reset_a_password(client, conn):
+    create_user(conn, "untouchable_pw", "a-real-password-1", "Untouchable", Role.OFFICER)
+    r = client.post("/auth/users/untouchable_pw/reset-password",
+                    headers=auth_headers(conn, username="senior_4", role=Role.SENIOR_OFFICER))
     assert r.status_code == 403
 
 

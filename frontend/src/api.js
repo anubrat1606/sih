@@ -83,6 +83,11 @@ export const disableAccount = (username) =>
   call(`/auth/users/${encodeURIComponent(username)}/disable`, { method: "POST" });
 export const enableAccount = (username) =>
   call(`/auth/users/${encodeURIComponent(username)}/enable`, { method: "POST" });
+// Returns { ...account, new_password } -- the server generates the password
+// and hands it back exactly once, here. Nothing else on this deployment
+// ever sees or stores it in the clear again.
+export const resetPassword = (username) =>
+  call(`/auth/users/${encodeURIComponent(username)}/reset-password`, { method: "POST" });
 
 export const listTenders = () => call("/tenders");
 
