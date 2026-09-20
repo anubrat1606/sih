@@ -42,7 +42,8 @@ from .extract.ingest import INGEST, store_document
 from .requirement_types import requirement_type_catalog
 from .tender_intelligence import Unavailable as DecomposeUnavailable
 from .projections import (
-    collusion_clusters, fold_verdicts_as_of, provenance_trail, rebuild_projections,
+    collusion_clusters, collusion_clusters_as_of, fold_verdicts_as_of,
+    provenance_trail, rebuild_projections,
 )
 from .reporting.bid_autopsy import autopsy
 from .reporting.blocker_summary import blocker_summary
@@ -1135,16 +1136,16 @@ def bidder_as_of(bidder_id: str, seq: int, tender_id: str, conn=Depends(db),
     """The Temporal Scrubber: the same shape `GET /bidders/{id}` returns,
     computed as of a past event instead of the live tip -- via the pure
     fold functions (fold_verdicts_as_of, fold_evidence_as_of,
-    active_pack_as_of), never the tables every concurrent `GET
-    /bidders/{id}` reads. See projections.fold_verdicts_as_of's docstring
-    for why that distinction is load-bearing, not stylistic.
+    active_pack_as_of, collusion_clusters_as_of), never the tables every
+    concurrent `GET /bidders/{id}` reads. See
+    projections.fold_verdicts_as_of's docstring for why that distinction
+    is load-bearing, not stylistic.
 
-    Collusion is the one honest exception: collusion_clusters() has no
-    `up_to_seq` of its own (it reads SHARED_ATTRIBUTE_OBSERVED events and
-    current tender membership directly, with no time dimension) -- so the
-    collusion figure below is today's, not this checkpoint's, and the
-    response says so plainly rather than presenting it as if it were
-    historical.
+    Round 8 shipped this endpoint with collusion as the one honest
+    exception -- collusion_clusters() had no `up_to_seq` of its own, so
+    the collusion figure was always today's, never the checkpoint's.
+    Round 9 (sql/009_collusion_as_of.sql) closed that: collusion below is
+    genuinely folded as of `seq`, the same as everything else here.
     """
     tip = _tip_seq(conn)
     if seq < 0 or seq > tip:
@@ -1166,15 +1167,11 @@ def bidder_as_of(bidder_id: str, seq: int, tender_id: str, conn=Depends(db),
     evidence_records = fold_evidence_as_of(conn, bidder_id, REGISTRY, seq)
     resolver = ProjectionResolver.from_records(evidence_records)
     pack = active_pack_as_of(conn, tender_id, seq)
-    cluster = {c.bidder_id: c for c in collusion_clusters(conn, tender_id)}.get(bidder_id)
+    cluster = {c.bidder_id: c for c in collusion_clusters_as_of(conn, tender_id, seq)}.get(bidder_id)
 
     snapshot = _bidder_snapshot(bidder_id, tender_id, conn, pack=pack, cluster=cluster,
                                 verdicts=verdicts, resolver=resolver)
     snapshot["as_of_seq"] = seq
-    snapshot["collusion_note"] = (
-        "Collusion status reflects current shared-attribute detection, not "
-        "this checkpoint -- collusion history isn't retroactively computed."
-    )
     return snapshot
 
 
