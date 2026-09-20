@@ -4,7 +4,7 @@ import { useApi } from "../lib/useApi";
 import { formatTimestamp } from "../lib/audit";
 import {
   Callout, CoverageMetric, Dash, EmptyState, ErrorState, LoadingBlock,
-  MetricCard, RiskBadge, Tag, VerdictBadge,
+  MetricCard, RiskBadge, Tag, UnavailableNote, VerdictBadge,
 } from "../ui/primitives";
 
 // Round 8, Rishika -- the Temporal Scrubber's frontend. Every checkpoint
@@ -102,8 +102,18 @@ export default function BidderHistoryTimeline({ bidderId, tenderId, currentVerdi
 
           <div className="row" style={{ gap: 10, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
             <RiskBadge level={snapshot.risk.level} />
-            <span className="text-xs text-muted">{snapshot.collusion_note}</span>
           </div>
+
+          {snapshot.collusion?.flagged && (
+            <div style={{ marginTop: 12 }}>
+              <UnavailableNote title="Potential common entity, as of this checkpoint">
+                As of event #{snapshot.as_of_seq}, this bidder already shared a tracked attribute with{" "}
+                <span className="mono">{snapshot.collusion.members.filter((m) => m !== bidderId).join(", ")}</span>{" "}
+                (cluster <span className="mono">{snapshot.collusion.cluster_id}</span>) — round 9 made this a
+                real historical fold, not today's status shown as if it were the checkpoint's.
+              </UnavailableNote>
+            </div>
+          )}
 
           {!snapshot.verdicts.length ? (
             <div style={{ marginTop: 16 }}>

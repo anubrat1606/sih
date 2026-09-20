@@ -28,6 +28,24 @@ def collusion_clusters(conn, tender_id: str) -> list[Cluster]:
         return [Cluster(b, f, c, tuple(m)) for b, f, c, m in cur.fetchall()]
 
 
+def collusion_clusters_as_of(conn, tender_id: str, up_to_seq: int) -> list[Cluster]:
+    """The Temporal Scrubber's counterpart to `collusion_clusters` -- the
+    same connected-components clustering, folded only from
+    SHARED_ATTRIBUTE_OBSERVED and BIDDER_REGISTERED events up to a past
+    seq, via sql/009_collusion_as_of.sql's `collusion_clusters_as_of`
+    (read-only, no table touched -- same safety property every other
+    as-of fold in this module has). Round 8's `bidder_as_of` endpoint
+    shipped with a stated gap here (collusion was always current, never
+    historical); this closes it."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT bidder_id, flagged, cluster_id, members "
+            "FROM collusion_clusters_as_of(%s, %s) ORDER BY bidder_id",
+            (tender_id, up_to_seq),
+        )
+        return [Cluster(b, f, c, tuple(m)) for b, f, c, m in cur.fetchall()]
+
+
 def provenance_trail(conn, bidder_id: str, requirement_id: str) -> list[dict[str, Any]]:
     """The causation chain behind one verdict: verdict -> fused evidence ->
     verification -> extraction (with page and region) -> source document."""

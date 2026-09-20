@@ -16,8 +16,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from satyapramana_store import (
-    Actor, active_pack_as_of, append, connect, fold_evidence_as_of,
-    fold_verdicts_as_of, rebuild_evidence, rebuild_projections,
+    Actor, active_pack_as_of, append, collusion_clusters, collusion_clusters_as_of,
+    connect, fold_evidence_as_of, fold_verdicts_as_of, rebuild_evidence, rebuild_projections,
 )
 from satyapramana_store.adapters import Registry
 from satyapramana_store.app import app, db
@@ -163,6 +163,97 @@ def test_active_pack_as_of_before_any_adoption_is_none(conn):
     assert active_pack_as_of(conn, "T-NEVER-ADOPTED", up_to_seq=10**9) is None
 
 
+# --- collusion_clusters_as_of (round 9) ---------------------------------------
+#
+# bidder_in_tender itself has no seq column -- these prove membership is
+# correctly reconstructed from real BIDDER_REGISTERED events instead, not
+# just that the shared-attribute edge is seq-bounded.
+
+def register_event(conn, tender: str, bidder: str):
+    """A real BIDDER_REGISTERED event, the same one register_bidder (app.py)
+    appends -- register()/link() in test_projections.py only insert into
+    bidder_in_tender directly, which has no seq at all and is exactly the
+    gap this function's existence closes."""
+    with conn.cursor() as cur:
+        cur.execute("INSERT INTO bidder_in_tender VALUES (%s,%s) ON CONFLICT DO NOTHING",
+                    (tender, bidder))
+    return append(conn, event_type="BIDDER_REGISTERED", actor=SYS, correlation_id=CORR,
+                  tender_id=tender, bidder_id=bidder,
+                  payload={"bidder_id": bidder, "attributes_present": []})
+
+
+def link_event(conn, tender: str, a: str, b: str, attribute: str = "phone"):
+    return append(conn, event_type="SHARED_ATTRIBUTE_OBSERVED", actor=SYS, correlation_id=CORR,
+                  tender_id=tender,
+                  payload={"bidder_a": a, "bidder_b": b, "attribute": attribute,
+                           "value_sha256": "f" * 64})
+
+
+def test_collusion_as_of_writes_nothing(conn):
+    register_event(conn, "T1", "A")
+    register_event(conn, "T1", "B")
+    link_event(conn, "T1", "A", "B")
+    collusion_clusters_as_of(conn, "T1", up_to_seq=999999)
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM proj_collusion")
+        assert cur.fetchone()[0] == 0, "a pure fold must never touch proj_collusion"
+
+
+def test_collusion_as_of_matches_the_live_function_at_the_tip(conn):
+    register_event(conn, "T1", "A")
+    register_event(conn, "T1", "B")
+    register_event(conn, "T1", "C")
+    link_event(conn, "T1", "A", "B", "phone")
+    live = {c.bidder_id: c for c in collusion_clusters(conn, "T1")}
+    as_of = {c.bidder_id: c for c in collusion_clusters_as_of(conn, "T1", up_to_seq=10**9)}
+    assert live == as_of
+
+
+def test_a_bidder_registered_after_the_checkpoint_is_absent_from_it(conn):
+    """The real reason this needs BIDDER_REGISTERED events and not
+    bidder_in_tender: the table alone cannot say who was and wasn't
+    registered as of a past point."""
+    register_event(conn, "T1", "A")
+    checkpoint = register_event(conn, "T1", "B")["seq"]
+    register_event(conn, "T1", "C")  # registers after the checkpoint
+
+    as_of = {c.bidder_id: c.members for c in collusion_clusters_as_of(conn, "T1", checkpoint)}
+    assert set(as_of) == {"A", "B"}
+
+    today = {c.bidder_id: c.members for c in collusion_clusters_as_of(conn, "T1", up_to_seq=10**9)}
+    assert set(today) == {"A", "B", "C"}
+
+
+def test_a_shared_attribute_observed_after_the_checkpoint_does_not_flag_it_yet(conn):
+    """The exact scenario round 8's as-of endpoint could not answer: two
+    bidders share an attribute, but only after the point being viewed."""
+    register_event(conn, "T1", "A")
+    checkpoint = register_event(conn, "T1", "B")["seq"]
+    link_event(conn, "T1", "A", "B", "bank_account")  # observed after the checkpoint
+
+    before = {c.bidder_id: c.flagged for c in collusion_clusters_as_of(conn, "T1", checkpoint)}
+    assert before == {"A": False, "B": False}
+
+    after = {c.bidder_id: c.flagged for c in collusion_clusters_as_of(conn, "T1", up_to_seq=10**9)}
+    assert after == {"A": True, "B": True}
+
+
+def test_as_of_endpoint_shows_a_real_collusion_transition(client, conn):
+    """End to end through the real API: as-of before the shared attribute
+    is observed shows unflagged; as-of after (and live) shows flagged."""
+    register_event(conn, "T-COLLUDE", "A")
+    checkpoint = register_event(conn, "T-COLLUDE", "B")["seq"]
+    after_link = link_event(conn, "T-COLLUDE", "A", "B", "address")
+    headers = auth_headers(conn)
+
+    before = client.get(f"/bidders/A/as-of/{checkpoint}?tender_id=T-COLLUDE", headers=headers).json()
+    assert before["collusion"]["flagged"] is False
+
+    after = client.get(f"/bidders/A/as-of/{after_link['seq']}?tender_id=T-COLLUDE", headers=headers).json()
+    assert after["collusion"]["flagged"] is True
+    assert "collusion_note" not in after, "round 9: no longer a documented limitation"
+
+
 # --- the two API endpoints -----------------------------------------------------
 
 def test_timeline_returns_real_checkpoints_in_order(client, conn):
@@ -180,7 +271,13 @@ def test_timeline_returns_real_checkpoints_in_order(client, conn):
 
 
 def test_as_of_the_tip_matches_the_live_endpoint(client, conn):
-    register(conn, "T1", ["A"])
+    # register(), unlike register_event() below, only inserts into
+    # bidder_in_tender -- fine for tests that don't touch collusion, but a
+    # real registration always appends BIDDER_REGISTERED too (app.py's
+    # register_bidder), and collusion_clusters_as_of reads that event, not
+    # the table. Use the realistic helper here so this comparison is a
+    # real live-vs-as-of match, not an artifact of a lighter test fixture.
+    register_event(conn, "T1", "A")
     evaluate(conn, "T1", "A", "R1", "PASS", "AUTHORITY_CONFIRMED")
     headers = auth_headers(conn)
     tip = client.get("/bidders/A/timeline?tender_id=T1", headers=headers).json()["checkpoints"][-1]["seq"]
@@ -191,7 +288,10 @@ def test_as_of_the_tip_matches_the_live_endpoint(client, conn):
     assert as_of["metrics"] == live["metrics"]
     assert as_of["risk"] == live["risk"]
     assert as_of["as_of_seq"] == tip
-    assert "collusion_note" in as_of
+    assert as_of["collusion"] == live["collusion"], (
+        "round 9: collusion is genuinely folded as of `seq` now, not today's "
+        "figure -- at the live tip the two must agree exactly"
+    )
 
 
 def test_as_of_before_an_override_shows_the_pre_override_verdict(client, conn):
