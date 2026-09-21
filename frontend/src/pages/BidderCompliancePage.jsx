@@ -7,6 +7,7 @@ import {
 import { roleAtLeast, useAuth } from "../authContext";
 import { useApi } from "../lib/useApi";
 import { formatTimestamp } from "../lib/audit";
+import { formatEvidenceValue } from "../lib/currency";
 import { useToast } from "../notifications";
 import PdfEvidenceViewer from "../features/PdfEvidenceViewer";
 import BidderHistoryTimeline from "../features/BidderHistoryTimeline";
@@ -58,7 +59,9 @@ function EvidencePanel({ bidderId, requirementId, verdict, onClose }) {
                 },
                 {
                   label: "Extracted value",
-                  value: extracted ? <span className="mono">{String(extracted.payload.value)}</span> : <Dash />,
+                  value: extracted
+                    ? <span className="mono">{formatEvidenceValue(extracted.payload.path, extracted.payload.value)}</span>
+                    : <Dash />,
                 },
                 {
                   label: "Verification",
@@ -309,7 +312,7 @@ export default function BidderCompliancePage() {
                             <td>
                               {ev?.resolved ? (
                                 <>
-                                  <div className="mono text-sm">{String(ev.value)}</div>
+                                  <div className="mono text-sm">{formatEvidenceValue(ev.path, ev.value)}</div>
                                   <div className="text-xs text-muted">{ev.path}</div>
                                 </>
                               ) : (
@@ -375,7 +378,9 @@ export default function BidderCompliancePage() {
                           <Field label="Result"><VerdictBadge verdict={blocker.verdict} /></Field>
                           <Field label="Evidence" empty={!evidenceByPath[blocker.evidence_path]?.resolved}>
                             {evidenceByPath[blocker.evidence_path]?.resolved
-                              ? <span className="mono">{String(evidenceByPath[blocker.evidence_path].value)}</span>
+                              ? <span className="mono">
+                                  {formatEvidenceValue(blocker.evidence_path, evidenceByPath[blocker.evidence_path].value)}
+                                </span>
                               : (evidenceByPath[blocker.evidence_path]?.unresolved_reason || "no evidence recorded")}
                           </Field>
                           <Field label="Rule">{blocker.reason_code || <Dash />}</Field>
@@ -445,7 +450,7 @@ export default function BidderCompliancePage() {
                         {evidence.data.evidence.map((e) => (
                           <tr key={e.path}>
                             <td className="mono text-sm">{e.path}</td>
-                            <td>{e.resolved ? <span className="mono">{String(e.value)}</span> : <Dash />}</td>
+                            <td>{e.resolved ? <span className="mono">{formatEvidenceValue(e.path, e.value)}</span> : <Dash />}</td>
                             <td className="text-sm">{e.capability_id || <span className="text-muted">document extraction</span>}</td>
                             <td>{e.tier ? <Tag>TIER {e.tier}</Tag> : <Dash />}</td>
                             <td>

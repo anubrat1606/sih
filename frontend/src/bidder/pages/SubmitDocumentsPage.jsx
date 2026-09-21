@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getMySubmission, getMyTenderRequirements, recordDeclaration, uploadMyDocument } from "../bidderApi";
+import { formatEvidenceValue } from "../../lib/currency";
 import { useApi } from "../../lib/useApi";
 import {
   Card, Dash, EmptyState, ErrorState, PageHeader, Tag,
@@ -307,7 +308,7 @@ export default function SubmitDocumentsPage() {
                                   {u.result.extracted.map((f) => (
                                     <tr key={f.path}>
                                       <td className="mono text-sm">{f.path}</td>
-                                      <td className="mono text-sm">{f.value}</td>
+                                      <td className="mono text-sm">{formatEvidenceValue(f.path, f.value)}</td>
                                       <td className="mono text-sm">{f.page}</td>
                                     </tr>
                                   ))}
