@@ -15,6 +15,7 @@ from typing import Any, Mapping
 from satyapramana.rulepack import Violation, content_hash, rule_pack_version, validate
 
 from .adapters import Registry
+from .declarations import declaration_field
 from .events import Actor, append
 
 SCHEMA_PATH = Path(__file__).resolve().parents[3] / "schemas" / "rule_pack.schema.json"
@@ -26,13 +27,22 @@ class NotAdoptable(ValueError):
         super().__init__("; ".join(str(v) for v in violations))
 
 
-def _registry_as_dict(registry: Registry) -> dict[str, Any]:
+def _registry_as_dict(registry: Registry, pack: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Everything that can produce evidence, for rule 8.
 
     Adapters are only half of it. The deterministic extraction stage produces
     evidence too -- the identifiers it reads off a document -- and a rule pack
     that may not reference them could never express "the bidder stated a GSTIN".
     Rule 8's wording is "no producing stage or adapter"; both belong here.
+
+    A third mechanism belongs here too, but only when `pack` is given: a
+    bidder's own recorded attestation (app.py's POST
+    .../declarations, evidence.py's fold of DECLARATION_RECORDED) is
+    neither extraction nor an adapter -- it's a real event captured
+    directly by this orchestrator. Its producible paths are computed fresh
+    per pack, one per requirement id actually in `pack`, rather than
+    guessed or left open-ended -- a requirement can only ever satisfy
+    itself this way, never borrow another requirement's declaration.
     """
     from .extract.ingest import FIELD_PATHS
 
@@ -44,6 +54,11 @@ def _registry_as_dict(registry: Registry) -> dict[str, Any]:
     adapters.append({
         "adapter_id": "extract-deterministic",
         "capabilities": [{"provides": sorted(FIELD_PATHS.values())}]})
+    if pack is not None:
+        req_ids = [r["id"] for r in pack.get("requirements", []) if r.get("id")]
+        adapters.append({
+            "adapter_id": "bidder-self-declaration",
+            "capabilities": [{"provides": [declaration_field(rid) for rid in req_ids]}]})
     return {"adapters": adapters}
 
 
@@ -58,7 +73,7 @@ def validate_only(pack: Mapping[str, Any], *, registry: Registry) -> tuple[dict[
     body = {k: v for k, v in pack.items() if k != "content_hash"}
     body["content_hash"] = content_hash(body)
     schema = json.loads(SCHEMA_PATH.read_text())
-    violations = validate(body, _registry_as_dict(registry), schema)
+    violations = validate(body, _registry_as_dict(registry, body), schema)
     return body, violations
 
 

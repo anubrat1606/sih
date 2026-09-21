@@ -17,6 +17,7 @@ from satyapramana.predicates import Resolved
 from satyapramana.verdicts import Channel, Reason, Tier
 
 from .adapters import Registry
+from .declarations import declaration_field
 
 #: satyapramana.md section 2.2 puts NORMALIZE between EXTRACT and RESOLVE:
 #: "canonicalise formats: dates to ISO-8601... deterministic validators
@@ -87,7 +88,8 @@ def fold_evidence_as_of(conn, bidder_id: str, registry: Registry,
                FROM events
                WHERE bidder_id=%s AND seq<=%s
                  AND event_type IN ('FIELD_EXTRACTED','VERIFICATION_OBSERVED',
-                                    'VERIFICATION_FAILED','EXTRACTION_FAILED')
+                                    'VERIFICATION_FAILED','EXTRACTION_FAILED',
+                                    'DECLARATION_RECORDED')
                ORDER BY seq""",
             (bidder_id, ceiling))
         rows = cur.fetchall()
@@ -122,6 +124,23 @@ def fold_evidence_as_of(conn, bidder_id: str, registry: Registry,
                         "source_asserted_at": payload.get("source_asserted_at"),
                         "source_event": event_id, "built_from_seq": seq,
                     }
+            elif etype == "DECLARATION_RECORDED":
+                # declarations.declaration_field -- the same transform
+                # rulepacks.py uses to compute what a DECLARATION
+                # requirement's predicate is allowed to reference, so this
+                # requirement's own id names the one path it satisfies,
+                # never any other requirement's. Tier C: an undertaking is
+                # self-declared by definition, the same evidentiary weight
+                # a raw extracted field has before any verification --
+                # there is no authority to ask.
+                path = declaration_field(payload["requirement_id"])
+                records[path] = {
+                    "path": path, "resolved": True,
+                    "value": payload["declaration_text"], "unresolved_reason": None,
+                    "tier": Tier.C.value, "channel": None, "capability_id": None,
+                    "observed_at": occurred_at, "source_asserted_at": None,
+                    "source_event": event_id, "built_from_seq": seq,
+                }
             else:  # VERIFICATION_FAILED
                 # Every path the capability WOULD have produced becomes an
                 # unresolved record carrying the real reason. Without this the

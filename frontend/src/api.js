@@ -52,7 +52,7 @@ export async function call(path, options = {}) {
   return contentType.includes("application/json") ? resp.json() : resp.text();
 }
 
-const json = (body) => ({ headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const json = (body) => ({ headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 export const getCapabilities = () => call("/capabilities");
 

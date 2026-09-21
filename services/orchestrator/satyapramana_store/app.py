@@ -189,6 +189,14 @@ class OverrideIn(BaseModel):
     justification: str = Field(min_length=1)
 
 
+class DeclarationIn(BaseModel):
+    requirement_id: str = Field(min_length=1)
+    #: What's actually being attested to -- recorded verbatim, not a
+    #: boolean flag. An undertaking is the text itself; a checkbox alone
+    #: would assert nothing an auditor could later read back.
+    declaration_text: str = Field(min_length=1)
+
+
 class LoginIn(BaseModel):
     username: str
     password: str
@@ -718,6 +726,31 @@ def upload_document(bidder_id: str, tender_id: str,
                              declared_type=declared_type)
     rebuild_evidence(conn, bidder_id, REGISTRY)
     return result
+
+
+@app.post("/bidders/{bidder_id}/declarations", status_code=201)
+def record_declaration(bidder_id: str, tender_id: str, body: DeclarationIn,
+                       conn=Depends(db), user: User = Depends(officer_or_self)) -> dict[str, Any]:
+    """Round 9: closes DECLARATION, the one requirement type that was
+    never an extraction problem -- an undertaking IS the self-declaration,
+    with nothing to independently verify it against, by definition.
+
+    Same gate as a bidder's own document upload (officer_or_self): a
+    bidder attests for themselves, or an officer records it on their
+    behalf -- either way the real signed-in identity is the actor, never
+    a client-supplied name, because who attested is the entire point of
+    a declaration.
+    """
+    event = append(
+        conn, event_type="DECLARATION_RECORDED", actor=Actor("HUMAN", user.username),
+        correlation_id=str(uuid.uuid4()), tender_id=tender_id, bidder_id=bidder_id,
+        payload={"requirement_id": body.requirement_id,
+                 "declaration_text": body.declaration_text,
+                 "declared_by": user.username})
+    rebuild_evidence(conn, bidder_id, REGISTRY)
+    return {"bidder_id": bidder_id, "tender_id": tender_id,
+            "requirement_id": body.requirement_id, "declared_by": user.username,
+            "seq": event["seq"]}
 
 
 @app.get("/documents/{document_sha256}")
@@ -1412,6 +1445,8 @@ def _evidence_expected(field: str) -> str:
         "bidder.udyam.udyam_number": "Udyam (MSME) registration certificate",
         "bidder.udyam.status": "Udyam (MSME) registration certificate",
     }
+    if field.startswith("bidder.declarations."):
+        return "Self-declaration / undertaking"
     return labels.get(field, field)
 
 
@@ -1471,7 +1506,10 @@ def my_submission(tender_id: str, conn=Depends(db),
     """This bidder's own uploaded documents on this tender, with each
     upload's real extraction summary -- the same shape
     POST /bidders/{id}/documents already returned at upload time, read
-    back from the event log rather than re-derived."""
+    back from the event log rather than re-derived. Round 9: their own
+    recorded declarations join this same read, same reasoning -- a
+    bidder reopening this page needs to see what they've already
+    attested to, not re-declare blind."""
     with conn.cursor() as cur:
         cur.execute(
             """SELECT payload FROM events
@@ -1479,9 +1517,25 @@ def my_submission(tender_id: str, conn=Depends(db),
                ORDER BY seq""",
             (tender_id, bidder.bidder_id))
         documents = [row[0] for row in cur.fetchall()]
+        cur.execute(
+            """SELECT payload, occurred_at FROM events
+               WHERE event_type='DECLARATION_RECORDED' AND tender_id=%s AND bidder_id=%s
+               ORDER BY seq""",
+            (tender_id, bidder.bidder_id))
+        # Later wins, the same fold every other evidence path uses -- keyed
+        # by requirement_id so a correction replaces the row instead of
+        # appending a second one the bidder would see twice.
+        by_requirement: dict[str, dict[str, Any]] = {}
+        for payload, occurred_at in cur.fetchall():
+            by_requirement[payload["requirement_id"]] = {
+                "requirement_id": payload["requirement_id"],
+                "declaration_text": payload["declaration_text"],
+                "declared_by": payload["declared_by"],
+                "declared_at": occurred_at.isoformat()}
+        declarations = sorted(by_requirement.values(), key=lambda d: d["requirement_id"])
     status = _bidder_submission_status(conn, tender_id, bidder.bidder_id)
     return {"tender_id": tender_id, "bidder_id": bidder.bidder_id,
-            "status": status, "documents": documents}
+            "status": status, "documents": documents, "declarations": declarations}
 
 
 def _bidder_result_view(conn, tender_id: str, bidder_id: str) -> dict[str, Any]:
