@@ -73,6 +73,7 @@ class Actor:
 #: event is a bug.
 HUMAN_EVENT_TYPES = frozenset({
     "TENDER_CREATED", "RULE_PACK_ADOPTED", "VERDICT_OVERRIDDEN", "DECISION_RECORDED",
+    "DECLARATION_RECORDED",
 })
 
 

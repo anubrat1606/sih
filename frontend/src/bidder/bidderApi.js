@@ -8,7 +8,7 @@
 // something not exported here, that's a policy question (see
 // docs/NEXT_TASKS_6_anubrat_rishika_suhani_kevin.md's bidder-visible-data
 // table), not something to work around locally.
-import { call } from "../api";
+import { call, json } from "../api";
 
 /**
  * @typedef {Object} MyTender
@@ -40,14 +40,38 @@ export const getMyTenderRequirements = (tenderId) =>
   call(`/me/tenders/${encodeURIComponent(tenderId)}/requirements`);
 
 /**
- * @returns {Promise<{tender_id: string, bidder_id: string, status: string, documents: object[]}>}
+ * @typedef {Object} MyDeclaration
+ * @property {string} requirement_id
+ * @property {string} declaration_text
+ * @property {string} declared_by
+ * @property {string} declared_at
+ */
+/**
+ * @returns {Promise<{tender_id: string, bidder_id: string, status: string,
+ *   documents: object[], declarations: MyDeclaration[]}>}
  * Each entry in `documents` is exactly what POST /bidders/{id}/documents
  * returned at upload time (document_sha256, extracted[], rejected[],
  * unreadable_pages[], identifier_cross_check) -- read back from the event
- * log, not re-derived.
+ * log, not re-derived. `declarations` (round 9) is one row per requirement
+ * this bidder has recorded a self-declaration for -- a correction replaces
+ * the row, never appends a second one for the same requirement.
  */
 export const getMySubmission = (tenderId) =>
   call(`/me/tenders/${encodeURIComponent(tenderId)}/submission`);
+
+/**
+ * Record a self-declaration / undertaking for one requirement -- round 9's
+ * answer to the one requirement type that was never an extraction problem:
+ * an undertaking IS the self-declaration, captured as a real, attributed
+ * event, never a document to parse.
+ * @returns {Promise<{bidder_id: string, tender_id: string, requirement_id: string,
+ *   declared_by: string, seq: number}>}
+ */
+export const recordDeclaration = (bidderId, tenderId, requirementId, declarationText) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/declarations?${new URLSearchParams({ tender_id: tenderId })}`, {
+    method: "POST",
+    ...json({ requirement_id: requirementId, declaration_text: declarationText }),
+  });
 
 /**
  * @returns {Promise<

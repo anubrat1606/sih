@@ -121,9 +121,16 @@ _CATALOG: tuple[RequirementType, ...] = (
         "source exists anywhere for EPFO/ESIC. Saved for review; this is a "
         "known, permanent gap, not an oversight."),
     RequirementType("DECLARATION", "Self-declaration / undertaking",
-        (), ("exists",),
-        "No self-attestation capture mechanism exists yet. Saved for "
-        "review; not adoptable until a real evidence path is built."),
+        ("bidder.declarations.{requirement_id}",), ("exists",),
+        "Captured directly as a real, attributed event when a bidder (or "
+        "an officer on their behalf) formally records the attestation "
+        "this requirement asks for -- never extracted from a document, "
+        "because an undertaking IS the self-declaration; there is nothing "
+        "to independently verify it against, by definition, not by "
+        "current limitation. The evidence path names this requirement's "
+        "own id, normalized to fit a field name (lowercased, \"R4.1\" "
+        "becomes \"req_r4_1\") -- type your requirement's ID first, then "
+        "pick this type, and the real field fills in automatically."),
     RequirementType("TECHNICAL", "Technical requirement (free-form)",
         (), (),
         "Open-ended by nature. If it reduces to one of the typed checks "
@@ -150,7 +157,18 @@ def requirement_type_catalog(registry: Registry) -> list[dict[str, Any]]:
     producible = _producible_paths(registry)
     out = []
     for rt in _CATALOG:
-        backed_fields = [f for f in rt.candidate_fields if f in producible]
+        if rt.id == "DECLARATION":
+            # This type's one field is a template (bidder.declarations.
+            # {requirement_id}), never a literal member of `producible` --
+            # it's parameterized by a requirement id that only exists once
+            # a pack is being drafted (rulepacks.py's _registry_as_dict
+            # computes the real per-pack paths at validation time). Always
+            # backed here: the capture mechanism itself (a real recorded
+            # human attestation) exists independent of what's registered
+            # in the adapter registry.
+            backed_fields = list(rt.candidate_fields)
+        else:
+            backed_fields = [f for f in rt.candidate_fields if f in producible]
         out.append({
             "id": rt.id,
             "label": rt.label,

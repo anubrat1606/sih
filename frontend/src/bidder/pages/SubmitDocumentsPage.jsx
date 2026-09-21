@@ -1,10 +1,97 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getMySubmission, getMyTenderRequirements, uploadMyDocument } from "../bidderApi";
+import { getMySubmission, getMyTenderRequirements, recordDeclaration, uploadMyDocument } from "../bidderApi";
 import { useApi } from "../../lib/useApi";
 import {
   Card, Dash, EmptyState, ErrorState, PageHeader, Tag,
 } from "../../ui/primitives";
+
+//: The exact label app.py's _evidence_expected returns for a
+// bidder.declarations.* path -- how this page tells "needs a document" and
+// "needs a self-declaration" apart, without the backend having to expose
+// the raw evidence field to a bidder at all.
+const DECLARATION_LABEL = "Self-declaration / undertaking";
+
+// Round 9. An undertaking IS the self-declaration -- recorded directly,
+// never uploaded as a document, and (unlike everything else on this page)
+// takes effect the moment it's submitted, not deferred to the wizard's
+// later steps.
+function DeclarationRow({ requirement, bidderId, tenderId, existing, onRecorded }) {
+  const [text, setText] = useState(existing?.declaration_text || "");
+  // `forceEdit`, not "editing" directly: `existing` only becomes real once
+  // onRecorded()'s reload actually resolves, which is strictly after this
+  // component re-renders from a successful save. Deriving "editing" as
+  // forceEdit || !existing (below), rather than a plain boolean flipped
+  // optimistically in onSave, means the confirmed view can never render
+  // while `existing` is still the stale pre-save value (undefined on a
+  // first save) -- caught live: `existing.declaration_text` threw exactly
+  // that instant before this fix.
+  const [forceEdit, setForceEdit] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const editing = forceEdit || !existing;
+
+  async function onSave() {
+    if (!text.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await recordDeclaration(bidderId, tenderId, requirement.id, text.trim());
+      setForceEdit(false);
+      onRecorded();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="table-frame" style={{ padding: "var(--space-4)", marginBottom: "var(--space-3)" }}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: "var(--space-3)" }}>
+        <div>
+          <div className="mono text-sm">{requirement.id}</div>
+          <div className="cell-note" style={{ marginTop: 2 }}>{requirement.text}</div>
+        </div>
+        <ObligationTag obligation={requirement.obligation} />
+      </div>
+
+      <ErrorState error={error} />
+
+      {editing ? (
+        <div style={{ marginTop: "var(--space-3)" }}>
+          <label htmlFor={`decl-${requirement.id}`} className="text-xs text-secondary">
+            Your declaration — recorded exactly as written, with your identity and the time, permanently.
+          </label>
+          <textarea id={`decl-${requirement.id}`} rows={3} value={text} style={{ width: "100%", marginTop: 4 }}
+                    onChange={(e) => setText(e.target.value)} />
+          <div className="btn-group" style={{ marginTop: "var(--space-2)" }}>
+            <button type="button" className="btn btn-primary btn-sm" disabled={saving || !text.trim()} onClick={onSave}>
+              {saving ? "Recording…" : existing ? "Save correction" : "Record declaration"}
+            </button>
+            {existing && (
+              <button type="button" className="btn btn-secondary btn-sm"
+                      onClick={() => { setText(existing.declaration_text); setForceEdit(false); }}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginTop: "var(--space-3)" }}>
+          <p className="text-sm">“{existing.declaration_text}”</p>
+          <p className="text-xs text-secondary" style={{ marginTop: 4 }}>
+            Recorded by {existing.declared_by} on {new Date(existing.declared_at).toLocaleString()}.
+          </p>
+          <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 6 }}
+                  onClick={() => setForceEdit(true)}>
+            Correct this declaration
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // The same declared_type values pages/RegisterBidderPage.jsx (officer
 // side) offers — that file is Anubrat's and not importable across owners
@@ -128,6 +215,28 @@ export default function SubmitDocumentsPage() {
                   </div>
                 </div>
               )}
+
+              {(() => {
+                const declRequirements = (requirements.data?.requirements || [])
+                  .filter((r) => r.evidence_expected === DECLARATION_LABEL);
+                if (!declRequirements.length) return null;
+                const byId = Object.fromEntries(
+                  (submission.data?.declarations || []).map((d) => [d.requirement_id, d]));
+                return (
+                  <div style={{ marginBottom: "var(--space-5)" }}>
+                    <h3 className="section-title" style={{ marginBottom: 8 }}>Self-declarations</h3>
+                    <p className="text-xs text-secondary" style={{ marginBottom: 12 }}>
+                      These requirements ask for your own attestation, not a document — there's nothing to
+                      upload for them. Recorded the moment you save, with your identity and the time.
+                    </p>
+                    {declRequirements.map((r) => (
+                      <DeclarationRow key={r.id} requirement={r} bidderId={submission.data?.bidder_id}
+                                      tenderId={tenderId} existing={byId[r.id]}
+                                      onRecorded={submission.reload} />
+                    ))}
+                  </div>
+                );
+              })()}
 
               <fieldset>
                 <legend>Before you submit</legend>

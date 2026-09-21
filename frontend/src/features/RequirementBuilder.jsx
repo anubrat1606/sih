@@ -16,6 +16,18 @@ import {
 //      live evidence path; the rest stay flagged, and the server refuses
 //      them (rule 8 + rule 11) rather than letting them pass.
 
+// Mirrors services/orchestrator/satyapramana_store/declarations.py's
+// declaration_field() byte-for-byte (the same "ported to JS, not
+// reimplemented independently" convention lib/validation.js already uses
+// for gstin_check_digit) -- field-path grammar only allows lowercase
+// alphanumeric/underscore segments starting with a letter, incompatible
+// with this project's own "R1"/"R4.1" requirement-id convention, so both
+// sides sanitize identically rather than one guessing at the other's rule.
+function declarationField(requirementId) {
+  const slug = (requirementId || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return `bidder.declarations.req_${slug || "x"}`;
+}
+
 const DEFAULT_CONSTANTS = {
   partial_credit: 0.5, w_mandatory: 1.0, w_desirable: 0.3,
   recency_floor: 0.5, corroboration_step: 0.1,
@@ -91,7 +103,11 @@ function RequirementRow({ index, req, types, onChange, onRemove }) {
     if (!t) { onChange({ type: typeId }); return; }
     if (t.evidence_backed) {
       const op = t.suggested_ops.find((o) => o in CONDITIONS) || "exists";
-      onChange({ type: typeId, field: t.backed_fields[0] || "", condition: op, reviewRequired: false, note: "" });
+      // DECLARATION's one field is a template naming this row's own
+      // requirement id -- real from the moment the type is picked if the
+      // id is already typed, computed live as the id changes below if not.
+      const field = typeId === "DECLARATION" ? declarationField(req.id) : (t.backed_fields[0] || "");
+      onChange({ type: typeId, field, condition: op, reviewRequired: false, note: "" });
     } else {
       onChange({ type: typeId, reviewRequired: true, note: t.note });
     }
@@ -104,7 +120,19 @@ function RequirementRow({ index, req, types, onChange, onRemove }) {
         <input
           className="mono" style={{ width: 130 }} value={req.id} required
           placeholder="R1" aria-label="Requirement ID"
-          onChange={(e) => onChange({ id: e.target.value })}
+          onChange={(e) => {
+            const id = e.target.value;
+            const patch = { id };
+            // Keeps the DECLARATION field's requirement-id slug in sync
+            // while the officer is still typing the id -- stops the
+            // moment they've edited the field directly (a real edited
+            // value is never overwritten), same one-way sync
+            // requirement_types.py's own note tells them to expect.
+            if (req.type === "DECLARATION" && req.field === declarationField(req.id)) {
+              patch.field = declarationField(id);
+            }
+            onChange(patch);
+          }}
         />
         {type && <Tag accent={type.evidence_backed}>{type.label}</Tag>}
         {req.obligation === "mandatory"
