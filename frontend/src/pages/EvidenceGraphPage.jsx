@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { getBidderEvidenceGraph, getProvenance } from "../api";
 import { useApi } from "../lib/useApi";
 import { formatTimestamp } from "../lib/audit";
+import { formatEvidenceValue } from "../lib/currency";
 import PdfEvidenceViewer from "../features/PdfEvidenceViewer";
 import {
   Card, Dash, Drawer, EmptyState, ErrorState, EvidenceChain, LoadingBlock,
@@ -178,7 +179,7 @@ export default function EvidenceGraphPage() {
                       <div className={`graph-node ${e.resolved ? "graph-node-resolved" : "graph-node-unresolved"}`}>
                         <span className="graph-node-title mono truncate">{e.path}</span>
                         <span className="graph-node-sub truncate">
-                          {e.resolved ? String(e.value) : (e.unresolved_reason || "not determined")}
+                          {e.resolved ? formatEvidenceValue(e.path, e.value) : (e.unresolved_reason || "not determined")}
                           {e.tier ? ` · Tier ${e.tier}` : ""}
                         </span>
                       </div>
@@ -225,7 +226,9 @@ export default function EvidenceGraphPage() {
                     { label: "Requirement", value: <span className="mono">{selected}</span> },
                     { label: "Document", value: document ? document.payload.filename : <span className="text-muted">not document-sourced</span> },
                     { label: "Page", value: extracted ? <span className="mono">page {extracted.payload.page}</span> : <Dash /> },
-                    { label: "Extracted value", value: extracted ? <span className="mono">{String(extracted.payload.value)}</span> : <Dash /> },
+                    { label: "Extracted value", value: extracted
+                        ? <span className="mono">{formatEvidenceValue(extracted.payload.path, extracted.payload.value)}</span>
+                        : <Dash /> },
                     { label: "Verification", value: observed
                         ? <span className="mono">{observed.payload.capability_id}</span>
                         : failed
