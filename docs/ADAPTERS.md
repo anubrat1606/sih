@@ -276,6 +276,7 @@ credentials exist. This is recorded rather than hidden.
 |---|---|---|---|---|
 | `PAN_STATUS` | A | AGGREGATOR | **awaiting credentials** | Protean/NSDL direct is the Tier A DIRECT upgrade path |
 | `GST_STATUS` | A | AGGREGATOR | **awaiting credentials** | Official GSTN API needs a GSP licence; not obtainable at v1 |
+| `GST_RETURN_STATUS` | A | AGGREGATOR | **awaiting credentials** | Round 10: Sandbox.co.in's Track GST Returns endpoint. Closes PS26100 point 3 (GST return filing) the rest of the way, GST_STATUS already covering registration. `financial_year` has no resolvable per-bidder source yet -- see `GstReturnStatusAdapter`'s docstring; refuses honestly until that's decided. |
 | `CIN_STATUS` | A | AGGREGATOR | **awaiting credentials** | MCA21 has no free public API |
 | `UDYAM_STATUS` | A | AGGREGATOR | **awaiting credentials** | Portal verification is OTP-gated |
 | `EPFO_ESTABLISHMENT` | — | — | **null adapter** | No lawful programmatic source. Renders as unavailable. |

@@ -17,7 +17,8 @@ from satyapramana_store.adapters.base import (
     Basis, Failure, FailureCode, LawfulBasis, Success, VerificationRequest,
 )
 from satyapramana_store.adapters.sandbox_co_in import (
-    CinStatusAdapter, GstStatusAdapter, PanStatusAdapter, SandboxSession, build_from_env,
+    CinStatusAdapter, GstReturnStatusAdapter, GstStatusAdapter, PanStatusAdapter,
+    SandboxSession, build_from_env,
 )
 
 BASIS = LawfulBasis(Basis.TENDER_EVALUATION, "officer_1",
@@ -42,11 +43,12 @@ def test_no_adapters_without_both_env_vars(monkeypatch):
     assert build_from_env() == []
 
 
-def test_three_live_adapters_once_both_are_set(monkeypatch):
+def test_four_live_adapters_once_both_are_set(monkeypatch):
     monkeypatch.setenv("SATYAPRAMANA_SANDBOX_API_KEY", "k")
     monkeypatch.setenv("SATYAPRAMANA_SANDBOX_API_SECRET", "s")
     adapters = build_from_env()
-    assert {a.manifest.adapter_id for a in adapters} == {"pan_status", "gst_status", "mca_cin"}
+    assert {a.manifest.adapter_id for a in adapters} == {
+        "pan_status", "gst_status", "gst_return_status", "mca_cin"}
     assert all(c.live for a in adapters for c in a.manifest.capabilities)
 
 
@@ -205,6 +207,163 @@ def test_gst_rate_limited_maps_correctly():
     outcome = adapter.verify(VerificationRequest(
         "GST_STATUS", {"gstin": "33ABKCS2033B1ZW"}, BASIS))
     assert isinstance(outcome, Failure) and outcome.code is FailureCode.RATE_LIMITED
+
+
+# --- GST return status --------------------------------------------------------
+
+def test_gst_return_status_picks_the_latest_period_not_list_order():
+    """Real fixture, taken verbatim from Sandbox's own OpenAPI example for
+    this endpoint -- the list isn't sorted by period, so this proves the
+    adapter actually compares (year, month) rather than trusting order."""
+    def handler(request):
+        if request.url.path == "/authenticate":
+            return AUTH_OK
+        assert request.url.params["financial_year"] == "FY 2020-21"
+        assert "gstr" not in request.url.params
+        assert json.loads(request.content) == {"gstin": "33ABKCS2033B1ZW"}
+        return httpx.Response(200, json={
+            "code": 200, "data": {
+                "data": {"EFiledlist": [
+                    {"arn": "AA330820000343Z", "dof": "01-02-2023", "mof": "GSP",
+                     "ret_prd": "082020", "rtntype": "GSTR1", "status": "Filed", "valid": "Y"},
+                    {"arn": "AA331120000360G", "dof": "05-02-2023", "mof": "GSP",
+                     "ret_prd": "112020", "rtntype": "GSTR1", "status": "Filed", "valid": "Y"},
+                    {"arn": "AA330920000445R", "dof": "01-02-2023", "mof": "GSP",
+                     "ret_prd": "092020", "rtntype": "GSTR1", "status": "Filed", "valid": "Y"},
+                ]},
+                "status_cd": "1",
+            },
+        })
+
+    adapter = GstReturnStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest("GST_RETURN_STATUS", {
+        "gstin": "33ABKCS2033B1ZW", "gst_return_financial_year": "FY 2020-21",
+    }, BASIS))
+
+    assert isinstance(outcome, Success)
+    values = {o.path: o.value for o in outcome.observations}
+    assert values["bidder.gst.latest_return_period"] == "112020"
+    assert values["bidder.gst.latest_return_filed_date"] == "05-02-2023"
+    assert values["bidder.gst.latest_return_status"] == "Filed"
+    assert values["bidder.gst.latest_return_type"] == "GSTR1"
+
+
+def test_gst_return_status_passes_the_optional_return_type_filter():
+    def handler(request):
+        if request.url.path == "/authenticate":
+            return AUTH_OK
+        assert request.url.params["gstr"] == "GSTR3B"
+        return httpx.Response(200, json={
+            "code": 200, "data": {
+                "data": {"EFiledlist": [
+                    {"arn": "A1", "dof": "01-02-2023", "mof": "GSP",
+                     "ret_prd": "032021", "rtntype": "GSTR3B", "status": "Filed", "valid": "Y"},
+                ]},
+                "status_cd": "1",
+            },
+        })
+
+    adapter = GstReturnStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest("GST_RETURN_STATUS", {
+        "gstin": "33ABKCS2033B1ZW", "gst_return_financial_year": "FY 2020-21",
+        "gst_return_type": "GSTR3B",
+    }, BASIS))
+    assert isinstance(outcome, Success)
+
+
+def test_gst_return_status_rtn22_is_our_own_malformed_request_not_a_finding():
+    """RTN_22 means Sandbox rejected the financial_year we sent -- a bug in
+    the request, never an authority fact about the bidder. Must not be
+    confused with RET13510 (a real not-found)."""
+    def handler(request):
+        if request.url.path == "/authenticate":
+            return AUTH_OK
+        return httpx.Response(200, json={
+            "code": 200, "data": {
+                "error": {"error_code": "RTN_22", "message": "Please select a valid financial year"},
+                "status_cd": "0",
+            },
+        })
+
+    adapter = GstReturnStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest("GST_RETURN_STATUS", {
+        "gstin": "3418FIN00001UNY", "gst_return_financial_year": "not a real FY",
+    }, BASIS))
+    assert isinstance(outcome, Failure) and outcome.code is FailureCode.MALFORMED
+    assert "financial year" in outcome.detail.lower()
+
+
+def test_gst_return_status_ret13510_is_honestly_not_found():
+    def handler(request):
+        if request.url.path == "/authenticate":
+            return AUTH_OK
+        return httpx.Response(200, json={
+            "code": 200, "data": {
+                "error": {"error_code": "RET13510", "message": "No Record found for the provided Inputs"},
+                "status_cd": "0",
+            },
+        })
+
+    adapter = GstReturnStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest("GST_RETURN_STATUS", {
+        "gstin": "07CQZCD1111I4Z7", "gst_return_financial_year": "FY 2020-21",
+    }, BASIS))
+    assert isinstance(outcome, Failure) and outcome.code is FailureCode.NOT_FOUND
+
+
+def test_gst_return_status_unrecognised_error_code_is_ambiguous_not_guessed():
+    def handler(request):
+        if request.url.path == "/authenticate":
+            return AUTH_OK
+        return httpx.Response(200, json={
+            "code": 200, "data": {
+                "error": {"error_code": "SOMETHING_NEW", "message": "unexpected"},
+                "status_cd": "0",
+            },
+        })
+
+    adapter = GstReturnStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest("GST_RETURN_STATUS", {
+        "gstin": "33ABKCS2033B1ZW", "gst_return_financial_year": "FY 2020-21",
+    }, BASIS))
+    assert isinstance(outcome, Failure) and outcome.code is FailureCode.AMBIGUOUS
+
+
+def test_gst_return_status_invalid_gstin_pattern_is_the_documented_422():
+    def handler(request):
+        if request.url.path == "/authenticate":
+            return AUTH_OK
+        return httpx.Response(422, json={"code": 422, "message": "Invalid GSTIN pattern"})
+
+    adapter = GstReturnStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest("GST_RETURN_STATUS", {
+        "gstin": "34ACXP00001E0Z0", "gst_return_financial_year": "FY 2020-21",
+    }, BASIS))
+    assert isinstance(outcome, Failure) and outcome.code is FailureCode.MALFORMED
+
+
+def test_gst_return_status_missing_gstin_never_calls_the_network():
+    def handler(request):
+        raise AssertionError("no HTTP call should happen without a GSTIN")
+
+    adapter = GstReturnStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest(
+        "GST_RETURN_STATUS", {"gst_return_financial_year": "FY 2020-21"}, BASIS))
+    assert isinstance(outcome, Failure) and outcome.code is FailureCode.MALFORMED
+
+
+def test_gst_return_status_missing_financial_year_is_refused_not_defaulted():
+    """No per-bidder source for financial_year exists in this deployment yet
+    -- this must refuse honestly, never silently default to 'this year' and
+    risk checking the wrong period."""
+    def handler(request):
+        raise AssertionError("no HTTP call should happen without a financial_year")
+
+    adapter = GstReturnStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest(
+        "GST_RETURN_STATUS", {"gstin": "33ABKCS2033B1ZW"}, BASIS))
+    assert isinstance(outcome, Failure) and outcome.code is FailureCode.MALFORMED
+    assert "financial_year" in outcome.detail
 
 
 # --- CIN --------------------------------------------------------------------

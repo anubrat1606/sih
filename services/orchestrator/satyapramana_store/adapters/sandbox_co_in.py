@@ -20,6 +20,22 @@ Contracts below were read from Sandbox's own developer docs
                            "status_cd": "1"}}   -- "status_cd": "0" means
              not found (error_cd FO8000), still HTTP 200.
 
+  GST return  POST /gst/compliance/public/gstrs/track
+  tracking    query: financial_year (required, "FY YYYY-YY"), gstr (optional
+              return-type filter, e.g. "gstr-1")
+              body: {gstin}
+              -> {"data": {"data": {"EFiledlist": [{"arn", "dof", "mof",
+                            "ret_prd", "rtntype", "status", "valid"}, ...]},
+                            "status_cd": "1"}}
+              -- "status_cd": "0" with "data.error.error_code" == "RTN_22"
+              means the financial_year we sent was rejected (our request's
+              fault, not an authority fact); "RET13510" means the GSTIN has
+              no filing record for the query as asked. Both still HTTP 200.
+              A genuinely malformed GSTIN is a real HTTP 422 instead.
+              Confirmed against Sandbox's own OpenAPI spec (api-reference/
+              gst/compliance/openapi.json, operationId trackGstReturns), not
+              guessed.
+
 This module only turns those two calls into Observations or Failures. It never
 canonicalises a date or decides a verdict -- that is NORMALIZE's and DECIDE's
 job respectively, not an adapter's (docs/satyapramana.md section 2.2).
@@ -101,9 +117,9 @@ class SandboxSession:
             "Content-Type": "application/json",
         }
 
-    def post(self, path: str, body: dict[str, Any]) -> httpx.Response:
+    def post(self, path: str, body: dict[str, Any], params: dict[str, str] | None = None) -> httpx.Response:
         return self._client.post(
-            f"{self.base_url}{path}", headers=self.headers(), json=body
+            f"{self.base_url}{path}", headers=self.headers(), json=body, params=params
         )
 
 
@@ -392,6 +408,148 @@ class GstStatusAdapter:
         )
 
 
+class GstReturnStatusAdapter:
+    """docs/ADAPTERS.md capability GST_RETURN_STATUS, backed by Sandbox.co.in's
+    Track GST Returns endpoint.
+
+    Round 10: closes PS26100 point 3 the rest of the way -- GST_STATUS already
+    covers registration; this covers whether the required returns were
+    actually filed. The API answers for one (gstin, financial_year) pair and
+    returns every filed-return record it has for that pair, optionally
+    narrowed to one return type via the `gstr` query filter; this adapter
+    summarizes that list down to the single most-recently-filed record
+    (by ret_prd, "MMYYYY") as this capability's four observations, the same
+    "one bounded scalar fact per path" shape every other capability here
+    uses -- DECIDE evaluates a rule pack's predicate against a field, not a
+    variable-length list.
+
+    financial_year has no currently-resolvable per-bidder source: it is not
+    an extracted document fact (unlike gstin) and not a tender-context value
+    /bidders/{id}/verify currently threads through to adapters (unlike, say,
+    context.bid_submission_date at evaluate time). Until the team decides
+    where it comes from -- an officer-supplied value, the tender's own bid
+    submission date's FY, something else -- this capability honestly refuses
+    with MALFORMED whenever it's absent from the subject, the same posture
+    CinStatusAdapter already takes for a CIN with no extraction path yet.
+    """
+
+    def __init__(self, session: SandboxSession):
+        self._session = session
+        self.manifest = CapabilityManifest(
+            adapter_id="gst_return_status",
+            adapter_version="1.0.0",
+            authority="Goods and Services Tax Network",
+            intermediary="Sandbox.co.in",
+            identifier_queryable=True,
+            capabilities=(
+                Capability(
+                    capability_id="GST_RETURN_STATUS",
+                    provides=(
+                        "bidder.gst.latest_return_status",
+                        "bidder.gst.latest_return_period",
+                        "bidder.gst.latest_return_type",
+                        "bidder.gst.latest_return_filed_date",
+                    ),
+                    tier=Tier.A,
+                    channel=Channel.AGGREGATOR,
+                    as_of_supported=False,
+                    freshness_days=30,
+                    not_found_is_negative=False,
+                    lawful_bases=(Basis.TENDER_EVALUATION, Basis.PUBLIC_REGISTER),
+                    status="LIVE",
+                ),
+            ),
+        )
+
+    def verify(self, request: VerificationRequest, conn=None) -> Success | Failure:
+        gstin = request.subject.get("gstin")
+        if not gstin:
+            return Failure(FailureCode.MALFORMED, "no GSTIN extracted for this bidder; nothing to submit")
+
+        financial_year = request.subject.get("gst_return_financial_year")
+        if not financial_year:
+            return Failure(
+                FailureCode.MALFORMED,
+                "Sandbox.co.in's Track GST Returns requires a financial_year "
+                "(e.g. 'FY 2025-26'); nothing in this deployment currently "
+                "resolves one for a bidder -- not skipped silently, refused "
+                "honestly until the team decides its real source (officer-"
+                "supplied? the tender's own bid submission date's FY?)",
+            )
+
+        params = {"financial_year": financial_year}
+        return_type = request.subject.get("gst_return_type")
+        if return_type:
+            params["gstr"] = return_type
+
+        body = {"gstin": gstin}
+        observed_at = datetime.now(timezone.utc)
+        url = f"{self._session.base_url}/gst/compliance/public/gstrs/track"
+
+        try:
+            resp = self._session.post("/gst/compliance/public/gstrs/track", body, params=params)
+        except httpx.HTTPError as exc:
+            return _http_failure(exc)
+
+        ref = _record(
+            conn, adapter_id="gst_return_status", adapter_version="1.0.0",
+            capability_id="GST_RETURN_STATUS", observed_at=observed_at, url=url,
+            request_headers=dict(resp.request.headers), request_body=json.dumps(body),
+            response_status=resp.status_code, response_headers=dict(resp.headers),
+            response_body=resp.text, lawful_basis=request.lawful_basis,
+        )
+
+        failure = _status_failure(resp.status_code, resp.text)
+        if failure:
+            failure = Failure(failure.code, failure.detail, raw_response_ref=ref)
+            return failure
+
+        payload = resp.json().get("data", {})
+        if payload.get("status_cd") != "1":
+            error = payload.get("error", {})
+            code, message = error.get("error_code"), error.get("message", "no records found")
+            if code == "RTN_22":
+                # Our own request's financial_year was rejected -- a bug in
+                # how this adapter (or its caller) built the query, never an
+                # authority fact about the bidder.
+                return Failure(FailureCode.MALFORMED, message, raw_response_ref=ref)
+            if code == "RET13510":
+                return Failure(FailureCode.NOT_FOUND, message, raw_response_ref=ref)
+            # An error shape this adapter doesn't recognise -- surfaced for
+            # human review rather than guessed into either bucket above.
+            return Failure(FailureCode.AMBIGUOUS, f"{code}: {message}", raw_response_ref=ref)
+
+        filed = payload.get("data", {}).get("EFiledlist") or []
+        if not filed:
+            return Failure(FailureCode.NOT_FOUND, "status_cd 1 but no filed returns in the response", raw_response_ref=ref)
+
+        # ret_prd is "MMYYYY" -- sorting lexicographically is wrong (works
+        # for the year, not the month-then-year ordering within a lookback
+        # window), so sort by (year, month) explicitly rather than pretend
+        # string order is temporal order.
+        def _period_key(rec: dict) -> tuple[int, int]:
+            p = rec.get("ret_prd", "")
+            if len(p) == 6 and p.isdigit():
+                return (int(p[2:]), int(p[:2]))
+            return (0, 0)
+
+        latest = max(filed, key=_period_key)
+        observations = [Observation("bidder.gst.latest_return_status", latest["status"], Tier.A, Channel.AGGREGATOR)]
+        if latest.get("ret_prd"):
+            observations.append(Observation("bidder.gst.latest_return_period", latest["ret_prd"], Tier.A, Channel.AGGREGATOR))
+        if latest.get("rtntype"):
+            observations.append(Observation("bidder.gst.latest_return_type", latest["rtntype"], Tier.A, Channel.AGGREGATOR))
+        if latest.get("dof"):
+            # Raw string as the authority returned it -- NORMALIZE
+            # canonicalises to ISO-8601, an adapter never does.
+            observations.append(Observation("bidder.gst.latest_return_filed_date", latest["dof"], Tier.A, Channel.AGGREGATOR))
+
+        return Success(
+            observations=tuple(observations), raw_response_ref=ref,
+            observed_at=observed_at, source_asserted_at=None,
+        )
+
+
 class CinStatusAdapter:
     """docs/ADAPTERS.md capability CIN_STATUS, backed by Sandbox.co.in's
     Company Master Data endpoint.
@@ -503,4 +661,7 @@ def build_from_env() -> list[Any]:
     environment = os.environ.get("SATYAPRAMANA_SANDBOX_ENV", "test").lower()
     base_url = LIVE_BASE_URL if environment == "live" else TEST_BASE_URL
     session = SandboxSession(api_key, api_secret, base_url=base_url)
-    return [PanStatusAdapter(session), GstStatusAdapter(session), CinStatusAdapter(session)]
+    return [
+        PanStatusAdapter(session), GstStatusAdapter(session),
+        GstReturnStatusAdapter(session), CinStatusAdapter(session),
+    ]

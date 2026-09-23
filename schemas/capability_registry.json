@@ -44,6 +44,26 @@
       ]
     },
     {
+      "adapter_id": "gst_return_status",
+      "adapter_version": "0.1.0",
+      "authority": "Goods and Services Tax Network",
+      "intermediary": "Sandbox.co.in -- Track GST Returns",
+      "identifier_queryable": true,
+      "capabilities": [
+        {
+          "capability_id": "GST_RETURN_STATUS",
+          "provides": ["bidder.gst.latest_return_status", "bidder.gst.latest_return_period", "bidder.gst.latest_return_type", "bidder.gst.latest_return_filed_date"],
+          "tier": "A",
+          "channel": "AGGREGATOR",
+          "as_of_supported": false,
+          "freshness_days": 30,
+          "not_found_is_negative": false,
+          "lawful_bases": ["TENDER_EVALUATION", "PUBLIC_REGISTER"],
+          "status": "AWAITING_CREDENTIALS"
+        }
+      ]
+    },
+    {
       "adapter_id": "mca_cin",
       "adapter_version": "0.1.0",
       "authority": "Ministry of Corporate Affairs",

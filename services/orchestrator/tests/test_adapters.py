@@ -161,9 +161,9 @@ def test_an_unparseable_body_is_still_archived_but_scrubbed():
 
 def test_the_real_registry_loads():
     r = Registry.from_file()
-    assert len(r.adapters) == 6
+    assert len(r.adapters) == 7
     assert set(r.capabilities()) == {
-        "PAN_STATUS", "GST_STATUS", "CIN_STATUS", "UDYAM_STATUS"}
+        "PAN_STATUS", "GST_STATUS", "GST_RETURN_STATUS", "CIN_STATUS", "UDYAM_STATUS"}
 
 
 def test_missing_integrations_are_registered_null_adapters_not_omissions():
@@ -212,7 +212,7 @@ def test_registering_a_real_adapter_replaces_the_placeholder():
     adapter, capability = r.for_capability("GST_STATUS")
     assert not isinstance(adapter, UnconfiguredAdapter)
     assert capability.live
-    assert len(r.adapters) == 6, "replaced, not appended"
+    assert len(r.adapters) == 7, "replaced, not appended"
 
 
 def test_an_aggregator_capability_must_name_its_intermediary():
