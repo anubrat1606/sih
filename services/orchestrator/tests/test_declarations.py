@@ -216,6 +216,30 @@ def test_a_mandatory_declaration_resolves_partial_self_declared_ceiling(client, 
     assert verdict["reason_effective"] == "SELF_DECLARED_CEILING"
 
 
+def test_a_local_content_declaration_resolves_partial_self_declared_ceiling(client, conn):
+    """Round 10: LOCAL_CONTENT (and STARTUP_NSIC_OEM_AUTH, BLACKLISTING_DEBARMENT)
+    are new catalog entries over the exact same declaration_field()/
+    DECLARATION_RECORDED/SELF_DECLARED_CEILING mechanism proven above --
+    'type' is a builder-only concept, never persisted in the submitted
+    pack (requirementToJson() sends no type field), so this proves the
+    real end-to-end wiring for a non-DECLARATION-labelled catalog type
+    too, not just its catalog metadata (test_admin_tender_builder.py::
+    test_requirement_types_marks_self_declared_types_as_evidence_backed)."""
+    headers = auth_headers(conn, username="officer_local_content")
+    client.post("/tenders/T-DECL/bidders", json={"bidder_id": "A"}, headers=headers)
+    client.post("/bidders/A/declarations?tender_id=T-DECL",
+               json={"requirement_id": "R1", "declaration_text": "We declare 60% local content."},
+               headers=headers)
+    client.post("/tenders/T-DECL/rule-pack", json={"pack": PACK()}, headers=headers)
+    client.post("/bidders/A/evaluate", params={"tender_id": "T-DECL"},
+               json={"bid_submission_date": "2026-09-21"}, headers=headers)
+
+    result = client.get("/bidders/A", params={"tender_id": "T-DECL"}, headers=headers).json()
+    verdict = next(v for v in result["verdicts"] if v["requirement_id"] == "R1")
+    assert verdict["verdict_effective"] == "PARTIAL"
+    assert verdict["reason_effective"] == "SELF_DECLARED_CEILING"
+
+
 def test_a_desirable_declaration_resolves_a_clean_pass(client, conn):
     """The self-declared ceiling only caps MANDATORY requirements -- a
     desirable one built on the same Tier C evidence is allowed to PASS

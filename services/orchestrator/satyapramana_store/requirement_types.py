@@ -69,9 +69,13 @@ _CATALOG: tuple[RequirementType, ...] = (
     RequirementType("UDYAM", "Udyam / MSME registration",
         ("bidder.udyam.udyam_number", "bidder.udyam.status"),
         ("exists", "eq"),
-        "Backed by deterministic Udyam-number extraction always; "
-        "bidder.udyam.status also needs the UDYAM_STATUS capability's "
-        "credentials configured."),
+        "Backed by deterministic Udyam-number extraction always. "
+        "bidder.udyam.status is not the generic 'awaiting credentials' gap "
+        "PAN/GST/CIN status once were: round 10 research confirmed no "
+        "Sandbox.co.in product (or any other vendor) exposes a real Udyam "
+        "status-verification API today -- this is a confirmed unavailable "
+        "capability, not a pending procurement, same category as EPFO/ESIC "
+        "below."),
     RequirementType("DOCUMENT_REQUIRED", "Document required (generic)",
         (),
         ("exists",),
@@ -97,8 +101,15 @@ _CATALOG: tuple[RequirementType, ...] = (
         "reason: self-declared, with no authority to verify it against."),
     RequirementType("ITR", "Income Tax Return filing",
         (), ("exists", "gte"),
-        "No ITR extraction or capability exists yet. Saved for review; not "
-        "adoptable until a real evidence path is built."),
+        "Confirmed out of reach for this deployment, for a specific reason, "
+        "not 'no capability yet': Sandbox.co.in's ITR-V API exists but "
+        "belongs to their ERI (e-Return Intermediary) product line, which "
+        "requires the calling organization itself to be registered as an "
+        "ERI with the Income Tax Department -- a Class II/III DSC, an "
+        "infrastructure due-diligence certificate, and the Department's own "
+        "technical/security evaluation. That is a business/legal "
+        "registration process, not an API key, and out of scope at this "
+        "stage. Saved for review; same category as EPFO/ESIC below."),
     RequirementType("EXPERIENCE", "Years of experience",
         (), ("gte",),
         "No experience-certificate extraction or capability exists yet. "
@@ -106,10 +117,6 @@ _CATALOG: tuple[RequirementType, ...] = (
     RequirementType("SIMILAR_WORK", "Similar work / past performance",
         (), ("exists", "gte"),
         "No work-completion-certificate extraction or capability exists yet. "
-        "Saved for review; not adoptable until a real evidence path is built."),
-    RequirementType("OEM_AUTHORIZATION", "OEM authorization",
-        (), ("exists",),
-        "No OEM-authorization-letter extraction or capability exists yet. "
         "Saved for review; not adoptable until a real evidence path is built."),
     RequirementType("CERTIFICATION", "Certification (ISO, BIS, etc.)",
         (), ("exists",),
@@ -120,6 +127,31 @@ _CATALOG: tuple[RequirementType, ...] = (
         "Confirmed cut from scope (docs/STATUS.md): no lawful programmatic "
         "source exists anywhere for EPFO/ESIC. Saved for review; this is a "
         "known, permanent gap, not an oversight."),
+    RequirementType("LOCAL_CONTENT", "Make in India / local content",
+        ("bidder.declarations.{requirement_id}",), ("exists",),
+        "Round 10 research found no public verification API for a claimed "
+        "local-content percentage anywhere -- not a gap in this deployment "
+        "specifically, no such register exists to check against. Captured "
+        "as a self-declaration/undertaking, the same real, attributed-event "
+        "mechanism as the Self-declaration type below (not a special case): "
+        "a mandatory requirement built on it stays capped at PARTIAL "
+        "(self-declared ceiling), never a silent PASS."),
+    RequirementType("STARTUP_NSIC_OEM_AUTH", "Startup India / NSIC / OEM authorization",
+        ("bidder.declarations.{requirement_id}",), ("exists",),
+        "Covers Startup India recognition, NSIC registration, and OEM "
+        "authorization letters together -- round 10 research found no "
+        "public verification API for any of the three. Captured as a "
+        "self-declaration/undertaking, same mechanism as the "
+        "Self-declaration type below; a mandatory requirement built on it "
+        "stays capped at PARTIAL (self-declared ceiling)."),
+    RequirementType("BLACKLISTING_DEBARMENT", "Blacklisting / debarment status",
+        ("bidder.declarations.{requirement_id}",), ("exists",),
+        "No public blacklisting/debarment registry with a verification API "
+        "turned up in round 10 research. Captured as a "
+        "self-declaration/undertaking, same mechanism as the "
+        "Self-declaration type below; a mandatory requirement built on it "
+        "stays capped at PARTIAL (self-declared ceiling), never a silent "
+        "PASS on a bidder's own say-so about their own debarment status."),
     RequirementType("DECLARATION", "Self-declaration / undertaking",
         ("bidder.declarations.{requirement_id}",), ("exists",),
         "Captured directly as a real, attributed event when a bidder (or "
@@ -137,6 +169,17 @@ _CATALOG: tuple[RequirementType, ...] = (
         "above, pick that type instead; otherwise this has no automatic "
         "evidence path and is saved for review."),
 )
+
+#: Types whose one evidence field is the same `bidder.declarations.
+#: {requirement_id}` template DECLARATION uses -- the capture mechanism
+#: (a real recorded human attestation) exists independent of the adapter
+#: registry, so these are always evidence_backed regardless of what's
+#: configured. Keep this in sync with `_CATALOG` above whenever a new
+#: self-declared type is added; there is no way to derive it from the
+#: registry the way every other type's backing is derived.
+_SELF_DECLARED_TEMPLATE_TYPES = frozenset({
+    "DECLARATION", "LOCAL_CONTENT", "STARTUP_NSIC_OEM_AUTH", "BLACKLISTING_DEBARMENT",
+})
 
 
 def _producible_paths(registry: Registry) -> set[str]:
@@ -157,7 +200,7 @@ def requirement_type_catalog(registry: Registry) -> list[dict[str, Any]]:
     producible = _producible_paths(registry)
     out = []
     for rt in _CATALOG:
-        if rt.id == "DECLARATION":
+        if rt.id in _SELF_DECLARED_TEMPLATE_TYPES:
             # This type's one field is a template (bidder.declarations.
             # {requirement_id}), never a literal member of `producible` --
             # it's parameterized by a requirement id that only exists once

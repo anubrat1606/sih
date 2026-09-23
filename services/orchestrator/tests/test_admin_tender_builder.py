@@ -98,7 +98,8 @@ def test_requirement_types_endpoint_lists_every_type_the_brief_names(client):
     body = client.get("/requirement-types").json()
     ids = {t["id"] for t in body["requirement_types"]}
     for expected in ("GST", "PAN", "CIN", "UDYAM", "DOCUMENT_REQUIRED", "MIN_TURNOVER",
-                     "NET_WORTH", "ITR", "EXPERIENCE", "SIMILAR_WORK", "OEM_AUTHORIZATION",
+                     "NET_WORTH", "ITR", "EXPERIENCE", "SIMILAR_WORK",
+                     "LOCAL_CONTENT", "STARTUP_NSIC_OEM_AUTH", "BLACKLISTING_DEBARMENT",
                      "CERTIFICATION", "EPFO_ESIC", "DECLARATION", "TECHNICAL"):
         assert expected in ids
 
@@ -112,20 +113,34 @@ def test_requirement_types_marks_identity_documents_as_evidence_backed(client):
 
 
 def test_requirement_types_honestly_flags_unbacked_types(client):
-    """No fabricated evidence path for the six types nothing in this
-    system can currently produce -- each says so, with a real reason, not
-    a bare false. MIN_TURNOVER/NET_WORTH moved out of this list once
+    """No fabricated evidence path for the types nothing in this system can
+    currently produce -- each says so, with a real reason, not a bare
+    false. MIN_TURNOVER/NET_WORTH moved out of this list once
     extract/financials.py gave them a real evidence path (round 8) -- see
     test_requirement_types_marks_financial_types_as_evidence_backed.
-    DECLARATION moved out the same way in round 9 -- see
-    test_declarations.py::test_declaration_type_is_always_evidence_backed."""
+    DECLARATION moved out the same way in round 9, and LOCAL_CONTENT /
+    STARTUP_NSIC_OEM_AUTH / BLACKLISTING_DEBARMENT the same way again in
+    round 10 -- see test_requirement_types_marks_self_declared_types_as_evidence_backed."""
     body = client.get("/requirement-types").json()
     by_id = {t["id"]: t for t in body["requirement_types"]}
-    for unbacked in ("ITR", "EXPERIENCE", "SIMILAR_WORK",
-                     "OEM_AUTHORIZATION", "CERTIFICATION", "EPFO_ESIC"):
+    for unbacked in ("ITR", "EXPERIENCE", "SIMILAR_WORK", "CERTIFICATION", "EPFO_ESIC"):
         assert by_id[unbacked]["evidence_backed"] is False
         assert by_id[unbacked]["backed_fields"] == []
         assert by_id[unbacked]["note"]  # a real, non-empty explanation
+
+
+def test_requirement_types_marks_self_declared_types_as_evidence_backed(client):
+    """Round 10: none of these three have a public verification API (research
+    confirmed, not assumed), so each is modelled on the same self-declaration
+    /undertaking mechanism DECLARATION already proved out in round 9 -- a
+    real, attributed event, never a fabricated evidence path. Each is always
+    evidence_backed regardless of the registry, same reasoning as DECLARATION
+    (test_declarations.py::test_declaration_type_is_always_evidence_backed)."""
+    body = client.get("/requirement-types").json()
+    by_id = {t["id"]: t for t in body["requirement_types"]}
+    for backed in ("LOCAL_CONTENT", "STARTUP_NSIC_OEM_AUTH", "BLACKLISTING_DEBARMENT"):
+        assert by_id[backed]["evidence_backed"] is True
+        assert by_id[backed]["backed_fields"] == ["bidder.declarations.{requirement_id}"]
 
 
 def test_requirement_types_marks_financial_types_as_evidence_backed(client):
