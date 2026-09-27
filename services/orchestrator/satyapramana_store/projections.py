@@ -89,6 +89,56 @@ def rebuild_projections(conn, up_to_seq: int | None = None) -> dict[str, int]:
         return _rebuild_locked(conn, up_to_seq)
 
 
+def rebuild_projections_for_bidder(conn, bidder_id: str) -> int:
+    """Scoped counterpart to `rebuild_projections` -- refolds `proj_verdicts`
+    for exactly one bidder instead of the whole deployment.
+
+    Round 10: seven single-bidder endpoints (`GET /bidders/{id}`, evaluate,
+    override, autopsy, repair plan, evidence graph, the bidder's own result
+    view) call `rebuild_projections()` and then read back only this one
+    bidder's rows (`_fetch_verdict_rows` in app.py filters `WHERE
+    bidder_id=%s`) -- the full rebuild was refolding every *other* bidder's
+    verdicts too, a cost that grows with deployment size and has nothing to
+    do with the question being asked.
+
+    `proj_collusion` and `proj_tenders` are untouched here, on purpose, not
+    by oversight: nothing on the single-bidder read paths reads either from
+    the cache -- collusion is read live via `collusion_clusters()` every
+    time regardless (see `get_bidder`), and tenders don't change per bidder
+    read at all.
+
+    Deliberately shares `REBUILD_LOCK_KEY` with `rebuild_projections`
+    rather than a narrower per-bidder lock: PostgreSQL's single-bigint and
+    two-key advisory lock forms occupy separate lock spaces, so a
+    bidder-scoped key would NOT mutually exclude a concurrent full
+    rebuild touching the same bidder's rows -- exactly the interleaved
+    DELETE-then-INSERT race PR #86 fixed, reintroduced. Sharing the one
+    key keeps every rebuild of any shape strictly serialized against every
+    other; the win here is skipping the refold of every other bidder, not
+    finer-grained locking, and a fast single-bidder DELETE+fold+INSERT
+    under one global mutex is still cheap.
+    """
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(%s)", (REBUILD_LOCK_KEY,))
+            ceiling = _tip(conn)
+            cur.execute("DELETE FROM proj_verdicts WHERE bidder_id=%s", (bidder_id,))
+            verdicts = fold_verdicts_as_of(conn, ceiling, bidder_id=bidder_id)
+            for row in verdicts.values():
+                cur.execute(
+                    """INSERT INTO proj_verdicts (bidder_id,tender_id,requirement_id,
+                           verdict_system,reason_system,verdict_effective,reason_effective,
+                           overridden_by,override_justification,rule_pack_version,
+                           causation_event,built_from_seq)
+                       VALUES (%(bidder_id)s,%(tender_id)s,%(requirement_id)s,
+                           %(verdict_system)s,%(reason_system)s,%(verdict_effective)s,
+                           %(reason_effective)s,%(overridden_by)s,%(override_justification)s,
+                           %(rule_pack_version)s,%(causation_event)s,%(built_from_seq)s)""",
+                    row,
+                )
+            return len(verdicts)
+
+
 def fold_verdicts_as_of(conn, up_to_seq: int, bidder_id: str | None = None) -> dict[tuple[str, str], dict[str, Any]]:
     """The pure computation half of the verdicts fold: reads events up to a
     ceiling and returns the folded `(bidder_id, requirement_id) -> row` dict
