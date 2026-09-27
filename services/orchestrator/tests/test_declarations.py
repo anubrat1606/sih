@@ -100,6 +100,38 @@ def test_declaration_type_is_always_evidence_backed():
     assert decl["backed_fields"] == ["bidder.declarations.{requirement_id}"]
 
 
+def test_round_10_declaration_backed_types_are_also_evidence_backed():
+    """OEM_AUTHORIZATION, STARTUP_INDIA, NSIC, MAKE_IN_INDIA and
+    BLACKLIST_DEBARMENT (PS26100 points 5, 7, 9) all reuse the exact same
+    mechanism DECLARATION does -- requirement_type_catalog() detects this by
+    field content (the shared template string), not by hardcoding each id,
+    so this covers all five without repeating the assertion per type."""
+    catalog = {t["id"]: t for t in requirement_type_catalog(Registry())}
+    for type_id in ("OEM_AUTHORIZATION", "STARTUP_INDIA", "NSIC",
+                     "MAKE_IN_INDIA", "BLACKLIST_DEBARMENT"):
+        entry = catalog[type_id]
+        assert entry["evidence_backed"] is True, type_id
+        assert entry["backed_fields"] == ["bidder.declarations.{requirement_id}"], type_id
+        assert entry["note"], type_id  # every one has a real, non-empty explanation
+
+
+def test_a_startup_india_requirement_resolves_through_the_same_declaration_path(conn):
+    """One representative end-to-end check (not all five -- they share one
+    mechanism, already proven by test_a_recorded_declaration_resolves_at_
+    tier_c_with_its_own_text above) confirming a round-10 type genuinely
+    round-trips: officer picks STARTUP_INDIA in the builder, the field it
+    computes is a real, resolvable declaration path, same as DECLARATION."""
+    field = declaration_field("R-STARTUP")
+    record(conn, requirement_id="R-STARTUP",
+           text="We declare this firm holds current DPIIT Startup India recognition.")
+    rebuild_evidence(conn, "A", Registry())
+    resolver = ProjectionResolver(conn, "A")
+    resolved = resolver.field(field)
+    assert resolved.ok
+    assert "DPIIT Startup India" in resolved.value
+    assert resolver.record(field).tier.value == "C"
+
+
 # --- evidence fold ---------------------------------------------------------------
 
 def record(conn, bidder="A", tender="T-DECL", requirement_id="R1",

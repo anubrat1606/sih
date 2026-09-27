@@ -28,6 +28,17 @@ function declarationField(requirementId) {
   return `bidder.declarations.req_${slug || "x"}`;
 }
 
+// Matches requirement_types.py's own detection: DECLARATION and every other
+// type built on the same self-declared mechanism (OEM_AUTHORIZATION,
+// STARTUP_INDIA, NSIC, MAKE_IN_INDIA, BLACKLIST_DEBARMENT -- round 10) share
+// this one unsubstituted template as their one backed field. Checked by
+// field content, not a hardcoded type id list, so a future type reusing
+// this mechanism doesn't need this file edited too.
+const DECLARATION_TEMPLATE = "bidder.declarations.{requirement_id}";
+function isDeclarationBacked(type) {
+  return type?.backed_fields?.[0] === DECLARATION_TEMPLATE;
+}
+
 const DEFAULT_CONSTANTS = {
   partial_credit: 0.5, w_mandatory: 1.0, w_desirable: 0.3,
   recency_floor: 0.5, corroboration_step: 0.1,
@@ -103,10 +114,11 @@ function RequirementRow({ index, req, types, onChange, onRemove }) {
     if (!t) { onChange({ type: typeId }); return; }
     if (t.evidence_backed) {
       const op = t.suggested_ops.find((o) => o in CONDITIONS) || "exists";
-      // DECLARATION's one field is a template naming this row's own
-      // requirement id -- real from the moment the type is picked if the
-      // id is already typed, computed live as the id changes below if not.
-      const field = typeId === "DECLARATION" ? declarationField(req.id) : (t.backed_fields[0] || "");
+      // A declaration-backed type's one field is a template naming this
+      // row's own requirement id -- real from the moment the type is
+      // picked if the id is already typed, computed live as the id changes
+      // below if not.
+      const field = isDeclarationBacked(t) ? declarationField(req.id) : (t.backed_fields[0] || "");
       onChange({ type: typeId, field, condition: op, reviewRequired: false, note: "" });
     } else {
       onChange({ type: typeId, reviewRequired: true, note: t.note });
@@ -123,12 +135,12 @@ function RequirementRow({ index, req, types, onChange, onRemove }) {
           onChange={(e) => {
             const id = e.target.value;
             const patch = { id };
-            // Keeps the DECLARATION field's requirement-id slug in sync
-            // while the officer is still typing the id -- stops the
+            // Keeps a declaration-backed field's requirement-id slug in
+            // sync while the officer is still typing the id -- stops the
             // moment they've edited the field directly (a real edited
             // value is never overwritten), same one-way sync
             // requirement_types.py's own note tells them to expect.
-            if (req.type === "DECLARATION" && req.field === declarationField(req.id)) {
+            if (isDeclarationBacked(type) && req.field === declarationField(req.id)) {
               patch.field = declarationField(id);
             }
             onChange(patch);

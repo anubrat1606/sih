@@ -124,9 +124,44 @@ _CATALOG: tuple[RequirementType, ...] = (
         "No work-completion-certificate extraction or capability exists yet. "
         "Saved for review; not adoptable until a real evidence path is built."),
     RequirementType("OEM_AUTHORIZATION", "OEM authorization",
-        (), ("exists",),
-        "No OEM-authorization-letter extraction or capability exists yet. "
-        "Saved for review; not adoptable until a real evidence path is built."),
+        ("bidder.declarations.{requirement_id}",), ("exists",),
+        "No OEM-authorization-letter extraction exists (PDF layouts vary too "
+        "much per manufacturer to have a real field-extraction path yet). "
+        "Round 10: usable today as a self-declared undertaking via the same "
+        "mechanism DECLARATION uses -- Tier C, capped at PARTIAL on a "
+        "mandatory requirement, same as every other self-declared type. Pick "
+        "this type for the officer-facing label; the evidence path behaves "
+        "identically to a plain DECLARATION."),
+    RequirementType("STARTUP_INDIA", "Startup India recognition",
+        ("bidder.declarations.{requirement_id}",), ("exists",),
+        "PS26100 point 7. No DPIIT Startup India recognition-certificate "
+        "verification API exists in this deployment. Round 10: usable today "
+        "as a self-declared undertaking (Tier C, PARTIAL ceiling on a "
+        "mandatory requirement) via the same mechanism as DECLARATION."),
+    RequirementType("NSIC", "NSIC registration",
+        ("bidder.declarations.{requirement_id}",), ("exists",),
+        "PS26100 point 7. No NSIC registration-verification API exists in "
+        "this deployment. Round 10: usable today as a self-declared "
+        "undertaking (Tier C, PARTIAL ceiling on a mandatory requirement) "
+        "via the same mechanism as DECLARATION."),
+    RequirementType("MAKE_IN_INDIA", "Make in India / local content",
+        ("bidder.declarations.{requirement_id}",), ("exists", "gte"),
+        "PS26100 point 5. Local-content percentage has no authoritative "
+        "register to verify against -- it is inherently a bidder assertion "
+        "about their own supply chain, not a lookup. Round 10: modeled as a "
+        "self-declared undertaking (Tier C, PARTIAL ceiling on a mandatory "
+        "requirement), same mechanism as DECLARATION."),
+    RequirementType("BLACKLIST_DEBARMENT", "Blacklisting / debarment status",
+        ("bidder.declarations.{requirement_id}",), ("exists",),
+        "PS26100 point 9. Modeled on the same self-declared mechanism as the "
+        "types above so it is at least adoptable rather than a dead end, but "
+        "flagged honestly: a debarred bidder self-attesting they are not "
+        "debarred has close to zero anti-fraud value, unlike Make in "
+        "India/Startup India/NSIC/OEM above, which are legitimate self-"
+        "assertions about the bidder's own facts. A real fix needs CPCL's "
+        "own blacklist register checked (likely an internal list, not a "
+        "public API) -- out of round 10's scope; do not present this type's "
+        "PASS/PARTIAL as equivalent in strength to the others."),
     RequirementType("CERTIFICATION", "Certification (ISO, BIS, etc.)",
         (), ("exists",),
         "No certificate extraction or capability exists yet. Saved for "
@@ -173,15 +208,19 @@ def requirement_type_catalog(registry: Registry) -> list[dict[str, Any]]:
     producible = _producible_paths(registry)
     out = []
     for rt in _CATALOG:
-        if rt.id == "DECLARATION":
-            # This type's one field is a template (bidder.declarations.
-            # {requirement_id}), never a literal member of `producible` --
-            # it's parameterized by a requirement id that only exists once
-            # a pack is being drafted (rulepacks.py's _registry_as_dict
-            # computes the real per-pack paths at validation time). Always
-            # backed here: the capture mechanism itself (a real recorded
-            # human attestation) exists independent of what's registered
-            # in the adapter registry.
+        if any(f == "bidder.declarations.{requirement_id}" for f in rt.candidate_fields):
+            # DECLARATION and every other type built on the same self-
+            # declared mechanism (OEM_AUTHORIZATION, STARTUP_INDIA, NSIC,
+            # MAKE_IN_INDIA, BLACKLIST_DEBARMENT) share this one template
+            # field, never a literal member of `producible` -- it's
+            # parameterized by a requirement id that only exists once a pack
+            # is being drafted (rulepacks.py's _registry_as_dict computes the
+            # real per-pack paths at validation time). Always backed here:
+            # the capture mechanism itself (a real recorded human
+            # attestation) exists independent of what's registered in the
+            # adapter registry. Checked by field content, not `rt.id`, so a
+            # future type reusing this mechanism doesn't need this function
+            # edited too.
             backed_fields = list(rt.candidate_fields)
         else:
             backed_fields = [f for f in rt.candidate_fields if f in producible]
