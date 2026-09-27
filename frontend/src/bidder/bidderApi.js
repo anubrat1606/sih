@@ -102,6 +102,33 @@ export const uploadMyDocument = (bidderId, tenderId, file, declaredType) => {
   });
 };
 
+/**
+ * Round 10. Starts a real DigiLocker consent flow -- the returned
+ * authorization_url is where the bidder's own browser must go next (not an
+ * iframe, not a background call: DigiLocker requires the bidder to
+ * authenticate directly with their own Aadhaar-linked mobile OTP). Nothing
+ * is verified yet at this point, only requested.
+ * @returns {Promise<{bidder_id: string, tender_id: string, session_id: string, authorization_url: string}>}
+ */
+export const startDigilockerSession = (bidderId, tenderId, redirectUrl) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/digilocker/session?${new URLSearchParams({ tender_id: tenderId })}`, {
+    method: "POST",
+    ...json({ redirect_url: redirectUrl }),
+  });
+
+/**
+ * Polled after the bidder returns from DigiLocker's own consent screen.
+ * `status: "created"` means still pending -- poll again. `"succeeded"`
+ * means the backend already fetched the document and recorded a real
+ * verification event; `"failed"`/`"expired"` means the bidder declined or
+ * the session timed out, also already recorded.
+ * @returns {Promise<{status: "created"} |
+ *   {status: "failed"|"expired", verdict: string} |
+ *   {status: "succeeded", document_fetch: "ok"|"failed", issuer?: string, description?: string}>}
+ */
+export const getDigilockerStatus = (bidderId, tenderId, sessionId) =>
+  call(`/bidders/${encodeURIComponent(bidderId)}/digilocker/status?${new URLSearchParams({ tender_id: tenderId, session_id: sessionId })}`);
+
 // --- not yet real on this deployment ------------------------------------
 //
 // Named backend dependencies, not faked successes. Every one of these

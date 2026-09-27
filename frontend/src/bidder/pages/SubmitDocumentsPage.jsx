@@ -1,17 +1,130 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getMySubmission, getMyTenderRequirements, recordDeclaration, uploadMyDocument } from "../bidderApi";
+import {
+  getDigilockerStatus, getMySubmission, getMyTenderRequirements, recordDeclaration,
+  startDigilockerSession, uploadMyDocument,
+} from "../bidderApi";
 import { formatEvidenceValue } from "../../lib/currency";
 import { useApi } from "../../lib/useApi";
 import {
   Card, Dash, EmptyState, ErrorState, PageHeader, Tag,
 } from "../../ui/primitives";
 
-//: The exact label app.py's _evidence_expected returns for a
-// bidder.declarations.* path -- how this page tells "needs a document" and
-// "needs a self-declaration" apart, without the backend having to expose
-// the raw evidence field to a bidder at all.
+//: The exact labels app.py's _evidence_expected returns for a
+// bidder.declarations.* / bidder.digilocker.* path -- how this page tells
+// "needs a document," "needs a self-declaration," and "needs a real
+// DigiLocker consent flow" apart, without the backend having to expose the
+// raw evidence field to a bidder at all.
 const DECLARATION_LABEL = "Self-declaration / undertaking";
+const DIGILOCKER_LABEL = "Aadhaar via DigiLocker";
+
+// Round 10, PS26100 point 8. Real, not a stub: this is a genuine bidder-
+// consent redirect (docs/NEXT_TASKS_10B) -- DigiLocker requires the bidder
+// to authenticate directly with their own Aadhaar-linked mobile OTP, on
+// DigiLocker's own site, so this can never be a background API call the
+// way document upload is. Opens a new tab for consent rather than
+// navigating this page away, so the wizard's own state (step, checklist,
+// other uploads) survives -- the original tab polls status independently;
+// DigiLocker's session state lives on the backend, not in either tab.
+function DigilockerSection({ bidderId, tenderId }) {
+  const [session, setSession] = useState(null); // {session_id, authorization_url}
+  const [status, setStatus] = useState(null); // null | "pending" | "succeeded" | "failed" | "expired"
+  const [outcome, setOutcome] = useState(null); // the succeeded/failed response body
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Sandbox.co.in's own contract requires a real https:// redirect_url --
+  // true on the deployed site, false in local http dev. Told plainly
+  // rather than attempting the call and surfacing a confusing 400.
+  const isSecureContext = typeof window !== "undefined" && window.location.origin.startsWith("https://");
+
+  async function onStart() {
+    setError(null);
+    setStarting(true);
+    try {
+      const redirectUrl = window.location.href.split("?")[0];
+      const started = await startDigilockerSession(bidderId, tenderId, redirectUrl);
+      setSession(started);
+      setStatus("pending");
+      window.open(started.authorization_url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setError(err);
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  useEffect(() => {
+    if (status !== "pending" || !session) return;
+    let cancelled = false;
+    async function poll() {
+      try {
+        const r = await getDigilockerStatus(bidderId, tenderId, session.session_id);
+        if (cancelled || r.status === "created") return; // still pending -- keep polling
+        setStatus(r.status);
+        setOutcome(r);
+      } catch (err) {
+        if (!cancelled) setError(err);
+      }
+    }
+    poll();
+    const interval = setInterval(poll, 4000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [status, session, bidderId, tenderId]);
+
+  return (
+    <div className="table-frame" style={{ padding: "var(--space-4)", marginBottom: "var(--space-3)" }}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: "var(--space-3)" }}>
+        <div>
+          <div className="text-sm" style={{ fontWeight: 600 }}>Aadhaar via DigiLocker</div>
+          <p className="text-xs text-secondary" style={{ marginTop: 4 }}>
+            Opens DigiLocker in a new tab. You authenticate there directly with your own
+            Aadhaar-linked mobile OTP and grant consent — this site never sees your
+            DigiLocker credentials.
+          </p>
+        </div>
+      </div>
+
+      <ErrorState error={error} />
+
+      {!isSecureContext ? (
+        <p className="text-xs text-secondary" style={{ marginTop: "var(--space-2)" }}>
+          DigiLocker requires a secure (https://) origin — unavailable on this local
+          development server.
+        </p>
+      ) : status === "succeeded" ? (
+        <p className="text-sm" style={{ marginTop: "var(--space-3)", color: "var(--status-pass-fg)" }}>
+          ✓ Verified via DigiLocker
+          {outcome?.description ? ` — ${outcome.description}` : ""}
+          {outcome?.issuer ? ` (issued by ${outcome.issuer})` : ""}.
+        </p>
+      ) : status === "pending" ? (
+        <p className="text-sm text-secondary" style={{ marginTop: "var(--space-3)" }}>
+          Waiting for you to finish in the DigiLocker tab — checking automatically every
+          few seconds…
+        </p>
+      ) : status === "failed" || status === "expired" ? (
+        <>
+          <p className="error-note" role="alert" style={{ marginTop: "var(--space-3)" }}>
+            <span aria-hidden="true">⚠</span>{" "}
+            {status === "expired"
+              ? "The DigiLocker session expired before consent was completed."
+              : "DigiLocker consent was not completed."}
+          </p>
+          <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 6 }}
+                  onClick={() => { setSession(null); setStatus(null); setOutcome(null); }}>
+            Try again
+          </button>
+        </>
+      ) : (
+        <button type="button" className="btn btn-primary btn-sm" style={{ marginTop: "var(--space-3)" }}
+                disabled={starting} onClick={onStart}>
+          {starting ? "Starting…" : "Verify Aadhaar via DigiLocker"}
+        </button>
+      )}
+    </div>
+  );
+}
 
 // Round 9. An undertaking IS the self-declaration -- recorded directly,
 // never uploaded as a document, and (unlike everything else on this page)
@@ -205,10 +318,13 @@ export default function SubmitDocumentsPage() {
                       <tbody>
                         {requirements.data.requirements.map((r) => (
                           <tr key={r.id}>
-                            <td className="mono text-sm">{r.id}</td>
-                            <td className="cell-note">{r.text}</td>
+                            <td>
+                              <div className="mono text-sm">{r.id}</div>
+                              <div className="cell-note">{r.text}</div>
+                            </td>
                             <td><ObligationTag obligation={r.obligation} /></td>
                             <td className="mono text-sm">{r.source_page ?? <Dash />}</td>
+                            <td className="text-sm">{r.evidence_expected}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -235,6 +351,18 @@ export default function SubmitDocumentsPage() {
                                       tenderId={tenderId} existing={byId[r.id]}
                                       onRecorded={submission.reload} />
                     ))}
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const needsDigilocker = (requirements.data?.requirements || [])
+                  .some((r) => r.evidence_expected === DIGILOCKER_LABEL);
+                if (!needsDigilocker || !submission.data?.bidder_id) return null;
+                return (
+                  <div style={{ marginBottom: "var(--space-5)" }}>
+                    <h3 className="section-title" style={{ marginBottom: 8 }}>Identity verification</h3>
+                    <DigilockerSection bidderId={submission.data.bidder_id} tenderId={tenderId} />
                   </div>
                 );
               })()}
