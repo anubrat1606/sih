@@ -80,6 +80,16 @@ _CATALOG: tuple[RequirementType, ...] = (
         "same aggregator account backing every other live capability here. "
         "No verification path currently exists; this is a confirmed gap, "
         "not an unresolved one."),
+    RequirementType("DIGILOCKER_AADHAAR", "Aadhaar via DigiLocker (bidder consent)",
+        ("bidder.digilocker.aadhaar_verified", "bidder.digilocker.aadhaar_issuer"),
+        ("exists", "eq"),
+        "PS26100 point 8. Round 10: real, live, consent-based -- the bidder "
+        "is redirected to DigiLocker, authenticates with their own "
+        "Aadhaar-linked mobile OTP, and grants consent; POST "
+        "/bidders/{id}/digilocker/session starts the flow, GET "
+        ".../digilocker/status resolves it. Not part of the ordinary "
+        "verify-everything loop the other identity types use -- a real "
+        "redirect step outside this API has to happen first."),
     RequirementType("DOCUMENT_REQUIRED", "Document required (generic)",
         (),
         ("exists",),
