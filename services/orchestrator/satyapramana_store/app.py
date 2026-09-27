@@ -1616,6 +1616,8 @@ def _evidence_expected(field: str) -> str:
     }
     if field.startswith("bidder.declarations."):
         return "Self-declaration / undertaking"
+    if field.startswith("bidder.digilocker."):
+        return "Aadhaar via DigiLocker"
     return labels.get(field, field)
 
 
