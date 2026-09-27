@@ -99,7 +99,10 @@ def test_requirement_types_endpoint_lists_every_type_the_brief_names(client):
     ids = {t["id"] for t in body["requirement_types"]}
     for expected in ("GST", "PAN", "CIN", "UDYAM", "DOCUMENT_REQUIRED", "MIN_TURNOVER",
                      "NET_WORTH", "ITR", "EXPERIENCE", "SIMILAR_WORK", "OEM_AUTHORIZATION",
-                     "CERTIFICATION", "EPFO_ESIC", "DECLARATION", "TECHNICAL"):
+                     "CERTIFICATION", "EPFO_ESIC", "DECLARATION", "TECHNICAL",
+                     # round 10
+                     "DIGILOCKER_AADHAAR", "STARTUP_INDIA", "NSIC", "MAKE_IN_INDIA",
+                     "BLACKLIST_DEBARMENT"):
         assert expected in ids
 
 
@@ -111,18 +114,34 @@ def test_requirement_types_marks_identity_documents_as_evidence_backed(client):
         assert by_id[backed]["backed_fields"]  # at least one real, live-producible path
 
 
+def test_requirement_types_marks_digilocker_aadhaar_as_evidence_backed(client):
+    """Round 10: declared as a real capability in schemas/capability_registry.json
+    (not a null adapter -- a real consent flow exists, unlike Udyam), so it's
+    producible the same way PAN/GST/CIN are, credentials or not -- evidence_backed
+    reflects whether a real evidence *path* exists, never whether it's currently
+    configured (that distinction is what AWAITING_CREDENTIALS vs LIVE is for)."""
+    body = client.get("/requirement-types").json()
+    entry = {t["id"]: t for t in body["requirement_types"]}["DIGILOCKER_AADHAAR"]
+    assert entry["evidence_backed"] is True
+    assert "bidder.digilocker.aadhaar_verified" in entry["backed_fields"]
+
+
 def test_requirement_types_honestly_flags_unbacked_types(client):
-    """No fabricated evidence path for the six types nothing in this
-    system can currently produce -- each says so, with a real reason, not
-    a bare false. MIN_TURNOVER/NET_WORTH moved out of this list once
-    extract/financials.py gave them a real evidence path (round 8) -- see
+    """No fabricated evidence path for the types nothing in this system can
+    currently produce -- each says so, with a real reason, not a bare false.
+    MIN_TURNOVER/NET_WORTH moved out of this list once extract/financials.py
+    gave them a real evidence path (round 8) -- see
     test_requirement_types_marks_financial_types_as_evidence_backed.
     DECLARATION moved out the same way in round 9 -- see
-    test_declarations.py::test_declaration_type_is_always_evidence_backed."""
+    test_declarations.py::test_declaration_type_is_always_evidence_backed.
+    OEM_AUTHORIZATION moved out the same way in round 10, alongside four new
+    declaration-backed types (STARTUP_INDIA, NSIC, MAKE_IN_INDIA,
+    BLACKLIST_DEBARMENT) that were never in this list to begin with --
+    see test_declarations.py::test_round_10_declaration_backed_types_are_
+    also_evidence_backed."""
     body = client.get("/requirement-types").json()
     by_id = {t["id"]: t for t in body["requirement_types"]}
-    for unbacked in ("ITR", "EXPERIENCE", "SIMILAR_WORK",
-                     "OEM_AUTHORIZATION", "CERTIFICATION", "EPFO_ESIC"):
+    for unbacked in ("ITR", "EXPERIENCE", "SIMILAR_WORK", "CERTIFICATION", "EPFO_ESIC"):
         assert by_id[unbacked]["evidence_backed"] is False
         assert by_id[unbacked]["backed_fields"] == []
         assert by_id[unbacked]["note"]  # a real, non-empty explanation

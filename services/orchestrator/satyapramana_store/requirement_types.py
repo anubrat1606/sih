@@ -51,11 +51,15 @@ class RequirementType:
 #: order they should appear in the picker.
 _CATALOG: tuple[RequirementType, ...] = (
     RequirementType("GST", "GST registration",
-        ("bidder.gst.gstin", "bidder.gst.status", "bidder.gst.date_of_expiry"),
+        ("bidder.gst.gstin", "bidder.gst.status", "bidder.gst.date_of_expiry",
+         "bidder.gst.return_filing_status"),
         ("exists", "eq", "active_on", "date_after"),
-        "Backed by deterministic GSTIN extraction always; bidder.gst.status also "
-        "needs the GST_STATUS capability's credentials configured to resolve to "
-        "anything but UNKNOWN."),
+        "Backed by deterministic GSTIN extraction always; bidder.gst.status "
+        "and bidder.gst.return_filing_status each need their own capability "
+        "(GST_STATUS, GST_RETURN_STATUS) configured to resolve to anything "
+        "but UNKNOWN -- return_filing_status reports FILED/NOT_FILED for the "
+        "financial year currently in progress, not a specific past year "
+        "(round 10; see the adapter's own docstring for why)."),
     RequirementType("PAN", "PAN",
         ("bidder.pan.pan_number", "bidder.pan.status", "bidder.pan.holder_name"),
         ("exists", "eq"),
@@ -69,9 +73,23 @@ _CATALOG: tuple[RequirementType, ...] = (
     RequirementType("UDYAM", "Udyam / MSME registration",
         ("bidder.udyam.udyam_number", "bidder.udyam.status"),
         ("exists", "eq"),
-        "Backed by deterministic Udyam-number extraction always; "
-        "bidder.udyam.status also needs the UDYAM_STATUS capability's "
-        "credentials configured."),
+        "Backed by deterministic Udyam-number extraction always. "
+        "bidder.udyam.status is not a credentials gap: checked round 10 "
+        "against Sandbox.co.in's own KYC/KYB product catalog (Aadhaar, PAN, "
+        "bank, DigiLocker, CIN/DIN, GSTIN) and Udyam is not offered by the "
+        "same aggregator account backing every other live capability here. "
+        "No verification path currently exists; this is a confirmed gap, "
+        "not an unresolved one."),
+    RequirementType("DIGILOCKER_AADHAAR", "Aadhaar via DigiLocker (bidder consent)",
+        ("bidder.digilocker.aadhaar_verified", "bidder.digilocker.aadhaar_issuer"),
+        ("exists", "eq"),
+        "PS26100 point 8. Round 10: real, live, consent-based -- the bidder "
+        "is redirected to DigiLocker, authenticates with their own "
+        "Aadhaar-linked mobile OTP, and grants consent; POST "
+        "/bidders/{id}/digilocker/session starts the flow, GET "
+        ".../digilocker/status resolves it. Not part of the ordinary "
+        "verify-everything loop the other identity types use -- a real "
+        "redirect step outside this API has to happen first."),
     RequirementType("DOCUMENT_REQUIRED", "Document required (generic)",
         (),
         ("exists",),
@@ -97,8 +115,16 @@ _CATALOG: tuple[RequirementType, ...] = (
         "reason: self-declared, with no authority to verify it against."),
     RequirementType("ITR", "Income Tax Return filing",
         (), ("exists", "gte"),
-        "No ITR extraction or capability exists yet. Saved for review; not "
-        "adoptable until a real evidence path is built."),
+        "Same category as EPFO/ESIC below, confirmed round 10: Sandbox.co.in "
+        "does have a real ITR-V API, but it is part of their ERI (e-Return "
+        "Intermediary) product line -- using it requires the calling "
+        "organization itself to be registered as an ERI with the Income Tax "
+        "Department (a Class II/III Digital Signature Certificate, an "
+        "infrastructure due-diligence certificate, a formal Departmental "
+        "technical/security review). A business/legal registration process, "
+        "not an API credential the existing aggregator account can add. "
+        "Saved for review; confirmed out of reach for this deployment, not "
+        "unresearched."),
     RequirementType("EXPERIENCE", "Years of experience",
         (), ("gte",),
         "No experience-certificate extraction or capability exists yet. "
@@ -108,9 +134,44 @@ _CATALOG: tuple[RequirementType, ...] = (
         "No work-completion-certificate extraction or capability exists yet. "
         "Saved for review; not adoptable until a real evidence path is built."),
     RequirementType("OEM_AUTHORIZATION", "OEM authorization",
-        (), ("exists",),
-        "No OEM-authorization-letter extraction or capability exists yet. "
-        "Saved for review; not adoptable until a real evidence path is built."),
+        ("bidder.declarations.{requirement_id}",), ("exists",),
+        "No OEM-authorization-letter extraction exists (PDF layouts vary too "
+        "much per manufacturer to have a real field-extraction path yet). "
+        "Round 10: usable today as a self-declared undertaking via the same "
+        "mechanism DECLARATION uses -- Tier C, capped at PARTIAL on a "
+        "mandatory requirement, same as every other self-declared type. Pick "
+        "this type for the officer-facing label; the evidence path behaves "
+        "identically to a plain DECLARATION."),
+    RequirementType("STARTUP_INDIA", "Startup India recognition",
+        ("bidder.declarations.{requirement_id}",), ("exists",),
+        "PS26100 point 7. No DPIIT Startup India recognition-certificate "
+        "verification API exists in this deployment. Round 10: usable today "
+        "as a self-declared undertaking (Tier C, PARTIAL ceiling on a "
+        "mandatory requirement) via the same mechanism as DECLARATION."),
+    RequirementType("NSIC", "NSIC registration",
+        ("bidder.declarations.{requirement_id}",), ("exists",),
+        "PS26100 point 7. No NSIC registration-verification API exists in "
+        "this deployment. Round 10: usable today as a self-declared "
+        "undertaking (Tier C, PARTIAL ceiling on a mandatory requirement) "
+        "via the same mechanism as DECLARATION."),
+    RequirementType("MAKE_IN_INDIA", "Make in India / local content",
+        ("bidder.declarations.{requirement_id}",), ("exists", "gte"),
+        "PS26100 point 5. Local-content percentage has no authoritative "
+        "register to verify against -- it is inherently a bidder assertion "
+        "about their own supply chain, not a lookup. Round 10: modeled as a "
+        "self-declared undertaking (Tier C, PARTIAL ceiling on a mandatory "
+        "requirement), same mechanism as DECLARATION."),
+    RequirementType("BLACKLIST_DEBARMENT", "Blacklisting / debarment status",
+        ("bidder.declarations.{requirement_id}",), ("exists",),
+        "PS26100 point 9. Modeled on the same self-declared mechanism as the "
+        "types above so it is at least adoptable rather than a dead end, but "
+        "flagged honestly: a debarred bidder self-attesting they are not "
+        "debarred has close to zero anti-fraud value, unlike Make in "
+        "India/Startup India/NSIC/OEM above, which are legitimate self-"
+        "assertions about the bidder's own facts. A real fix needs CPCL's "
+        "own blacklist register checked (likely an internal list, not a "
+        "public API) -- out of round 10's scope; do not present this type's "
+        "PASS/PARTIAL as equivalent in strength to the others."),
     RequirementType("CERTIFICATION", "Certification (ISO, BIS, etc.)",
         (), ("exists",),
         "No certificate extraction or capability exists yet. Saved for "
@@ -157,15 +218,19 @@ def requirement_type_catalog(registry: Registry) -> list[dict[str, Any]]:
     producible = _producible_paths(registry)
     out = []
     for rt in _CATALOG:
-        if rt.id == "DECLARATION":
-            # This type's one field is a template (bidder.declarations.
-            # {requirement_id}), never a literal member of `producible` --
-            # it's parameterized by a requirement id that only exists once
-            # a pack is being drafted (rulepacks.py's _registry_as_dict
-            # computes the real per-pack paths at validation time). Always
-            # backed here: the capture mechanism itself (a real recorded
-            # human attestation) exists independent of what's registered
-            # in the adapter registry.
+        if any(f == "bidder.declarations.{requirement_id}" for f in rt.candidate_fields):
+            # DECLARATION and every other type built on the same self-
+            # declared mechanism (OEM_AUTHORIZATION, STARTUP_INDIA, NSIC,
+            # MAKE_IN_INDIA, BLACKLIST_DEBARMENT) share this one template
+            # field, never a literal member of `producible` -- it's
+            # parameterized by a requirement id that only exists once a pack
+            # is being drafted (rulepacks.py's _registry_as_dict computes the
+            # real per-pack paths at validation time). Always backed here:
+            # the capture mechanism itself (a real recorded human
+            # attestation) exists independent of what's registered in the
+            # adapter registry. Checked by field content, not `rt.id`, so a
+            # future type reusing this mechanism doesn't need this function
+            # edited too.
             backed_fields = list(rt.candidate_fields)
         else:
             backed_fields = [f for f in rt.candidate_fields if f in producible]

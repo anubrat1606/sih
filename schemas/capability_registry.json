@@ -64,24 +64,51 @@
       ]
     },
     {
-      "adapter_id": "udyam_status",
-      "adapter_version": "0.1.0",
-      "authority": "Ministry of Micro, Small and Medium Enterprises",
-      "intermediary": "PENDING -- portal verification is OTP-gated",
+      "adapter_id": "gst_return_status",
+      "adapter_version": "1.0.0",
+      "authority": "Goods and Services Tax Network",
+      "intermediary": "PENDING -- one aggregator account required before this is LIVE",
       "identifier_queryable": true,
       "capabilities": [
         {
-          "capability_id": "UDYAM_STATUS",
-          "provides": ["bidder.udyam.status", "bidder.udyam.enterprise_type", "bidder.udyam.registration_date"],
+          "capability_id": "GST_RETURN_STATUS",
+          "provides": ["bidder.gst.return_filing_status", "bidder.gst.return_filing_financial_year"],
           "tier": "A",
           "channel": "AGGREGATOR",
           "as_of_supported": false,
-          "freshness_days": 180,
+          "freshness_days": 30,
           "not_found_is_negative": false,
-          "lawful_bases": ["TENDER_EVALUATION", "BIDDER_CONSENT"],
+          "lawful_bases": ["TENDER_EVALUATION", "PUBLIC_REGISTER"],
           "status": "AWAITING_CREDENTIALS"
         }
       ]
+    },
+    {
+      "adapter_id": "digilocker",
+      "adapter_version": "1.0.0",
+      "authority": "DigiLocker (Ministry of Electronics and Information Technology)",
+      "intermediary": "PENDING -- one aggregator account required before this is LIVE",
+      "identifier_queryable": false,
+      "capabilities": [
+        {
+          "capability_id": "DIGILOCKER_DOCUMENT",
+          "provides": ["bidder.digilocker.aadhaar_verified", "bidder.digilocker.aadhaar_issuer"],
+          "tier": "A",
+          "channel": "AGGREGATOR",
+          "as_of_supported": false,
+          "freshness_days": 90,
+          "not_found_is_negative": false,
+          "lawful_bases": ["BIDDER_CONSENT"],
+          "status": "AWAITING_CREDENTIALS"
+        }
+      ]
+    },
+    {
+      "adapter_id": "udyam_status",
+      "adapter_version": "0.1.0",
+      "authority": "Ministry of Micro, Small and Medium Enterprises",
+      "identifier_queryable": false,
+      "capabilities": []
     },
     {
       "adapter_id": "epfo_establishment",

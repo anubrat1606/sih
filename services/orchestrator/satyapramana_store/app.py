@@ -26,10 +26,10 @@ from satyapramana.metrics import Constants, RequirementResult, compute
 from satyapramana.predicates import EvaluationContext
 from satyapramana.risk import ConflictSignals, classify
 from satyapramana.rulepack import derived_bindings
-from satyapramana.verdicts import Obligation, Tier, Verdict
+from satyapramana.verdicts import Channel, Obligation, Tier, Verdict
 
 from .adapters import Registry, VerificationRequest, failure_to_judgement
-from .adapters.base import Basis, LawfulBasis
+from .adapters.base import Basis, Failure, FailureCode, LawfulBasis
 from .auth import Role, User, decode_token, issue_token, role_at_least
 from .auth import store as auth_store
 from .db import close_pool, connect, get_pool, migrate, open_pool
@@ -121,6 +121,19 @@ from .adapters.sandbox_co_in import build_from_env as _build_sandbox_adapters  #
 for _adapter in _build_sandbox_adapters():
     REGISTRY.register(_adapter)
 
+# DigiLocker (round 10, PS26100 point 8) doesn't fit the loop-callable
+# VerificationAdapter shape the four adapters above use -- it's a real
+# bidder-consent redirect flow, not a server-to-server lookup -- so it gets
+# its own session object for the dedicated endpoints below, plus a
+# placeholder adapter registered purely so DIGILOCKER_DOCUMENT shows up
+# honestly in the coverage report, same mechanism as every other
+# capability. Same credential gate as every other Sandbox.co.in product:
+# unset and this stays AWAITING_CREDENTIALS on the static registry entry.
+from .adapters import digilocker as _digilocker  # noqa: E402
+DIGILOCKER_SESSION = _digilocker.build_from_env()
+if DIGILOCKER_SESSION is not None:
+    REGISTRY.register(_digilocker.DigilockerPlaceholderAdapter())
+
 # Same plug-in shape as the verification adapters above: with no
 # SATYAPRAMANA_GEMINI_API_KEY set, EXPLAINER stays on the honest
 # UnconfiguredExplainer and /bidders/{id}/explain returns Unavailable rather
@@ -187,6 +200,13 @@ class OverrideIn(BaseModel):
     requirement_id: str
     verdict_after: str = Field(pattern="^(PASS|FAIL|PARTIAL|UNKNOWN)$")
     justification: str = Field(min_length=1)
+
+
+class DigilockerSessionIn(BaseModel):
+    #: Where DigiLocker sends the bidder's browser back to after they grant
+    #: or deny consent. The frontend's own callback route -- this backend
+    #: never receives the redirect directly, a human's browser does.
+    redirect_url: str = Field(min_length=1)
 
 
 class DeclarationIn(BaseModel):
@@ -751,6 +771,155 @@ def record_declaration(bidder_id: str, tender_id: str, body: DeclarationIn,
     return {"bidder_id": bidder_id, "tender_id": tender_id,
             "requirement_id": body.requirement_id, "declared_by": user.username,
             "seq": event["seq"]}
+
+
+def _digilocker_unavailable() -> HTTPException:
+    return HTTPException(503, "DigiLocker is not configured on this deployment "
+                              "(SATYAPRAMANA_SANDBOX_API_KEY/_SECRET unset)")
+
+
+@app.post("/bidders/{bidder_id}/digilocker/session", status_code=201)
+def start_digilocker_session(bidder_id: str, tender_id: str, body: DigilockerSessionIn,
+                             conn=Depends(db), user: User = Depends(officer_or_self)) -> dict[str, Any]:
+    """Round 10, PS26100 point 8. Issues the DigiLocker consent redirect --
+    the bidder's browser goes to `authorization_url`, authenticates with
+    DigiLocker directly (this backend never sees their DigiLocker
+    credentials), and grants or denies consent to share their Aadhaar
+    record. Nothing is verified yet at this point -- only requested; see
+    GET .../digilocker/status for the outcome once the bidder returns.
+
+    LawfulBasis here is TENDER_EVALUATION, not BIDDER_CONSENT: no consent
+    exists yet at the moment of asking for a consent URL. The consent
+    artefact (the session_id, once DigiLocker actually grants it) is what
+    backs BIDDER_CONSENT on the fetch call below -- see digilocker.py's
+    module docstring and adapters/base.py's own note on this distinction.
+    """
+    if DIGILOCKER_SESSION is None:
+        raise _digilocker_unavailable()
+
+    correlation = str(uuid.uuid4())
+    basis = LawfulBasis(Basis.TENDER_EVALUATION, user.username,
+                        f"DigiLocker consent request for tender {tender_id}")
+    requested = append(
+        conn, event_type="VERIFICATION_REQUESTED", actor=SYSTEM,
+        correlation_id=correlation, tender_id=tender_id, bidder_id=bidder_id,
+        payload={"capability_id": "DIGILOCKER_DOCUMENT",
+                 "lawful_basis": basis.basis.value, "requested_by": user.username})
+
+    outcome = _digilocker.initiate_session(
+        DIGILOCKER_SESSION, redirect_url=body.redirect_url, doc_types=("aadhaar",),
+        lawful_basis=basis, conn=conn)
+
+    if isinstance(outcome, Failure):
+        judgement = failure_to_judgement(outcome, _digilocker.DIGILOCKER_CAPABILITY)
+        append(conn, event_type="VERIFICATION_FAILED",
+               actor=Actor("ADAPTER", "digilocker"),
+               correlation_id=correlation, causation_id=requested["event_id"],
+               tender_id=tender_id, bidder_id=bidder_id,
+               payload={"capability_id": "DIGILOCKER_DOCUMENT",
+                        "failure_code": outcome.code.value, "detail": outcome.detail,
+                        "verdict": judgement.verdict.value,
+                        "reason_code": judgement.reason.value})
+        raise HTTPException(502, f"DigiLocker session could not be started: {outcome.detail}")
+
+    return {"bidder_id": bidder_id, "tender_id": tender_id,
+            "session_id": outcome.session_id, "authorization_url": outcome.authorization_url}
+
+
+@app.get("/bidders/{bidder_id}/digilocker/status")
+def digilocker_session_status(bidder_id: str, tender_id: str, session_id: str,
+                              conn=Depends(db), user: User = Depends(officer_or_self)) -> dict[str, Any]:
+    """Polled by the frontend after the bidder returns from DigiLocker.
+    `created` (still pending) is reported back with no event recorded --
+    nothing has actually happened yet. `succeeded` fetches the real
+    document and records a real VERIFICATION_OBSERVED; `failed`/`expired`
+    record a real VERIFICATION_FAILED. Both terminal outcomes are recorded
+    exactly once each poll that first observes them lands here -- a second
+    poll after that re-fetches and re-records, same idempotent shape every
+    other verification capability already has (append-only: a duplicate
+    observation is just another true fact in the log, not a bug)."""
+    if DIGILOCKER_SESSION is None:
+        raise _digilocker_unavailable()
+
+    correlation = str(uuid.uuid4())
+    basis = LawfulBasis(Basis.TENDER_EVALUATION, user.username,
+                        f"DigiLocker session status check for tender {tender_id}")
+    status_outcome = _digilocker.check_session_status(
+        DIGILOCKER_SESSION, session_id, lawful_basis=basis, conn=conn)
+
+    if isinstance(status_outcome, Failure):
+        raise HTTPException(502, f"could not check DigiLocker session status: {status_outcome.detail}")
+
+    if status_outcome.status == "created":
+        return {"status": "created"}
+
+    requested = append(
+        conn, event_type="VERIFICATION_REQUESTED", actor=SYSTEM,
+        correlation_id=correlation, tender_id=tender_id, bidder_id=bidder_id,
+        payload={"capability_id": "DIGILOCKER_DOCUMENT",
+                 "lawful_basis": basis.basis.value, "requested_by": user.username,
+                 "digilocker_session_id": session_id})
+
+    if status_outcome.status in ("failed", "expired"):
+        outcome = Failure(
+            FailureCode.UNAVAILABLE,
+            "bidder did not complete DigiLocker consent (session status: "
+            f"{status_outcome.status})",
+        )
+        judgement = failure_to_judgement(outcome, _digilocker.DIGILOCKER_CAPABILITY)
+        append(conn, event_type="VERIFICATION_FAILED",
+               actor=Actor("ADAPTER", "digilocker"),
+               correlation_id=correlation, causation_id=requested["event_id"],
+               tender_id=tender_id, bidder_id=bidder_id,
+               payload={"capability_id": "DIGILOCKER_DOCUMENT",
+                        "failure_code": outcome.code.value, "detail": outcome.detail,
+                        "verdict": judgement.verdict.value,
+                        "reason_code": judgement.reason.value})
+        rebuild_evidence(conn, bidder_id, REGISTRY)
+        return {"status": status_outcome.status, "verdict": judgement.verdict.value}
+
+    # status_outcome.status == "succeeded": the consent artefact now exists
+    # for real -- this fetch is the one call in this whole flow that
+    # actually retrieves the bidder's personal data, so it is the one call
+    # lawfully backed by BIDDER_CONSENT, citing the real session_id.
+    consent_basis = LawfulBasis(Basis.BIDDER_CONSENT, user.username,
+                                f"DigiLocker document retrieval for tender {tender_id}",
+                                consent_reference=session_id)
+    doc_outcome = _digilocker.fetch_document(
+        DIGILOCKER_SESSION, session_id, "aadhaar", lawful_basis=consent_basis, conn=conn)
+
+    if isinstance(doc_outcome, Failure):
+        judgement = failure_to_judgement(doc_outcome, _digilocker.DIGILOCKER_CAPABILITY)
+        append(conn, event_type="VERIFICATION_FAILED",
+               actor=Actor("ADAPTER", "digilocker"),
+               correlation_id=correlation, causation_id=requested["event_id"],
+               tender_id=tender_id, bidder_id=bidder_id,
+               payload={"capability_id": "DIGILOCKER_DOCUMENT",
+                        "failure_code": doc_outcome.code.value, "detail": doc_outcome.detail,
+                        "verdict": judgement.verdict.value,
+                        "reason_code": judgement.reason.value})
+        rebuild_evidence(conn, bidder_id, REGISTRY)
+        return {"status": "succeeded", "document_fetch": "failed", "verdict": judgement.verdict.value}
+
+    file_meta = doc_outcome.files[0].get("metadata", {})
+    observed_at = datetime.now(timezone.utc)
+    append(conn, event_type="VERIFICATION_OBSERVED",
+           actor=Actor("ADAPTER", "digilocker"),
+           correlation_id=correlation, causation_id=requested["event_id"],
+           tender_id=tender_id, bidder_id=bidder_id,
+           payload={"capability_id": "DIGILOCKER_DOCUMENT",
+                    "raw_response_ref": doc_outcome.raw_response_ref,
+                    "observed_at": observed_at.isoformat(), "source_asserted_at": None,
+                    "observations": [
+                        {"path": "bidder.digilocker.aadhaar_verified", "value": "VERIFIED",
+                         "tier": Tier.A.value, "channel": Channel.AGGREGATOR.value},
+                        {"path": "bidder.digilocker.aadhaar_issuer",
+                         "value": file_meta.get("issuer", "DigiLocker"),
+                         "tier": Tier.A.value, "channel": Channel.AGGREGATOR.value},
+                    ]})
+    rebuild_evidence(conn, bidder_id, REGISTRY)
+    return {"status": "succeeded", "document_fetch": "ok",
+            "issuer": file_meta.get("issuer"), "description": file_meta.get("description")}
 
 
 @app.get("/documents/{document_sha256}")

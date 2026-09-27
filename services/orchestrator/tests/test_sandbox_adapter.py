@@ -9,6 +9,7 @@ developer docs.
 from __future__ import annotations
 
 import json
+import re
 
 import httpx
 import pytest
@@ -17,7 +18,8 @@ from satyapramana_store.adapters.base import (
     Basis, Failure, FailureCode, LawfulBasis, Success, VerificationRequest,
 )
 from satyapramana_store.adapters.sandbox_co_in import (
-    CinStatusAdapter, GstStatusAdapter, PanStatusAdapter, SandboxSession, build_from_env,
+    CinStatusAdapter, GstReturnStatusAdapter, GstStatusAdapter, PanStatusAdapter,
+    SandboxSession, build_from_env,
 )
 
 BASIS = LawfulBasis(Basis.TENDER_EVALUATION, "officer_1",
@@ -42,11 +44,13 @@ def test_no_adapters_without_both_env_vars(monkeypatch):
     assert build_from_env() == []
 
 
-def test_three_live_adapters_once_both_are_set(monkeypatch):
+def test_four_live_adapters_once_both_are_set(monkeypatch):
     monkeypatch.setenv("SATYAPRAMANA_SANDBOX_API_KEY", "k")
     monkeypatch.setenv("SATYAPRAMANA_SANDBOX_API_SECRET", "s")
     adapters = build_from_env()
-    assert {a.manifest.adapter_id for a in adapters} == {"pan_status", "gst_status", "mca_cin"}
+    assert {a.manifest.adapter_id for a in adapters} == {
+        "pan_status", "gst_status", "mca_cin", "gst_return_status",
+    }
     assert all(c.live for a in adapters for c in a.manifest.capabilities)
 
 
@@ -205,6 +209,89 @@ def test_gst_rate_limited_maps_correctly():
     outcome = adapter.verify(VerificationRequest(
         "GST_STATUS", {"gstin": "33ABKCS2033B1ZW"}, BASIS))
     assert isinstance(outcome, Failure) and outcome.code is FailureCode.RATE_LIMITED
+
+
+# --- GST return filing --------------------------------------------------------
+
+def test_gst_return_status_filed():
+    def handler(request):
+        if request.url.path == "/authenticate":
+            return AUTH_OK
+        assert request.url.path == "/gst/compliance/public/gstrs/track"
+        assert re.fullmatch(r"FY \d{4}-\d{2}", request.url.params["financial_year"])
+        assert json.loads(request.content) == {"gstin": "33ABKCS2033B1ZW"}
+        return httpx.Response(200, json={
+            "code": 200, "data": {
+                "data": {"EFiledlist": [
+                    {"arn": "AA1234", "dof": "20/07/2026", "mof": "Online",
+                     "ret_prd": "062026", "rtntype": "GSTR3B",
+                     "status": "Filed", "valid": "Y"},
+                ]},
+                "status_cd": "1",
+            },
+        })
+
+    adapter = GstReturnStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest(
+        "GST_RETURN_STATUS", {"gstin": "33ABKCS2033B1ZW"}, BASIS))
+
+    assert isinstance(outcome, Success)
+    values = {o.path: o.value for o in outcome.observations}
+    assert values["bidder.gst.return_filing_status"] == "FILED"
+    assert re.fullmatch(r"FY \d{4}-\d{2}", values["bidder.gst.return_filing_financial_year"])
+
+
+def test_gst_return_status_records_present_but_none_valid():
+    def handler(request):
+        if request.url.path == "/authenticate":
+            return AUTH_OK
+        return httpx.Response(200, json={
+            "code": 200, "data": {
+                "data": {"EFiledlist": [
+                    {"arn": "AA1234", "dof": "20/07/2026", "mof": "Online",
+                     "ret_prd": "062026", "rtntype": "GSTR3B",
+                     "status": "Filed", "valid": "N"},
+                ]},
+                "status_cd": "1",
+            },
+        })
+
+    adapter = GstReturnStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest(
+        "GST_RETURN_STATUS", {"gstin": "33ABKCS2033B1ZW"}, BASIS))
+
+    assert isinstance(outcome, Success)
+    values = {o.path: o.value for o in outcome.observations}
+    assert values["bidder.gst.return_filing_status"] == "NOT_FILED"
+
+
+def test_gst_return_status_no_records_is_not_found_not_a_guess():
+    def handler(request):
+        if request.url.path == "/authenticate":
+            return AUTH_OK
+        return httpx.Response(200, json={
+            "code": 200,
+            "data": {"error": {"error_code": "RET13510",
+                                "message": "No Record found for the provided Inputs"},
+                      "status_cd": "0"},
+        })
+
+    adapter = GstReturnStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest(
+        "GST_RETURN_STATUS", {"gstin": "33ABKCS2033B1ZW"}, BASIS))
+    assert isinstance(outcome, Failure) and outcome.code is FailureCode.NOT_FOUND
+    assert not adapter.manifest.capabilities[0].not_found_is_negative, (
+        "no filed return on record must never auto-fail a bidder -- a GSTIN "
+        "that hasn't crossed a filing threshold yet looks identical to this")
+
+
+def test_gst_return_status_missing_gstin_never_calls_the_network():
+    def handler(request):
+        raise AssertionError("no HTTP call should happen without a GSTIN")
+
+    adapter = GstReturnStatusAdapter(session_with(handler))
+    outcome = adapter.verify(VerificationRequest("GST_RETURN_STATUS", {}, BASIS))
+    assert isinstance(outcome, Failure) and outcome.code is FailureCode.MALFORMED
 
 
 # --- CIN --------------------------------------------------------------------
