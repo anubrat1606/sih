@@ -51,11 +51,15 @@ class RequirementType:
 #: order they should appear in the picker.
 _CATALOG: tuple[RequirementType, ...] = (
     RequirementType("GST", "GST registration",
-        ("bidder.gst.gstin", "bidder.gst.status", "bidder.gst.date_of_expiry"),
+        ("bidder.gst.gstin", "bidder.gst.status", "bidder.gst.date_of_expiry",
+         "bidder.gst.return_filing_status"),
         ("exists", "eq", "active_on", "date_after"),
-        "Backed by deterministic GSTIN extraction always; bidder.gst.status also "
-        "needs the GST_STATUS capability's credentials configured to resolve to "
-        "anything but UNKNOWN."),
+        "Backed by deterministic GSTIN extraction always; bidder.gst.status "
+        "and bidder.gst.return_filing_status each need their own capability "
+        "(GST_STATUS, GST_RETURN_STATUS) configured to resolve to anything "
+        "but UNKNOWN -- return_filing_status reports FILED/NOT_FILED for the "
+        "financial year currently in progress, not a specific past year "
+        "(round 10; see the adapter's own docstring for why)."),
     RequirementType("PAN", "PAN",
         ("bidder.pan.pan_number", "bidder.pan.status", "bidder.pan.holder_name"),
         ("exists", "eq"),
@@ -69,9 +73,13 @@ _CATALOG: tuple[RequirementType, ...] = (
     RequirementType("UDYAM", "Udyam / MSME registration",
         ("bidder.udyam.udyam_number", "bidder.udyam.status"),
         ("exists", "eq"),
-        "Backed by deterministic Udyam-number extraction always; "
-        "bidder.udyam.status also needs the UDYAM_STATUS capability's "
-        "credentials configured."),
+        "Backed by deterministic Udyam-number extraction always. "
+        "bidder.udyam.status is not a credentials gap: checked round 10 "
+        "against Sandbox.co.in's own KYC/KYB product catalog (Aadhaar, PAN, "
+        "bank, DigiLocker, CIN/DIN, GSTIN) and Udyam is not offered by the "
+        "same aggregator account backing every other live capability here. "
+        "No verification path currently exists; this is a confirmed gap, "
+        "not an unresolved one."),
     RequirementType("DOCUMENT_REQUIRED", "Document required (generic)",
         (),
         ("exists",),
@@ -97,8 +105,16 @@ _CATALOG: tuple[RequirementType, ...] = (
         "reason: self-declared, with no authority to verify it against."),
     RequirementType("ITR", "Income Tax Return filing",
         (), ("exists", "gte"),
-        "No ITR extraction or capability exists yet. Saved for review; not "
-        "adoptable until a real evidence path is built."),
+        "Same category as EPFO/ESIC below, confirmed round 10: Sandbox.co.in "
+        "does have a real ITR-V API, but it is part of their ERI (e-Return "
+        "Intermediary) product line -- using it requires the calling "
+        "organization itself to be registered as an ERI with the Income Tax "
+        "Department (a Class II/III Digital Signature Certificate, an "
+        "infrastructure due-diligence certificate, a formal Departmental "
+        "technical/security review). A business/legal registration process, "
+        "not an API credential the existing aggregator account can add. "
+        "Saved for review; confirmed out of reach for this deployment, not "
+        "unresearched."),
     RequirementType("EXPERIENCE", "Years of experience",
         (), ("gte",),
         "No experience-certificate extraction or capability exists yet. "

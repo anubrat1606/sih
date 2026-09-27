@@ -268,24 +268,26 @@ with visible integrity is more impressive than faking coverage."*
 
 ## 11. Registry — current honest state
 
-`/schemas/capability_registry.json` is the live inventory. As of 2026-09-10, no
-adapter is configured; every capability below resolves to `UNKNOWN` until
-credentials exist. This is recorded rather than hidden.
+`/schemas/capability_registry.json` is the live inventory. As of round 10
+(2026-09), one Sandbox.co.in aggregator account backs four live capabilities;
+everything else below still resolves to `UNKNOWN`. This is recorded rather
+than hidden.
 
 | Capability | Tier | Channel | Status | Note |
 |---|---|---|---|---|
-| `PAN_STATUS` | A | AGGREGATOR | **awaiting credentials** | Protean/NSDL direct is the Tier A DIRECT upgrade path |
-| `GST_STATUS` | A | AGGREGATOR | **awaiting credentials** | Official GSTN API needs a GSP licence; not obtainable at v1 |
-| `CIN_STATUS` | A | AGGREGATOR | **awaiting credentials** | MCA21 has no free public API |
-| `UDYAM_STATUS` | A | AGGREGATOR | **awaiting credentials** | Portal verification is OTP-gated |
+| `PAN_STATUS` | A | AGGREGATOR | **LIVE** | Sandbox.co.in KYC; Protean/NSDL direct remains the Tier A DIRECT upgrade path |
+| `GST_STATUS` | A | AGGREGATOR | **LIVE** | Sandbox.co.in GST search |
+| `CIN_STATUS` | A | AGGREGATOR | **LIVE** | Sandbox.co.in MCA company master data |
+| `GST_RETURN_STATUS` | A | AGGREGATOR | **LIVE** | Sandbox.co.in Track GST Returns (round 10); FY-in-progress only, see adapter docstring |
+| `UDYAM_STATUS` | A | AGGREGATOR | **confirmed unavailable** | Checked round 10 against Sandbox's own KYC/KYB catalog — Udyam is not offered by this aggregator account |
 | `EPFO_ESTABLISHMENT` | — | — | **null adapter** | No lawful programmatic source. Renders as unavailable. |
 | `ESIC_ESTABLISHMENT` | — | — | **null adapter** | As above |
-| `ITR_FILING` | — | — | **null adapter** | Consent-based only; deferred from v1 scope |
+| `ITR_FILING` | — | — | **null adapter** | Confirmed round 10: Sandbox's ITR-V API requires the calling org to be a registered ERI with the Income Tax Department — a legal/business registration, not an API credential |
 
-The four `awaiting credentials` rows become live the moment one aggregator
-account exists. That is still the single highest-value errand outstanding —
-until it is done, the demo has no live authority in it and Verification Coverage
-is honestly 0%.
+Verification Coverage is no longer honestly 0% — PAN, GST registration, GST
+return filing, and CIN/MCA21 are real, live, aggregator-backed checks today.
+The remaining rows are confirmed gaps, each with a specific reason, not
+unresearched placeholders.
 
 Scraping the CAPTCHA-walled portals is not the fallback. Charter §3.2: absence of
 an API is an `UNAVAILABLE` capability, not an invitation.
