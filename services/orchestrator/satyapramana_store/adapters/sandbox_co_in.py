@@ -120,6 +120,9 @@ class SandboxSession:
             f"{self.base_url}{path}", headers=self.headers(), json=body
         )
 
+    def get(self, path: str) -> httpx.Response:
+        return self._client.get(f"{self.base_url}{path}", headers=self.headers())
+
 
 def _record(
     conn,
@@ -135,15 +138,21 @@ def _record(
     response_headers: dict[str, str],
     response_body: str | None,
     lawful_basis,
+    method: str = "POST",
 ) -> str:
     """Archive the exchange if a DB connection was given; otherwise return a
     content hash without persisting anything. Production (app.py) always
     passes a real conn -- the no-conn path exists only for adapter-level unit
-    tests that exercise the HTTP mapping without a database."""
+    tests that exercise the HTTP mapping without a database.
+
+    `method` defaults to POST since every existing caller (PAN/GST/CIN/GST
+    return status) only ever posts -- digilocker.py's GET calls (session
+    status, document fetch) pass method="GET" explicitly, so the archive
+    stays a truthful record of what was actually sent, not a guess."""
     if conn is not None:
         return archive(
             conn, adapter_id=adapter_id, adapter_version=adapter_version,
-            capability_id=capability_id, observed_at=observed_at, method="POST",
+            capability_id=capability_id, observed_at=observed_at, method=method,
             url=url, request_headers=request_headers, request_body=request_body,
             response_status=response_status, response_headers=response_headers,
             response_body=response_body, lawful_basis=lawful_basis,

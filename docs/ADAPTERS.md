@@ -279,6 +279,7 @@ than hidden.
 | `GST_STATUS` | A | AGGREGATOR | **LIVE** | Sandbox.co.in GST search |
 | `CIN_STATUS` | A | AGGREGATOR | **LIVE** | Sandbox.co.in MCA company master data |
 | `GST_RETURN_STATUS` | A | AGGREGATOR | **LIVE** | Sandbox.co.in Track GST Returns (round 10); FY-in-progress only, see adapter docstring |
+| `DIGILOCKER_DOCUMENT` | A | AGGREGATOR | **LIVE** | Sandbox.co.in DigiLocker (round 10) — real bidder-consent redirect flow, not a server-to-server lookup; `POST /bidders/{id}/digilocker/session` then `GET .../digilocker/status`. Aadhaar only this round. |
 | `UDYAM_STATUS` | A | AGGREGATOR | **confirmed unavailable** | Checked round 10 against Sandbox's own KYC/KYB catalog — Udyam is not offered by this aggregator account |
 | `EPFO_ESTABLISHMENT` | — | — | **null adapter** | No lawful programmatic source. Renders as unavailable. |
 | `ESIC_ESTABLISHMENT` | — | — | **null adapter** | As above |

@@ -160,17 +160,24 @@ def test_an_unparseable_body_is_still_archived_but_scrubbed():
 # --- the registry -------------------------------------------------------------
 
 def test_the_real_registry_loads():
+    """Round 10 grew this from 6 to 8 adapters: GST_RETURN_STATUS and
+    DIGILOCKER_DOCUMENT added as real, buildable-but-not-yet-configured
+    capabilities; UDYAM_STATUS moved from UnconfiguredAdapter to
+    NullAdapter -- see test_missing_integrations_are_registered_null_
+    adapters_not_omissions -- since round 10 confirmed no aggregator this
+    deployment uses offers it, not just "not configured yet.\""""
     r = Registry.from_file()
-    assert len(r.adapters) == 6
+    assert len(r.adapters) == 8
     assert set(r.capabilities()) == {
-        "PAN_STATUS", "GST_STATUS", "CIN_STATUS", "UDYAM_STATUS"}
+        "PAN_STATUS", "GST_STATUS", "CIN_STATUS",
+        "GST_RETURN_STATUS", "DIGILOCKER_DOCUMENT"}
 
 
 def test_missing_integrations_are_registered_null_adapters_not_omissions():
     r = Registry.from_file()
     nulls = [a for a in r.adapters if a.manifest.is_null]
     assert {a.manifest.adapter_id for a in nulls} == {
-        "epfo_establishment", "esic_establishment"}
+        "udyam_status", "epfo_establishment", "esic_establishment"}
     outcome = nulls[0].verify(VerificationRequest("ANY", {}, BASIS))
     assert isinstance(outcome, Failure)
     assert outcome.code is FailureCode.NOT_CAPABLE
@@ -212,7 +219,7 @@ def test_registering_a_real_adapter_replaces_the_placeholder():
     adapter, capability = r.for_capability("GST_STATUS")
     assert not isinstance(adapter, UnconfiguredAdapter)
     assert capability.live
-    assert len(r.adapters) == 6, "replaced, not appended"
+    assert len(r.adapters) == 8, "replaced, not appended"
 
 
 def test_an_aggregator_capability_must_name_its_intermediary():
