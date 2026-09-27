@@ -188,8 +188,18 @@ _CATALOG: tuple[RequirementType, ...] = (
         "this type's PASS/PARTIAL as equivalent in strength to the others."),
     RequirementType("CERTIFICATION", "Certification (ISO, BIS, etc.)",
         (), ("exists",),
-        "No certificate extraction or capability exists yet. Saved for "
-        "review; not adoptable until a real evidence path is built."),
+        "Round 10 planning flagged BIS/ISO as genuinely inconclusive and "
+        "left it for a future round to actually check -- checked now. BIS's "
+        "own licence verification is a public web tool with no documented "
+        "API found. ISO is different: IAF CertSearch launched a real, "
+        "documented, self-serve API in April 2025 (create an account, "
+        "create an API key, query immediately) -- but it needs a new paid "
+        "vendor account (free tier is 30 profiles/year via web search, not "
+        "API access; paid plans run $31-312/month) this deployment does not "
+        "have, a cost decision for the team, not something to build against "
+        "on a guess. No BIS path found at all. Saved for review; not "
+        "adoptable until either a real account exists or a BIS API "
+        "surfaces."),
     RequirementType("EPFO_ESIC", "EPFO / ESIC registration",
         (), ("exists",),
         "Confirmed cut from scope (docs/STATUS.md): no lawful programmatic "
