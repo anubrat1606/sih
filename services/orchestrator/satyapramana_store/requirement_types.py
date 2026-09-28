@@ -144,16 +144,24 @@ _CATALOG: tuple[RequirementType, ...] = (
         "identically to a plain DECLARATION."),
     RequirementType("STARTUP_INDIA", "Startup India recognition",
         ("bidder.declarations.{requirement_id}",), ("exists",),
-        "PS26100 point 7. No DPIIT Startup India recognition-certificate "
-        "verification API exists in this deployment. Round 10: usable today "
-        "as a self-declared undertaking (Tier C, PARTIAL ceiling on a "
-        "mandatory requirement) via the same mechanism as DECLARATION."),
-    RequirementType("NSIC", "NSIC registration",
-        ("bidder.declarations.{requirement_id}",), ("exists",),
-        "PS26100 point 7. No NSIC registration-verification API exists in "
-        "this deployment. Round 10: usable today as a self-declared "
+        "PS26100 point 7. Checked, not assumed: DPIIT does run a real public "
+        "certificate-verification platform (startupindia.gov.in's "
+        "blockchain-enabled verify page), but it is browser-only -- returns "
+        "HTTP 403 to a plain request, consistent with CDN bot protection -- "
+        "and NSWS's documented API integration path is for government "
+        "departments/states onboarding to NSWS, not third-party self-serve "
+        "the way Sandbox.co.in's account is. Usable today as a self-declared "
         "undertaking (Tier C, PARTIAL ceiling on a mandatory requirement) "
         "via the same mechanism as DECLARATION."),
+    RequirementType("NSIC", "NSIC registration",
+        ("bidder.declarations.{requirement_id}",), ("exists",),
+        "PS26100 point 7. Checked, not assumed: NSIC's SPRS portal lets an "
+        "applicant view their own status by logging in with their own "
+        "reference number -- an applicant self-service login, not a "
+        "third-party verification API. No public developer API found. "
+        "Usable today as a self-declared undertaking (Tier C, PARTIAL "
+        "ceiling on a mandatory requirement) via the same mechanism as "
+        "DECLARATION."),
     RequirementType("MAKE_IN_INDIA", "Make in India / local content",
         ("bidder.declarations.{requirement_id}",), ("exists", "gte"),
         "PS26100 point 5. Local-content percentage has no authoritative "
@@ -168,14 +176,30 @@ _CATALOG: tuple[RequirementType, ...] = (
         "flagged honestly: a debarred bidder self-attesting they are not "
         "debarred has close to zero anti-fraud value, unlike Make in "
         "India/Startup India/NSIC/OEM above, which are legitimate self-"
-        "assertions about the bidder's own facts. A real fix needs CPCL's "
-        "own blacklist register checked (likely an internal list, not a "
-        "public API) -- out of round 10's scope; do not present this type's "
-        "PASS/PARTIAL as equivalent in strength to the others."),
+        "assertions about the bidder's own facts. A real register does "
+        "exist and is even searchable by PAN -- the Central Public "
+        "Procurement Portal (eprocure.gov.in/cppp) publishes an active/"
+        "archived debarred-bidder list -- but its own search flow requires "
+        "solving a CAPTCHA, no API alternative found. Charter's own words: "
+        "'scraping the CAPTCHA-walled portals is not the fallback... "
+        "absence of an API is an UNAVAILABLE capability, not an "
+        "invitation.' Confirmed unavailable for this deployment for that "
+        "specific, checked reason, not an unresearched gap; do not present "
+        "this type's PASS/PARTIAL as equivalent in strength to the others."),
     RequirementType("CERTIFICATION", "Certification (ISO, BIS, etc.)",
         (), ("exists",),
-        "No certificate extraction or capability exists yet. Saved for "
-        "review; not adoptable until a real evidence path is built."),
+        "Round 10 planning flagged BIS/ISO as genuinely inconclusive and "
+        "left it for a future round to actually check -- checked now. BIS's "
+        "own licence verification is a public web tool with no documented "
+        "API found. ISO is different: IAF CertSearch launched a real, "
+        "documented, self-serve API in April 2025 (create an account, "
+        "create an API key, query immediately) -- but it needs a new paid "
+        "vendor account (free tier is 30 profiles/year via web search, not "
+        "API access; paid plans run $31-312/month) this deployment does not "
+        "have, a cost decision for the team, not something to build against "
+        "on a guess. No BIS path found at all. Saved for review; not "
+        "adoptable until either a real account exists or a BIS API "
+        "surfaces."),
     RequirementType("EPFO_ESIC", "EPFO / ESIC registration",
         (), ("exists",),
         "Confirmed cut from scope (docs/STATUS.md): no lawful programmatic "
