@@ -23,15 +23,25 @@ const ROWS = [
   { field: "PAN", masked: "•••••1234•", authority: "PAN_STATUS", live: true, verdict: "PASS" },
   { field: "CIN", masked: "U•••••••2019PTC••••••", authority: "CIN_STATUS", live: true, verdict: "PASS" },
   { field: "Udyam", masked: "UDYAM-••-••-•••••••", authority: "UDYAM_STATUS", live: false, verdict: "UNKNOWN" },
+  // Keyed off the GSTIN already extracted above, not a second document field
+  // -- there's nothing new to "locate on a page" for a return-filing check.
+  { field: "GST Returns", masked: "GSTR-3B · filed", authority: "GST_RETURN_STATUS", live: true, verdict: "PASS",
+    stageLabels: { 1: "linked to GSTIN" } },
+  // DigiLocker is a consent redirect (BIDDER_CONSENT), not a document-page
+  // extraction -- the bidder authenticates with DigiLocker directly and
+  // grants access; nothing here is "located" on the tender's own PDF.
+  { field: "DigiLocker", masked: "issuer · UIDAI", authority: "DIGILOCKER_DOCUMENT", live: true, verdict: "PASS",
+    stageLabels: { 1: "consent requested", 2: "bidder consented" } },
 ];
 
 function RowStatus({ row, stage }) {
-  if (stage === 0) return <span className="lp-doc-meta lp-fade-in" key="q">queued</span>;
-  if (stage === 1) return <span className="lp-doc-meta lp-fade-in" key="l">located · p.1</span>;
+  const override = row.stageLabels?.[stage];
+  if (stage === 0) return <span className="lp-doc-meta lp-fade-in" key="q">{override || "queued"}</span>;
+  if (stage === 1) return <span className="lp-doc-meta lp-fade-in" key="l">{override || "located · p.1"}</span>;
   if (stage === 2) {
     return (
       <span className={`lp-doc-meta lp-fade-in ${row.live ? "lp-doc-live" : ""}`} key="v">
-        {row.live ? "authority answered" : "awaiting credentials"}
+        {override || (row.live ? "authority answered" : "awaiting credentials")}
       </span>
     );
   }
@@ -111,7 +121,7 @@ export default function Pipeline() {
         <h3><Icon name={stage.icon} size={18} /> {active + 1}. {stage.label}</h3>
         <p key={stage.id} className="lp-fade-in">{stage.text}</p>
       </div>
-      <div className="lp-pipe-caption">Illustration of the stages · not a live record · Udyam status shown UNKNOWN because no lawful API exists for it</div>
+      <div className="lp-pipe-caption">Illustration of the stages · not a live record · Udyam status shown UNKNOWN because no lawful API exists for it · DigiLocker verified by a bidder-consent redirect, not a document match</div>
     </div>
   );
 }

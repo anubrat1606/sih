@@ -148,7 +148,7 @@
 .topbar-badge-count {
   position: absolute; top: -2px; right: -2px; min-width: 16px; height: 16px;
   padding: 0 4px; border-radius: var(--radius-full);
-  background: var(--status-partial-fg); color: #fff;
+  background: var(--status-partial-fg); color: var(--color-text-on-dark);
   font-size: 10px; font-weight: 700; display: grid; place-items: center;
   font-variant-numeric: tabular-nums;
 }

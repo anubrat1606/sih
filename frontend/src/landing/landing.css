@@ -122,7 +122,7 @@
   position: absolute; right: -6%; top: 50%; translate: 0 -50%; z-index: -1;
   width: min(60vw, 720px); height: auto; color: var(--chakra-ink); opacity: 0.07; pointer-events: none;
   animation: lp-spin-3d 42s linear infinite;
-  filter: drop-shadow(0 30px 40px rgba(0, 0, 0, 0.12));
+  filter: drop-shadow(0 30px 40px color-mix(in srgb, var(--color-text) 12%, transparent));
 }
 /* A true 3D turn, not a flat rotate -- perspective() foreshortens the disc
  * into an ellipse as it turns, the same way a coin spinning on a table
@@ -200,14 +200,14 @@
 .lp-pipe-tab:hover { background: var(--color-surface-sunken); color: var(--color-text-secondary); }
 .lp-pipe-tab .n { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid currentColor; display: grid; place-items: center; font-size: 11px; font-family: var(--font-mono); transition: background var(--duration-base) var(--ease-standard); }
 .lp-pipe-tab.is-done { color: var(--status-pass-fg); }
-.lp-pipe-tab.is-done .n { background: var(--status-pass-fg); border-color: var(--status-pass-fg); color: #fff; }
+.lp-pipe-tab.is-done .n { background: var(--status-pass-fg); border-color: var(--status-pass-fg); color: var(--color-text-on-dark); }
 .lp-pipe-tab.is-active { color: var(--color-accent-hover); border-bottom-color: var(--color-accent); }
-.lp-pipe-tab.is-active .n { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+.lp-pipe-tab.is-active .n { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-text-on-dark); }
 .lp-pipe-track { height: 3px; background: var(--color-border); }
 .lp-pipe-fill { height: 100%; transform-origin: left; transition: transform 600ms var(--ease-standard); background: linear-gradient(90deg, var(--india-saffron), var(--chakra-ink) 50%, var(--india-green)); }
 
 .lp-doc { padding: 6px 16px 12px; }
-.lp-doc-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--color-border); font-size: var(--text-sm); }
+.lp-doc-row { display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--color-border); font-size: var(--text-sm); }
 .lp-doc-row:first-child { border-top: 0; }
 .lp-doc-field { font-weight: 600; }
 .lp-doc-val { color: var(--color-text-secondary); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -242,7 +242,7 @@
 .tilt-3d-glare::after {
   content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 2;
   background: radial-gradient(circle at var(--tilt-glare-x, 50%) var(--tilt-glare-y, 50%),
-              rgba(255, 255, 255, 0.5), transparent 45%);
+              color-mix(in srgb, var(--color-text-on-dark) 50%, transparent), transparent 45%);
   opacity: var(--tilt-glare-o, 0);
   transition: opacity 260ms ease;
   mix-blend-mode: overlay;
@@ -332,10 +332,10 @@
   padding: clamp(32px, 5vw, 56px); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-6); align-items: center;
 }
 .lp-cta-inner::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: linear-gradient(180deg, var(--india-saffron) 0 33.3%, var(--india-white) 33.3% 66.6%, var(--india-green) 66.6%); }
-.lp-cta-chakra { position: absolute; right: -70px; bottom: -110px; width: 340px; height: auto; color: #fff; opacity: 0.09; z-index: -1; animation: lp-spin-3d 30s linear infinite reverse; }
+.lp-cta-chakra { position: absolute; right: -70px; bottom: -110px; width: 340px; height: auto; color: var(--color-text-on-dark); opacity: 0.09; z-index: -1; animation: lp-spin-3d 30s linear infinite reverse; }
 .lp-cta h2 { font-family: var(--font-landing-display); color: inherit; font-size: clamp(24px, 3vw, 34px); font-weight: 700; letter-spacing: -0.02em; text-wrap: balance; line-height: 1.15; }
 .lp-cta p { margin-top: var(--space-3); color: var(--color-text-on-dark-muted); max-width: 56ch; font-size: var(--text-md); line-height: 1.6; }
-.lp-cta .btn-primary { background: #fff; color: var(--navy-800); border-color: #fff; }
+.lp-cta .btn-primary { background: var(--color-text-on-dark); color: var(--navy-800); border-color: var(--color-text-on-dark); }
 .lp-cta .btn-primary:hover { background: var(--navy-100); border-color: var(--navy-100); }
 
 /* footer */
@@ -381,7 +381,7 @@
   .lp-steps { grid-template-columns: 1fr; }
   .lp-footer-grid { grid-template-columns: 1fr; }
   .lp-pipe-tab { padding-inline: 2px; font-size: 10px; letter-spacing: 0.02em; }
-  .lp-doc-row { grid-template-columns: 56px minmax(0, 1fr) auto; }
+  .lp-doc-row { grid-template-columns: 72px minmax(0, 1fr) auto; }
   .lp-doc-status { min-width: 0; }
   .lp-brand-devanagari { font-size: 19px; }
 }
