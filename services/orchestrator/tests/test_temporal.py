@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from satyapramana_store import (
     Actor, active_pack_as_of, append, collusion_clusters, collusion_clusters_as_of,
     connect, fold_evidence_as_of, fold_verdicts_as_of, rebuild_evidence, rebuild_projections,
+    rebuild_projections_for_bidder,
 )
 from satyapramana_store.adapters import Registry
 from satyapramana_store.app import app, db
@@ -96,6 +97,74 @@ def test_fold_verdicts_as_of_scoped_to_one_bidder_matches_the_all_bidder_fold(co
     everyone = fold_all(conn, tip)
     just_a = fold_verdicts_as_of(conn, tip, bidder_id="A")
     assert just_a == {("A", "R1"): everyone[("A", "R1")]}
+
+
+# --- rebuild_projections_for_bidder --------------------------------------------
+
+def test_rebuild_projections_for_bidder_matches_the_full_rebuild(conn):
+    """Round 10: seven single-bidder endpoints switched from the full
+    rebuild_projections() to this scoped version -- they must produce
+    byte-identical rows for the one bidder they actually read back."""
+    register(conn, "T1", ["A", "B"])
+    evaluate(conn, "T1", "A", "R1", "PASS", "AUTHORITY_CONFIRMED")
+    evaluate(conn, "T1", "B", "R1", "FAIL", "THRESHOLD_NOT_MET")
+
+    rebuild_projections(conn)
+    with conn.cursor() as cur:
+        cur.execute("SELECT verdict_effective, reason_effective, rule_pack_version, "
+                    "built_from_seq FROM proj_verdicts WHERE bidder_id='A'")
+        full = cur.fetchone()
+
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM proj_verdicts")
+    rebuild_projections_for_bidder(conn, "A")
+    with conn.cursor() as cur:
+        cur.execute("SELECT verdict_effective, reason_effective, rule_pack_version, "
+                    "built_from_seq FROM proj_verdicts WHERE bidder_id='A'")
+        scoped = cur.fetchone()
+
+    assert scoped == full
+
+
+def test_rebuild_projections_for_bidder_does_not_touch_other_bidders_rows(conn):
+    register(conn, "T1", ["A", "B"])
+    evaluate(conn, "T1", "A", "R1", "PASS", "AUTHORITY_CONFIRMED")
+    evaluate(conn, "T1", "B", "R1", "FAIL", "THRESHOLD_NOT_MET")
+    rebuild_projections(conn)  # both rows exist, the way a real deployment would have them
+
+    # A new event for B only, then a scoped rebuild of A -- B's already-cached
+    # row must survive untouched, and must NOT pick up B's new event either,
+    # since nothing asked to refold B.
+    evaluate(conn, "T1", "B", "R1", "PASS", "AUTHORITY_CONFIRMED")
+    rebuild_projections_for_bidder(conn, "A")
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT verdict_effective FROM proj_verdicts WHERE bidder_id='B'")
+        assert cur.fetchone()[0] == "FAIL", "B's cached row must be untouched by a scoped rebuild of A"
+
+
+def test_rebuild_projections_for_bidder_replaces_stale_rows_not_duplicates_them(conn):
+    register(conn, "T1", ["A"])
+    evaluate(conn, "T1", "A", "R1", "FAIL", "THRESHOLD_NOT_MET")
+    rebuild_projections_for_bidder(conn, "A")
+    append(conn, event_type="VERDICT_OVERRIDDEN", actor=Actor("HUMAN", "officer_1"),
+          correlation_id=CORR, tender_id="T1", bidder_id="A",
+          payload={"requirement_id": "R1", "verdict_after": "PASS",
+                   "reason_after": "AUTHORITY_CONFIRMED", "officer_id": "officer_1",
+                   "justification": "real document produced in person"})
+    rebuild_projections_for_bidder(conn, "A")
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT verdict_effective FROM proj_verdicts WHERE bidder_id='A'")
+        rows = cur.fetchall()
+    assert rows == [("PASS",)], "a second scoped rebuild must replace the stale row, not add a second one"
+
+
+def test_rebuild_projections_for_bidder_returns_the_real_row_count(conn):
+    register(conn, "T1", ["A"])
+    evaluate(conn, "T1", "A", "R1", "PASS", "AUTHORITY_CONFIRMED")
+    evaluate(conn, "T1", "A", "R2", "FAIL", "THRESHOLD_NOT_MET")
+    assert rebuild_projections_for_bidder(conn, "A") == 2
 
 
 # --- fold_evidence_as_of -------------------------------------------------------

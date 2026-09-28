@@ -10,14 +10,15 @@ from .rulepacks import (  # noqa: F401
 )
 from .projections import (  # noqa: F401
     collusion_clusters, collusion_clusters_as_of, fold_verdicts_as_of,
-    provenance_trail, rebuild_projections,
+    provenance_trail, rebuild_projections, rebuild_projections_for_bidder,
 )
 
 __all__ = [
     "connect", "migrate", "Actor", "append", "export_jsonl", "verify_chain",
     "ChainFork", "ChainReport", "GENESIS", "HUMAN_EVENT_TYPES", "event_hash",
     "collusion_clusters", "collusion_clusters_as_of",
-    "provenance_trail", "rebuild_projections", "fold_verdicts_as_of",
+    "provenance_trail", "rebuild_projections", "rebuild_projections_for_bidder",
+    "fold_verdicts_as_of",
     "adopt", "active_pack", "active_pack_as_of", "get_pack", "NotAdoptable",
     "rebuild_evidence", "ProjectionResolver", "fold_evidence_as_of",
     "evaluate_bidder", "fuse_and_evaluate",

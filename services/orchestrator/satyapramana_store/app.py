@@ -43,7 +43,7 @@ from .requirement_types import requirement_type_catalog
 from .tender_intelligence import Unavailable as DecomposeUnavailable
 from .projections import (
     collusion_clusters, collusion_clusters_as_of, fold_verdicts_as_of,
-    provenance_trail, rebuild_projections,
+    provenance_trail, rebuild_projections, rebuild_projections_for_bidder,
 )
 from .reporting.bid_autopsy import autopsy
 from .reporting.blocker_summary import blocker_summary
@@ -1134,7 +1134,7 @@ def evaluate_bidder_endpoint(bidder_id: str, tender_id: str, body: EvaluateIn,
         tender_id=tender_id, bidder_id=bidder_id, rule_pack_version=version)
     result = fuse_and_evaluate(conn, pack=pack, rule_pack_version=version,
                               tender_id=tender_id, bidder_id=bidder_id, ctx=ctx)
-    rebuild_projections(conn)
+    rebuild_projections_for_bidder(conn, bidder_id)
     return {"bidder_id": bidder_id, "rule_pack_version": version, **result}
 
 
@@ -1296,7 +1296,7 @@ def _bidder_snapshot(bidder_id: str, tender_id: str, conn, *, pack, cluster,
 
 @app.get("/bidders/{bidder_id}")
 def get_bidder(bidder_id: str, tender_id: str, conn=Depends(db), _user: User = Depends(require_role(Role.OFFICER))) -> dict[str, Any]:
-    rebuild_projections(conn)
+    rebuild_projections_for_bidder(conn, bidder_id)
     pack = active_pack(conn, tender_id)
     clusters = {c.bidder_id: c for c in collusion_clusters(conn, tender_id)}
     return _bidder_snapshot(bidder_id, tender_id, conn, pack=pack, cluster=clusters.get(bidder_id))
@@ -1402,7 +1402,7 @@ def bidder_autopsy(bidder_id: str, tender_id: str, conn=Depends(db), _user: User
     if not found:
         raise HTTPException(409, f"no rule pack adopted for tender {tender_id}")
     _, pack = found
-    rebuild_projections(conn)
+    rebuild_projections_for_bidder(conn, bidder_id)
     return _bidder_autopsy_result(bidder_id, tender_id, conn, pack=pack)
 
 
@@ -1415,7 +1415,7 @@ def bidder_repair_plan(bidder_id: str, tender_id: str, conn=Depends(db), _user: 
     if not found:
         raise HTTPException(409, f"no rule pack adopted for tender {tender_id}")
     _, pack = found
-    rebuild_projections(conn)
+    rebuild_projections_for_bidder(conn, bidder_id)
     verdicts = _fetch_verdict_rows(conn, bidder_id)
     return {"bidder_id": bidder_id, "tender_id": tender_id,
             **repair_plan(pack, verdicts, REGISTRY)}
@@ -1512,7 +1512,7 @@ def bidder_evidence_graph(bidder_id: str, tender_id: str, conn=Depends(db), _use
     if not found:
         raise HTTPException(409, f"no rule pack adopted for tender {tender_id}")
     _, pack = found
-    rebuild_projections(conn)
+    rebuild_projections_for_bidder(conn, bidder_id)
     rebuild_evidence(conn, bidder_id, REGISTRY)
     verdicts = _fetch_verdict_rows(conn, bidder_id)
     evidence_by_path = _evidence_by_path(conn, bidder_id)
@@ -1725,7 +1725,7 @@ def _bidder_result_view(conn, tender_id: str, bidder_id: str) -> dict[str, Any]:
     if not row:
         return {"tender_id": tender_id, "bidder_id": bidder_id, "published": False}
     decided_at, decision, note = row
-    rebuild_projections(conn)
+    rebuild_projections_for_bidder(conn, bidder_id)
     verdicts = _fetch_verdict_rows(conn, bidder_id)
     outcomes = [{"requirement_id": v["requirement_id"], "verdict": v["verdict_effective"]}
                 for v in verdicts]
@@ -1828,7 +1828,7 @@ def override(bidder_id: str, tender_id: str, body: OverrideIn, conn=Depends(db),
                           "verdict_after": body.verdict_after,
                           "officer_id": user.username,
                           "justification": body.justification})
-    rebuild_projections(conn)
+    rebuild_projections_for_bidder(conn, bidder_id)
     return {"seq": rec["seq"], "hash": rec["hash"]}
 
 
