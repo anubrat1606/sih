@@ -1,7 +1,14 @@
 # STATUS — where the project is and what to do next
 
-Last reviewed: 2026-09-12. Read `../CLAUDE.md` first for architecture and conventions,
+Last reviewed: 2026-09-28. Read `../CLAUDE.md` first for architecture and conventions,
 then `CONTRIBUTING.md` for who owns what and how a change ships.
+
+This file went stale for two weeks (rounds 7 through 10 all shipped between
+the last review and this one) before being refreshed against the real,
+live state below — checked against `gh pr list`, a real local test run,
+and the actual deployed system's own API, not assumed from memory. If
+you're reading this after another gap, the same three checks are how to
+tell what's still true.
 
 ## Architecture direction — decided 2026-09-10, still in force
 
@@ -56,12 +63,38 @@ install and works from any machine:
 
 ## Built and merged, as of this review
 
-**Zero open PRs. 563 backend tests passing** (381 `services/orchestrator` +
-182 `services/core`), plus a clean `npm run build` / `npm run lint` on the
-frontend. Every PR that landed this project went through the same cycle:
-built with real tests, reviewed in an isolated worktree, live-verified
-against a real running stack, then merged — nothing here is asserted without
-having been run for real at least once.
+**696 backend tests passing** (514 `services/orchestrator` + 182
+`services/core`), plus a clean `npm run build` on the frontend. Two PRs open
+as of this review (#109, a performance change; #110, a documentation-only
+research writeup) — `gh pr list --state open` is the ground truth for
+whether they've landed by the time you read this. Every PR that landed this
+project went through the same cycle: built with real tests, reviewed in an
+isolated worktree, live-verified against a real running stack, then merged
+— nothing here is asserted without having been run for real at least once.
+
+**Rounds 7 through 10** (the gap this review closes) shipped, in order: a
+full admin console (account directory, audit log, tender builder — round
+7); the Temporal Scrubber (real event-sequence checkpoints, a pure
+`fold_verdicts_as_of`/`fold_evidence_as_of` split that never risks the
+live projection tables a concurrent officer's read depends on) and
+deterministic financial-statement extraction for `MIN_TURNOVER`/`NET_WORTH`
+(round 8); collusion made genuinely historical in the Temporal Scrubber,
+self-declaration/undertaking capture (`DECLARATION`), and paise-to-rupee
+currency formatting everywhere a financial figure renders (round 9); and,
+after checking the actual official SIH26100 problem statement against what
+was live and finding six unmet or partial points, a live `GST_RETURN_STATUS`
+capability, a real DigiLocker bidder-consent flow (session → redirect →
+status poll → document fetch, wired all the way into the bidder submission
+UI, PS26100 point 8), five new self-declared requirement types covering
+Make in India, Startup India, NSIC, OEM authorization, and blacklist/
+debarment (points 5, 7, 9 — each with a real, checked reason no
+verification API exists, not a placeholder), and a measured 77.6x
+performance fix for the seven single-bidder read endpoints that were each
+refolding every other bidder's verdicts in the deployment to answer a
+question about one (round 10). See `docs/NEXT_TASKS_10_anubrat_rishika.md`
+and `docs/NEXT_TASKS_10B_anubrat_rishika_sprint.md` for the real task
+briefs, and `docs/ADAPTERS.md` section 11 for the current, honest
+capability-by-capability state.
 
 **Core domain layer** — the four-state verdict algebra (`PASS` / `FAIL` /
 `PARTIAL` / `UNKNOWN`), the three orthogonal metrics (never blended), risk
@@ -76,13 +109,24 @@ separate from the verification-sourced `bidder.gst.legal_name` so one can
 never silently overwrite the other). Every extracted field carries its real
 page and pixel region through to the rendered UI.
 
-**Verification** — live for `PAN_STATUS`, `GST_STATUS`, `CIN_STATUS` via
-Sandbox.co.in, gated entirely by `SATYAPRAMANA_SANDBOX_API_KEY`/`_SECRET` in
-`services/orchestrator/.env` (gitignored, per-developer — see gap 2 below).
-`UDYAM_STATUS` stays `AWAITING_CREDENTIALS` (confirmed: no Udyam endpoint
-exists anywhere on Sandbox.co.in's platform); EPFO/ESIC are registered null
-adapters with no lawful programmatic source anywhere — both are **confirmed
-cut from scope**, not outstanding work.
+**Verification** — five live capabilities on one Sandbox.co.in account:
+`PAN_STATUS`, `GST_STATUS`, `CIN_STATUS`, `GST_RETURN_STATUS` (round 10),
+and `DIGILOCKER_DOCUMENT` (round 10, Aadhaar only so far — a real bidder-
+consent redirect, not a lookup). Confirmed live against the real deployed
+API as of this review (`GET /capabilities`, `live_count: 5`), not assumed.
+`UDYAM_STATUS`, `EPFO_ESTABLISHMENT`, and `ESIC_ESTABLISHMENT` are
+registered null adapters, each **confirmed** to have no lawful
+programmatic source (Udyam: checked against Sandbox's own product catalog,
+round 10; EPFO/ESIC: no source anywhere) — cut from scope for a real,
+checked reason, not outstanding work. `ITR_FILING` is the same category:
+Sandbox does have a real ITR-V API, but it requires the calling
+organization itself to be a registered e-Return Intermediary with the
+Income Tax Department — a legal/business registration, not a credential
+this account can add. The Gemini key (`SATYAPRAMANA_GEMINI_API_KEY`) is
+**not** configured on the live Render deployment as of this review — EXPLAIN
+and Tender Intelligence both correctly degrade to `available: false` there
+rather than fabricating anything, but nobody has actually seen either one
+narrate a real dossier live yet.
 
 **Auth** — real login, `hashlib.scrypt` password hashing (stdlib, no new
 dependency), signed JWT sessions, three roles totally ordered
@@ -141,16 +185,23 @@ pack.
 - `POST /tenders/{tender_id}/documents` — upload the tender's own source
   PDF (separate from a bidder's compliance documents), no identifier
   extraction run against it (a tender notice isn't an ID document).
-- `GET /requirement-types` — a catalog of 15 requirement types (GST, PAN,
-  CIN, Udyam, document-required, turnover, net worth, ITR, experience,
-  similar work, OEM authorization, certification, EPFO/ESIC, declaration,
-  technical). Each type's `evidence_backed` flag is computed **live**
-  against the real capability registry and extraction field list — the
-  same two sources rule 8 already validates a submitted pack against, so
-  this can never silently drift from what adoption will actually accept.
-  Four types (GST/PAN/CIN/Udyam) come back backed with real field paths;
-  the other eleven honestly come back unbacked with a stated reason —
-  nothing here fabricates an evidence path.
+- `GET /requirement-types` — a catalog, originally 15 types, now **20** as
+  of round 10 (checked directly against the live catalog, not assumed):
+  GST, PAN, CIN, Udyam, DigiLocker/Aadhaar, document-required, turnover,
+  net worth, ITR, experience, similar work, OEM authorization, Startup
+  India, NSIC, Make in India, blacklist/debarment, certification,
+  EPFO/ESIC, declaration, technical. Each type's `evidence_backed` flag is
+  computed **live** against the real capability registry and extraction
+  field list — the same two sources rule 8 already validates a submitted
+  pack against, so this can never silently drift from what adoption will
+  actually accept. **13 of the 20** come back backed with a real evidence
+  path today (GST/PAN/CIN/Udyam/DigiLocker-Aadhaar via extraction or a live
+  capability; turnover/net worth via financial-statement extraction;
+  declaration and the five round-10 self-declared types via round 9's
+  attestation mechanism); the remaining 7 (ITR, experience, similar work,
+  certification, EPFO/ESIC, plus the intentionally generic document-
+  required and technical) honestly come back unbacked with a stated
+  reason — nothing here fabricates an evidence path.
 - `POST /tenders/{tender_id}/rule-pack/validate` — dry-run validation
   (`rulepacks.validate_only()`), same rule-8-through-13 check adoption
   gates on, appends no event and writes no row.
@@ -171,36 +222,46 @@ pack.
 
 ## Outstanding — in priority order
 
-The first three need real-world input that no Claude Code session, working
+The first two need real-world input that no Claude Code session, working
 alone, can supply — they were never really "buildable" tasks in the
-scoping sense, and fabricating any of them would violate the one rule this
+scoping sense, and fabricating either would violate the one rule this
 whole project refuses to break.
 
-### 1. No real demo data
+### 1. Real demo data exists now, but collusion has never fired on it
 
-`data/consented_bidders/` does not exist yet. Nobody has pushed a real,
-consented document through the live pipeline end to end. This has been the
-single biggest gap between "the pieces all individually work" and "we can
-actually demo it" since round 2. Need: real people/businesses who have
-consented to appear in the demo, at least three bidders on one tender, two
-of them genuinely sharing an attribute (director name, address, phone, or
-bank account) for the collusion case to fire on real data. See
-`data/README.md`.
+**Partially resolved, checked live as of this review, not assumed.** The
+live deployment has 3 real tenders and 3 real bidders with real evaluated
+verdicts — `BHEL-T7J1Z68239` (the real GeM tender from round 5) carries two
+real bidders, `ANUBRAT-DAS` and `GST-BIDDER-01`, both currently `HIGH`
+risk; `GST-VERIFY-TEST` carries one, `GSTIN-TEST-1`, `LOW` risk. This is
+real progress since the last review — the pieces have genuinely been run
+end to end against real data, not just individually.
 
-### 2. Live credentials are per-developer, not shared
+What's still missing, precisely: none of the three real bidders share an
+attribute with another, so `flagged_bidder_count` is honestly `0` — the
+collusion detector has never fired on real data, only on synthetic test
+fixtures. Closing this needs one more real, consenting bidder registered
+on `BHEL-T7J1Z68239` (or a new tender) who genuinely shares a director
+name, address, phone, or bank account with `ANUBRAT-DAS` or
+`GST-BIDDER-01` — a real-world-input gap, same as before, just narrower
+than it was.
 
-**Partially resolved 2026-09-12.** The *database* half of this is
-resolved — see "Database access" above and `docs/DEPLOYMENT.md`: a shared
-Neon Postgres plus a shared Render deployment means nobody needs a local
-Postgres or their own `.env` just to use the running app.
+### 2. Live credentials are shared for Sandbox.co.in, not yet for Gemini
 
-Still open: real Sandbox.co.in and Gemini keys live only on whichever
-machine (or Render service) configured them, never in the repo — correct,
-not a bug, since without a key the dependent feature honestly degrades to
-`UNKNOWN`/unavailable rather than faking a result. Worth deciding once
-real demo data exists: does the team share one real key pair (entered
-once into the Render service's env vars, per `docs/DEPLOYMENT.md`), or
-does each developer need their own for local work?
+**The Sandbox.co.in half is resolved**, confirmed live as of this review:
+`SATYAPRAMANA_SANDBOX_API_KEY`/`_SECRET`/`_ENV=live` are all set on the
+shared Render backend (`GET /capabilities` shows `live_count: 5` from the
+public internet, not a local `.env`) — a shared Neon Postgres plus this
+shared Render deployment means nobody needs their own Sandbox credentials
+just to use the running app.
+
+Still open: `SATYAPRAMANA_GEMINI_API_KEY` is not set on the live
+deployment (checked directly against Render's env-var list, not assumed)
+— correct, not a bug, since EXPLAIN and Tender Intelligence both honestly
+degrade to `available: false` without it, rather than faking a narrative.
+Worth deciding: does the team add one real shared key to Render's env vars
+(same place the Sandbox credentials already live), or does this stay
+per-developer for local work only?
 
 [PR #59](https://github.com/anubrat1606/sih/pull/59), merged: Kevin ran a
 real GeM tender (BHEL, Enquiry No. T7J1Z68239, "Supply of Metallic
@@ -216,13 +277,18 @@ checked against the actual PDF page and matched verbatim.
 
 5 more real requirements from the same tender (turnover, experience,
 certification, two declarations) were drafted, validated, and correctly
-refused adoption (rule 8: no evidence path; rule 11: `review_required`) —
-documented in the PR, not silently dropped. That residual gap (no evidence
-path for turnover/experience/certification/declarations anywhere in this
-system) is real and still open, but it's a capability gap now, not a
-"nobody has tried this with real data yet" gap.
+refused adoption at the time (rule 8: no evidence path; rule 11:
+`review_required`) — documented in the PR, not silently dropped. Updated
+as of this review: turnover and net worth got a real, deterministic
+evidence path in round 8 (`extract/financials.py`); declarations got real
+capture in round 9 (`DECLARATION`). What's still genuinely unbacked today
+— checked directly, not assumed — is `EXPERIENCE`, `SIMILAR_WORK`, and
+`CERTIFICATION`: no extraction path or verification API exists for any of
+the three, and unlike round 10's five new self-declared types, none of
+these three have been given even a self-declared path yet. A real,
+specific residual gap, narrower than it was, not closed.
 
-### 4. Deployment — resolved 2026-09-12, no Docker
+### 3. Deployment — resolved 2026-09-12, no Docker
 
 Docker was declined (see "Architecture direction" above) in favor of a
 Render Blueprint (`render.yaml`) running the orchestrator and frontend as
@@ -231,11 +297,13 @@ two free services against the shared Neon database — see
 (uploaded document files don't survive a redeploy on Render's free tier;
 the event log itself always does).
 
-### 5. Everything else
+### 4. Everything else
 
-No other gap is currently open. If a new one turns up, it goes here with
-the same rigor as 1–4: what's missing, why, and what real-world input (if
-any) it needs before it's buildable.
+No other gap is currently open beyond what's named above (real demo data
+for collusion, the Gemini key, and `EXPERIENCE`/`SIMILAR_WORK`/
+`CERTIFICATION`). If a new one turns up, it goes here with the same rigor
+as 1–3: what's missing, why, and what real-world input (if any) it needs
+before it's buildable.
 
 ---
 
@@ -248,13 +316,23 @@ cd services/core && ./venv/bin/python -m pytest tests/ -q   # expect 182 passed
 # orchestrator — needs PostgreSQL
 cd services/orchestrator
 export DATABASE_URL=postgresql://localhost/satyapramana_test
-./venv/bin/python -m pytest tests/ -q                        # expect 381 passed
+./venv/bin/python -m pytest tests/ -q                        # expect 514 passed
+                                                              # (more once #109 merges)
 
 # frontend
 cd frontend && npm run build && npm run lint                 # both clean
+
+# the live deployment itself — ground truth beats any file, this one included
+curl -s https://sih26100-orchestrator.onrender.com/health
+curl -s https://sih26100-orchestrator.onrender.com/capabilities \
+  -H "Authorization: Bearer <a real token from /auth/login>" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['live_count'])"
+                                                              # expect 5
 ```
 
 `gh pr list --state merged` and `gh pr list --state open` are the ground
 truth for what's actually landed versus what this file claims — trust those
 over this document if they ever disagree, and update this file rather than
-letting that gap grow.
+letting that gap grow. The live deployment is the ground truth for what a
+judge or officer actually sees; a passing local test suite proves the code
+is correct, not that the deployed system reflects it — check both.
