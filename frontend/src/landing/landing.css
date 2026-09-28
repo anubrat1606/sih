@@ -207,7 +207,7 @@
 .lp-pipe-fill { height: 100%; transform-origin: left; transition: transform 600ms var(--ease-standard); background: linear-gradient(90deg, var(--india-saffron), var(--chakra-ink) 50%, var(--india-green)); }
 
 .lp-doc { padding: 6px 16px 12px; }
-.lp-doc-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--color-border); font-size: var(--text-sm); }
+.lp-doc-row { display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--color-border); font-size: var(--text-sm); }
 .lp-doc-row:first-child { border-top: 0; }
 .lp-doc-field { font-weight: 600; }
 .lp-doc-val { color: var(--color-text-secondary); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -381,7 +381,7 @@
   .lp-steps { grid-template-columns: 1fr; }
   .lp-footer-grid { grid-template-columns: 1fr; }
   .lp-pipe-tab { padding-inline: 2px; font-size: 10px; letter-spacing: 0.02em; }
-  .lp-doc-row { grid-template-columns: 56px minmax(0, 1fr) auto; }
+  .lp-doc-row { grid-template-columns: 72px minmax(0, 1fr) auto; }
   .lp-doc-status { min-width: 0; }
   .lp-brand-devanagari { font-size: 19px; }
 }
