@@ -954,6 +954,32 @@ def digilocker_session_status(bidder_id: str, tender_id: str, session_id: str,
             "pan_identity_match": identity_match_note}
 
 
+@app.get("/_debug/r2")
+def _debug_r2(key: str, admin: User = Depends(require_role(Role.ADMIN))) -> dict[str, Any]:
+    """TEMPORARY -- diagnosing a live 404 that only reproduces on the
+    deployed service, not locally with the same credentials. Remove once
+    resolved; never meant to ship."""
+    from .extract import ingest
+    out: dict[str, Any] = {
+        "access_key_set": bool(ingest._R2_ACCESS_KEY_ID),
+        "secret_set": bool(ingest._R2_SECRET_ACCESS_KEY),
+        "endpoint": ingest._R2_ENDPOINT,
+        "bucket": ingest._R2_BUCKET,
+    }
+    client = ingest._r2_client()
+    out["client_is_none"] = client is None
+    if client is not None:
+        try:
+            resp = client.get_object(Bucket=ingest._R2_BUCKET, Key=key)
+            out["result"] = "ok"
+            out["bytes"] = len(resp["Body"].read())
+        except Exception as exc:
+            out["result"] = "exception"
+            out["exception_type"] = type(exc).__name__
+            out["exception_str"] = str(exc)
+    return out
+
+
 @app.get("/documents/{document_sha256}")
 def get_document(document_sha256: str, conn=Depends(db), _user: User = Depends(require_role(Role.OFFICER))):
     """Serve a previously-ingested document back, for the evidence viewer --
