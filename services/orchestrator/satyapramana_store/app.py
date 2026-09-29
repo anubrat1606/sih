@@ -20,7 +20,7 @@ import httpx
 import jwt as _jwt
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
 from satyapramana.metrics import Constants, RequirementResult, compute
@@ -39,7 +39,7 @@ from .events import Actor, append, export_jsonl, verify_chain
 from .evidence import ProjectionResolver, fold_evidence_as_of, rebuild_evidence
 from .explain import Unavailable
 from .extract import ingest_document, read_pdf
-from .extract.ingest import INGEST, store_document
+from .extract.ingest import INGEST, read_document, store_document
 from .requirement_types import requirement_type_catalog
 from .tender_intelligence import Unavailable as DecomposeUnavailable
 from .projections import (
@@ -973,10 +973,10 @@ def get_document(document_sha256: str, conn=Depends(db), _user: User = Depends(r
         row = cur.fetchone()
     if not row or not row[0]:
         raise HTTPException(404, "no document with that hash was ever ingested")
-    path = row[0]
-    if not os.path.isfile(path):
+    data = read_document(row[0])
+    if data is None:
         raise HTTPException(404, "the event log references this document, but it is not on disk here")
-    return FileResponse(path, media_type="application/pdf")
+    return Response(content=data, media_type="application/pdf")
 
 
 @app.post("/tenders/{tender_id}/documents", status_code=201)
@@ -1090,12 +1090,11 @@ def decompose_tender(tender_id: str, body: DecomposeIn, conn=Depends(db),
         row = cur.fetchone()
     if not row or not row[0]:
         raise HTTPException(404, "no document with that hash was ever ingested")
-    path = row[0]
-    if not os.path.isfile(path):
+    data = read_document(row[0])
+    if data is None:
         raise HTTPException(404, "the event log references this document, but it is not on disk here")
 
-    with open(path, "rb") as f:
-        pages = read_pdf(f.read())
+    pages = read_pdf(data)
     document_text = "\n\n".join(
         f"--- PAGE {p.number} ---\n" + " ".join(w.text for w in p.words)
         for p in pages if p.has_text_layer)
