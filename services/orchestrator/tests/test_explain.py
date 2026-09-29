@@ -17,6 +17,8 @@ from google.genai import errors
 
 from satyapramana_store.explain import Narrated, Unavailable, build_from_env
 from satyapramana_store.explain.gemini import DEFAULT_MODEL, GeminiExplainer, UnconfiguredExplainer
+from satyapramana_store.explain.groq import DEFAULT_MODEL as GROQ_DEFAULT_MODEL
+from satyapramana_store.explain.groq import GroqExplainer
 
 
 class _FakeResponse:
@@ -40,24 +42,54 @@ def test_unconfigured_explainer_is_honestly_unavailable_not_a_blank_narrative():
     assert "not configured" in outcome.reason
 
 
-def test_build_from_env_without_a_key_is_unconfigured(monkeypatch):
+@pytest.fixture(autouse=True)
+def _clear_provider_env(monkeypatch):
+    """Every dispatcher test starts from neither provider configured --
+    explicit, not whatever happened to be in the environment when the
+    suite ran (round-11: a second provider, Groq, means a test that only
+    clears the Gemini var can silently pass for the wrong reason if a
+    Groq var leaks in from elsewhere)."""
+    monkeypatch.delenv("SATYAPRAMANA_GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("SATYAPRAMANA_GROQ_MODEL", raising=False)
     monkeypatch.delenv("SATYAPRAMANA_GEMINI_API_KEY", raising=False)
-    assert isinstance(build_from_env(), UnconfiguredExplainer)
-
-
-def test_build_from_env_with_a_key_returns_a_configured_gemini_explainer(monkeypatch):
-    monkeypatch.setenv("SATYAPRAMANA_GEMINI_API_KEY", "fake-key-for-test")
     monkeypatch.delenv("SATYAPRAMANA_GEMINI_MODEL", raising=False)
+
+
+def test_build_from_env_without_any_key_is_unconfigured():
+    outcome = build_from_env().narrate("irrelevant dossier text")
+    assert isinstance(outcome, Unavailable)
+    assert "is not configured" in outcome.reason
+    assert "GROQ" in outcome.reason and "GEMINI" in outcome.reason
+
+
+def test_build_from_env_with_a_gemini_key_returns_a_configured_gemini_explainer(monkeypatch):
+    monkeypatch.setenv("SATYAPRAMANA_GEMINI_API_KEY", "fake-key-for-test")
     explainer = build_from_env()
     assert isinstance(explainer, GeminiExplainer)
     assert explainer._model == DEFAULT_MODEL
 
 
-def test_build_from_env_honours_a_model_override(monkeypatch):
+def test_build_from_env_honours_a_gemini_model_override(monkeypatch):
     monkeypatch.setenv("SATYAPRAMANA_GEMINI_API_KEY", "fake-key-for-test")
     monkeypatch.setenv("SATYAPRAMANA_GEMINI_MODEL", "gemini-test-model")
     explainer = build_from_env()
     assert explainer._model == "gemini-test-model"
+
+
+def test_build_from_env_prefers_groq_when_both_keys_are_set(monkeypatch):
+    """Added round 11: Groq first, since that's the provider that actually
+    works when Gemini's billing is the thing that's broken -- never a
+    silent blend of both."""
+    monkeypatch.setenv("SATYAPRAMANA_GROQ_API_KEY", "fake-groq-key")
+    monkeypatch.setenv("SATYAPRAMANA_GEMINI_API_KEY", "fake-gemini-key")
+    assert isinstance(build_from_env(), GroqExplainer)
+
+
+def test_build_from_env_with_only_a_groq_key_returns_a_configured_groq_explainer(monkeypatch):
+    monkeypatch.setenv("SATYAPRAMANA_GROQ_API_KEY", "fake-groq-key")
+    explainer = build_from_env()
+    assert isinstance(explainer, GroqExplainer)
+    assert explainer._model == GROQ_DEFAULT_MODEL
 
 
 def test_gemini_explainer_returns_the_providers_text_as_narrated():

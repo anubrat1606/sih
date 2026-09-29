@@ -144,17 +144,17 @@ DIGILOCKER_SESSION = _digilocker.build_from_env()
 if DIGILOCKER_SESSION is not None:
     REGISTRY.register(_digilocker.DigilockerPlaceholderAdapter())
 
-# Same plug-in shape as the verification adapters above: with no
-# SATYAPRAMANA_GEMINI_API_KEY set, EXPLAINER stays on the honest
-# UnconfiguredExplainer and /bidders/{id}/explain returns Unavailable rather
-# than a fabricated narrative.
+# Same plug-in shape as the verification adapters above: with neither
+# SATYAPRAMANA_GROQ_API_KEY nor SATYAPRAMANA_GEMINI_API_KEY set, EXPLAINER
+# stays on the honest UnconfiguredExplainer and /bidders/{id}/explain
+# returns Unavailable rather than a fabricated narrative. Groq preferred
+# when both are set -- see explain/__init__.py's build_from_env().
 from .explain import build_from_env as _build_explainer  # noqa: E402
 EXPLAINER = _build_explainer()
 
-# Same plug-in shape again: with no SATYAPRAMANA_GEMINI_API_KEY set,
-# DECOMPOSER stays on the honest UnconfiguredDecomposer and
-# /tenders/{id}/decompose returns Unavailable -- never a fabricated
-# requirement list.
+# Same plug-in shape again: with neither key set, DECOMPOSER stays on the
+# honest UnconfiguredDecomposer and /tenders/{id}/decompose returns
+# Unavailable -- never a fabricated requirement list.
 from .tender_intelligence import build_from_env as _build_decomposer  # noqa: E402
 DECOMPOSER = _build_decomposer()
 

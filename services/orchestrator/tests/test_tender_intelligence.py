@@ -16,6 +16,8 @@ from satyapramana_store.tender_intelligence import Decomposed, Unavailable, buil
 from satyapramana_store.tender_intelligence.gemini import (
     DEFAULT_MODEL, GeminiDecomposer, UnconfiguredDecomposer,
 )
+from satyapramana_store.tender_intelligence.groq import DEFAULT_MODEL as GROQ_DEFAULT_MODEL
+from satyapramana_store.tender_intelligence.groq import GroqDecomposer
 
 
 class _FakeResponse:
@@ -36,17 +38,42 @@ def test_unconfigured_decomposer_is_honestly_unavailable():
     assert "not configured" in outcome.reason
 
 
-def test_build_from_env_without_a_key_is_unconfigured(monkeypatch):
+@pytest.fixture(autouse=True)
+def _clear_provider_env(monkeypatch):
+    """See test_explain.py's identical fixture -- every dispatcher test
+    starts from neither provider configured, explicit rather than
+    whatever leaked in from the environment the suite ran in."""
+    monkeypatch.delenv("SATYAPRAMANA_GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("SATYAPRAMANA_GROQ_MODEL", raising=False)
     monkeypatch.delenv("SATYAPRAMANA_GEMINI_API_KEY", raising=False)
-    assert isinstance(build_from_env(), UnconfiguredDecomposer)
-
-
-def test_build_from_env_with_a_key_returns_a_configured_decomposer(monkeypatch):
-    monkeypatch.setenv("SATYAPRAMANA_GEMINI_API_KEY", "fake-key-for-test")
     monkeypatch.delenv("SATYAPRAMANA_GEMINI_MODEL", raising=False)
+
+
+def test_build_from_env_without_any_key_is_unconfigured():
+    outcome = build_from_env().decompose("irrelevant tender text")
+    assert isinstance(outcome, Unavailable)
+    assert "is not configured" in outcome.reason
+    assert "GROQ" in outcome.reason and "GEMINI" in outcome.reason
+
+
+def test_build_from_env_with_a_gemini_key_returns_a_configured_decomposer(monkeypatch):
+    monkeypatch.setenv("SATYAPRAMANA_GEMINI_API_KEY", "fake-key-for-test")
     decomposer = build_from_env()
     assert isinstance(decomposer, GeminiDecomposer)
     assert decomposer._model == DEFAULT_MODEL
+
+
+def test_build_from_env_prefers_groq_when_both_keys_are_set(monkeypatch):
+    monkeypatch.setenv("SATYAPRAMANA_GROQ_API_KEY", "fake-groq-key")
+    monkeypatch.setenv("SATYAPRAMANA_GEMINI_API_KEY", "fake-gemini-key")
+    assert isinstance(build_from_env(), GroqDecomposer)
+
+
+def test_build_from_env_with_only_a_groq_key_returns_a_configured_groq_decomposer(monkeypatch):
+    monkeypatch.setenv("SATYAPRAMANA_GROQ_API_KEY", "fake-groq-key")
+    decomposer = build_from_env()
+    assert isinstance(decomposer, GroqDecomposer)
+    assert decomposer._model == GROQ_DEFAULT_MODEL
 
 
 def test_gemini_decomposer_parses_real_structured_output():
