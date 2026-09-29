@@ -356,6 +356,17 @@ th.sortable:hover { color: var(--color-text); }
 }
 .unavailable-note-glyph { color: var(--status-unknown-fg); font-weight: 700; line-height: 1.4; }
 
+/* A real caveat on an adoptable type -- milder than .unavailable-note
+ * (this type CAN be adopted), but still a stated, real limitation, not a
+ * clean pass. Same structure, PARTIAL's tokens instead of UNKNOWN's. */
+.caveat-note {
+  display: flex; gap: var(--space-3); align-items: flex-start;
+  padding: var(--space-3) var(--space-4);
+  background: var(--status-partial-bg); border: 1px solid var(--status-partial-border);
+  border-radius: var(--radius-md); font-size: var(--text-sm); color: var(--color-text-secondary);
+}
+.caveat-note-glyph { color: var(--status-partial-fg); font-weight: 700; line-height: 1.4; }
+
 .error-note {
   display: flex; gap: var(--space-3); align-items: flex-start;
   padding: var(--space-3) var(--space-4);

@@ -267,6 +267,26 @@ export function Callout({ children, strong }) {
   return <p className={`callout${strong ? " callout-strong" : ""}`}>{children}</p>;
 }
 
+// A real, adoptable requirement type whose evidence is still genuinely
+// weaker than a register-backed one (self-declared/Tier C, capped at
+// PARTIAL) -- distinct from UnavailableNote, which means "cannot be
+// adopted at all." Uses the PARTIAL status tokens deliberately, not
+// decoratively: these types' own verdict ceiling literally is PARTIAL, so
+// the same glyph and colour the rest of the app already uses for that
+// state is the honest one here too.
+export function CaveatNote({ title, children }) {
+  return (
+    <div className="caveat-note">
+      <span className="caveat-note-glyph" aria-hidden="true">◑</span>
+      <div>
+        {title && <strong style={{ color: "var(--color-text)" }}>{title}</strong>}
+        {title && <br />}
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /* --------------------------------------------------------------- metrics */
 
 export function Stat({ label, value, note, accent = "neutral" }) {
