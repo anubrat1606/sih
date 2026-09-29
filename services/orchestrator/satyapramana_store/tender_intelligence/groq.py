@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from datetime import datetime, timezone
 
@@ -23,7 +24,30 @@ DEFAULT_MODEL = "openai/gpt-oss-120b"
 _API_URL = "https://api.groq.com/openai/v1/chat/completions"
 _RETRYABLE_STATUS = {429, 503}
 _MAX_ATTEMPTS = 3
+#: Fallback only -- a real 429 names the actual wait itself (see
+#: _retry_delay_seconds below), found live 2026-09-30: Groq's TPM limit is
+#: a rolling per-minute budget, not per-request, so decomposing a large
+#: tender across many chunks in quick succession genuinely needs ~10-30s
+#: between retries, not a fixed short guess -- a 2s wait just fails again.
 _RETRY_DELAY_SECONDS = 2
+_RETRY_AFTER_RE = re.compile(r"try again in ([\d.]+)s", re.IGNORECASE)
+
+
+def _retry_delay_seconds(response: httpx.Response) -> float:
+    """Groq's own Retry-After header, if present; otherwise the real wait
+    named in the 429 body text ("...try again in 27.285s..."), confirmed
+    live; otherwise the fixed fallback. A small buffer is added since the
+    provider's own clock and ours are never perfectly in sync."""
+    header = response.headers.get("retry-after")
+    if header:
+        try:
+            return float(header) + 0.5
+        except ValueError:
+            pass
+    match = _RETRY_AFTER_RE.search(response.text or "")
+    if match:
+        return float(match.group(1)) + 0.5
+    return _RETRY_DELAY_SECONDS
 
 _SYSTEM_INSTRUCTION = (
     "You read a government tender document and propose candidate compliance "
@@ -68,7 +92,7 @@ def _post_with_retry(api_key: str, payload: dict) -> httpx.Response:
             return response
         if response.status_code not in _RETRYABLE_STATUS or attempt == _MAX_ATTEMPTS - 1:
             response.raise_for_status()
-        time.sleep(_RETRY_DELAY_SECONDS)
+        time.sleep(_retry_delay_seconds(response))
     raise last_exc  # pragma: no cover -- loop always returns or raises above
 
 

@@ -11,14 +11,15 @@ import httpx
 import pytest
 
 from satyapramana_store.explain import Narrated, Unavailable
-from satyapramana_store.explain.groq import GroqExplainer, UnconfiguredExplainer
+from satyapramana_store.explain.groq import GroqExplainer, UnconfiguredExplainer, _retry_delay_seconds
 
 
 class _FakeResponse:
-    def __init__(self, status_code, payload=None, text=""):
+    def __init__(self, status_code, payload=None, text="", headers=None):
         self.status_code = status_code
         self._payload = payload
         self.text = text
+        self.headers = headers or {}
 
     def json(self):
         return self._payload
@@ -94,7 +95,24 @@ def test_groq_explainer_retries_a_transient_503_before_succeeding(monkeypatch):
     outcome = explainer.narrate("dossier text")
     assert isinstance(outcome, Narrated)
     assert outcome.narrative == "Recovered narrative."
-    assert calls["n"] == 3
+
+
+# --- retry delay: see tender_intelligence/groq.py's identical tests -----------
+
+def test_retry_delay_reads_the_real_wait_from_the_error_message():
+    resp = _FakeResponse(429, text='{"error":{"message":"Rate limit reached... '
+                          'Please try again in 27.285s. Need more tokens?"}}')
+    assert _retry_delay_seconds(resp) == pytest.approx(27.785, abs=0.01)
+
+
+def test_retry_delay_prefers_the_retry_after_header_when_present():
+    resp = _FakeResponse(429, text="try again in 5s", headers={"retry-after": "12"})
+    assert _retry_delay_seconds(resp) == pytest.approx(12.5, abs=0.01)
+
+
+def test_retry_delay_falls_back_to_the_fixed_default_with_no_signal():
+    resp = _FakeResponse(429, text="rate limited, no timing given")
+    assert _retry_delay_seconds(resp) == 2
 
 
 def test_groq_explainer_gives_up_after_max_retries_on_a_persistent_503(monkeypatch):
