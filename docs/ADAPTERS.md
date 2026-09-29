@@ -268,10 +268,10 @@ with visible integrity is more impressive than faking coverage."*
 
 ## 11. Registry — current honest state
 
-`/schemas/capability_registry.json` is the live inventory. As of round 10
-(2026-09), one Sandbox.co.in aggregator account backs four live capabilities;
-everything else below still resolves to `UNKNOWN`. This is recorded rather
-than hidden.
+`/schemas/capability_registry.json` is the live inventory. As of round 11
+(2026-09), one Sandbox.co.in aggregator account backs five live
+capabilities; everything else below still resolves to `UNKNOWN`. This is
+recorded rather than hidden.
 
 | Capability | Tier | Channel | Status | Note |
 |---|---|---|---|---|
@@ -280,8 +280,8 @@ than hidden.
 | `CIN_STATUS` | A | AGGREGATOR | **LIVE** | Sandbox.co.in MCA company master data |
 | `GST_RETURN_STATUS` | A | AGGREGATOR | **LIVE** | Sandbox.co.in Track GST Returns (round 10); FY-in-progress only, see adapter docstring |
 | `DIGILOCKER_DOCUMENT` | A | AGGREGATOR | **LIVE** | Sandbox.co.in DigiLocker (round 10) — real bidder-consent redirect flow, not a server-to-server lookup; `POST /bidders/{id}/digilocker/session` then `GET .../digilocker/status`. Aadhaar only this round. Consent proves a real Aadhaar-verified person, not that they're this bidder — `bidder.digilocker.pan_identity_match` closes that gap by reading the real signed Aadhaar XML's name and cross-checking it against `bidder.pan.holder_name`, the same pattern the GSTIN↔PAN cross-check already uses. Name and DOB only; the XML's address and photo are deliberately never read or stored. |
-| `UDYAM_STATUS` | A | AGGREGATOR | **confirmed unavailable** | Checked round 10 against Sandbox's own KYC/KYB catalog — Udyam is not offered by this aggregator account |
-| `EPFO_ESTABLISHMENT` | — | — | **null adapter** | No lawful programmatic source. Renders as unavailable. |
+| `UDYAM_STATUS` | A | AGGREGATOR | **AWAITING_CREDENTIALS** | Sandbox.co.in confirmed not to offer this (round 10, still true). Round 11: a second, separate vendor (Attestr, `docs.attestr.com/attestr-docs/msme-udyam-verification-api`) does — a real adapter (`adapters/attestr.py`) exists and goes LIVE the moment `SATYAPRAMANA_ATTESTR_AUTH_TOKEN` is configured; not yet exercised against a real account |
+| `EPFO_ESTABLISHMENT` | — | — | **null adapter** | No lawful programmatic source anywhere, any vendor. Renders as unavailable. |
 | `ESIC_ESTABLISHMENT` | — | — | **null adapter** | As above |
 | `ITR_FILING` | — | — | **null adapter** | Confirmed round 10: Sandbox's ITR-V API requires the calling org to be a registered ERI with the Income Tax Department — a legal/business registration, not an API credential |
 

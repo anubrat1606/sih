@@ -74,12 +74,14 @@ _CATALOG: tuple[RequirementType, ...] = (
         ("bidder.udyam.udyam_number", "bidder.udyam.status"),
         ("exists", "eq"),
         "Backed by deterministic Udyam-number extraction always. "
-        "bidder.udyam.status is not a credentials gap: checked round 10 "
-        "against Sandbox.co.in's own KYC/KYB product catalog (Aadhaar, PAN, "
-        "bank, DigiLocker, CIN/DIN, GSTIN) and Udyam is not offered by the "
-        "same aggregator account backing every other live capability here. "
-        "No verification path currently exists; this is a confirmed gap, "
-        "not an unresolved one."),
+        "bidder.udyam.status: round 10 confirmed Sandbox.co.in's own "
+        "KYC/KYB product catalog doesn't offer Udyam status verification -- "
+        "still true, that aggregator genuinely doesn't have it. Round 11 "
+        "found a second, separate vendor that does (Attestr, "
+        "docs.attestr.com/attestr-docs/msme-udyam-verification-api) -- a "
+        "real UDYAM_STATUS capability now exists, AWAITING_CREDENTIALS "
+        "until SATYAPRAMANA_ATTESTR_AUTH_TOKEN is configured, same as every "
+        "other capability on this account before its credentials existed."),
     RequirementType("DIGILOCKER_AADHAAR", "Aadhaar via DigiLocker (bidder consent)",
         ("bidder.digilocker.aadhaar_verified", "bidder.digilocker.aadhaar_issuer",
          "bidder.digilocker.pan_identity_match"),
