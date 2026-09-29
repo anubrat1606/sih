@@ -3,7 +3,7 @@ import { adoptRulePack, getRequirementTypes, validateRulePack } from "../api";
 import { useApi } from "../lib/useApi";
 import { useToast } from "../notifications";
 import {
-  Callout, Card, ErrorState, ReviewBadge, Section, Tag, UnavailableNote,
+  Callout, CaveatNote, Card, ErrorState, ReviewBadge, Section, Tag, UnavailableNote,
 } from "../ui/primitives";
 
 // Compliance requirements, authored by an officer against a real tender.
@@ -200,6 +200,20 @@ function RequirementRow({ index, req, types, onChange, onRemove }) {
             {type.note} This requirement stays flagged for review and cannot be adopted until an
             evidence path exists — that is the correct outcome, not a defect.
           </UnavailableNote>
+        )}
+
+        {/* Declaration-backed types (DECLARATION and everything sharing its
+            mechanism -- OEM_AUTHORIZATION, STARTUP_INDIA, NSIC,
+            MAKE_IN_INDIA, BLACKLIST_DEBARMENT, EXPERIENCE, SIMILAR_WORK,
+            CERTIFICATION) ARE evidence_backed and adoptable, but the
+            catalog's own note explains a real limitation -- self-declared,
+            Tier C, capped at PARTIAL -- that applyType() otherwise discards
+            the moment the type is picked. Surfaced here instead of clearing
+            it, same honesty the catalog itself was written with. */}
+        {type && type.evidence_backed && isDeclarationBacked(type) && type.note && (
+          <CaveatNote title="Self-declared evidence — read before making this mandatory">
+            {type.note}
+          </CaveatNote>
         )}
 
         <div className="form-row">
