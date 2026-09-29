@@ -18,8 +18,11 @@ from .base import ExplainOutcome, Narrated, Unavailable
 #: Overridable without a code change -- by the time real credentials exist,
 #: a newer model id may be current. Never guessed at call time; a stale
 #: default just means an officer sees an honest Unavailable from the
-#: provider, never a silently wrong model.
-DEFAULT_MODEL = "gemini-2.5-flash"
+#: provider, never a silently wrong model. Confirmed live 2026-09-29:
+#: "gemini-2.5-flash" was deprecated (404 NOT_FOUND) after the Gemini key
+#: was first configured on the real deployment, caught by the honest
+#: Unavailable degrade doing exactly its job, not by a guess.
+DEFAULT_MODEL = "gemini-3.8-flash"
 
 _SYSTEM_INSTRUCTION = (
     "You narrate an already-final bid-compliance decision for a procurement "

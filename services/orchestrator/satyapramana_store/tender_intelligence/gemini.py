@@ -13,7 +13,9 @@ from google.genai import errors, types
 
 from .base import Decomposed, DecompositionOutcome, ProposedRequirement, Unavailable
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+#: See explain/gemini.py's own DEFAULT_MODEL comment -- same constant,
+#: same real 404 that surfaced it, same fix.
+DEFAULT_MODEL = "gemini-3.8-flash"
 
 _SYSTEM_INSTRUCTION = (
     "You read a government tender document and propose candidate compliance "
