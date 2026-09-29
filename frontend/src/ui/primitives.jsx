@@ -287,6 +287,95 @@ export function CaveatNote({ title, children }) {
   );
 }
 
+/* ------------------------------------------------------------- narrative */
+
+// EXPLAIN's system prompt asks for plain prose, but real model output
+// varies by provider -- Gemini returned clean prose, Groq's gpt-oss-120b
+// returns real Markdown (headings, bold, pipe tables). Rather than trust
+// one provider's current behaviour, or add a Markdown dependency for one
+// consumer, this renders the block-level subset an officer-summary
+// narrative actually uses, so raw **/###/| characters are never what an
+// officer -- or a screenshot -- sees, whichever model answered.
+function renderInline(text, keyPrefix) {
+  return text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean).map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return <strong key={`${keyPrefix}-${i}`}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
+      return <em key={`${keyPrefix}-${i}`}>{part.slice(1, -1)}</em>;
+    }
+    return <span key={`${keyPrefix}-${i}`}>{part}</span>;
+  });
+}
+
+function parseNarrativeBlocks(text) {
+  const lines = (text || "").split("\n");
+  const blocks = [];
+  let listBuf = [];
+  let listKind = null;
+  const flushList = () => {
+    if (listBuf.length) blocks.push({ type: listKind, items: listBuf });
+    listBuf = []; listKind = null;
+  };
+  const cells = (line) => line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+
+  for (let i = 0; i < lines.length;) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) { flushList(); i += 1; continue; }
+    if (/^#{1,6}\s+/.test(trimmed)) { flushList(); blocks.push({ type: "heading", text: trimmed.replace(/^#{1,6}\s+/, "") }); i += 1; continue; }
+    if (/^-{3,}$/.test(trimmed)) { flushList(); blocks.push({ type: "hr" }); i += 1; continue; }
+    if (/^[-*]\s+/.test(trimmed)) {
+      if (listKind && listKind !== "ul") flushList();
+      listKind = "ul"; listBuf.push(trimmed.replace(/^[-*]\s+/, ""));
+      i += 1; continue;
+    }
+    if (/^\d+\.\s+/.test(trimmed)) {
+      if (listKind && listKind !== "ol") flushList();
+      listKind = "ol"; listBuf.push(trimmed.replace(/^\d+\.\s+/, ""));
+      i += 1; continue;
+    }
+    if (trimmed.startsWith("|") && i + 1 < lines.length && /^\|?\s*-{2,}/.test(lines[i + 1].trim())) {
+      flushList();
+      const tableLines = [trimmed];
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim().startsWith("|")) { tableLines.push(lines[j].trim()); j += 1; }
+      blocks.push({ type: "table", header: cells(tableLines[0]), rows: tableLines.slice(2).map(cells) });
+      i = j; continue;
+    }
+    flushList();
+    blocks.push({ type: "p", text: trimmed });
+    i += 1;
+  }
+  flushList();
+  return blocks;
+}
+
+export function NarrativeText({ text }) {
+  return (
+    <div className="narrative">
+      {parseNarrativeBlocks(text).map((b, i) => {
+        if (b.type === "heading") return <h4 key={i}>{renderInline(b.text, `h${i}`)}</h4>;
+        if (b.type === "hr") return <hr key={i} />;
+        if (b.type === "ul" || b.type === "ol") {
+          const ListTag = b.type;
+          return <ListTag key={i}>{b.items.map((it, j) => <li key={j}>{renderInline(it, `li${i}-${j}`)}</li>)}</ListTag>;
+        }
+        if (b.type === "table") {
+          return (
+            <table key={i}>
+              <thead><tr>{b.header.map((h, j) => <th key={j}>{h}</th>)}</tr></thead>
+              <tbody>
+                {b.rows.map((r, ri) => <tr key={ri}>{r.map((c, ci) => <td key={ci}>{renderInline(c, `t${i}-${ri}-${ci}`)}</td>)}</tr>)}
+              </tbody>
+            </table>
+          );
+        }
+        return <p key={i}>{renderInline(b.text, `p${i}`)}</p>;
+      })}
+    </div>
+  );
+}
+
 /* --------------------------------------------------------------- metrics */
 
 export function Stat({ label, value, note, accent = "neutral" }) {

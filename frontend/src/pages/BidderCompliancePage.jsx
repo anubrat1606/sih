@@ -14,7 +14,7 @@ import BidderHistoryTimeline from "../features/BidderHistoryTimeline";
 import FinalisePanel from "../officer/review/FinalisePanel";
 import {
   Callout, Card, ConfirmDialog, CoverageMetric, Dash, Drawer, EmptyState, ErrorState,
-  EvidenceChain, Field, LoadingBlock, MetricCard, PageHeader, RiskBadge, Section,
+  EvidenceChain, Field, LoadingBlock, MetricCard, NarrativeText, PageHeader, RiskBadge, Section,
   SeverityBadge, Tabs, Tag, UnavailableNote, VerdictBadge,
 } from "../ui/primitives";
 
@@ -500,7 +500,7 @@ export default function BidderCompliancePage() {
                 {explanation && (
                   explanation.available ? (
                     <div style={{ marginTop: 12 }}>
-                      <p className="narrative">{explanation.narrative}</p>
+                      <NarrativeText text={explanation.narrative} />
                       <p className="text-xs text-muted" style={{ marginTop: 8 }}>
                         Narrated by {explanation.model} at {explanation.generated_at}.
                       </p>
