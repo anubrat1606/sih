@@ -31,10 +31,10 @@ function declarationField(requirementId) {
 // Matches requirement_types.py's own detection: DECLARATION and every other
 // type built on the same self-declared mechanism (OEM_AUTHORIZATION,
 // STARTUP_INDIA, NSIC, MAKE_IN_INDIA, BLACKLIST_DEBARMENT, EXPERIENCE,
-// SIMILAR_WORK, CERTIFICATION) share this one unsubstituted template as
-// their one backed field. Checked by field content, not a hardcoded type id
-// list, so a future type reusing this mechanism doesn't need this file
-// edited too.
+// SIMILAR_WORK, CERTIFICATION, ITR, EPFO_ESIC) share this one unsubstituted
+// template as their one backed field. Checked by field content, not a
+// hardcoded type id list, so a future type reusing this mechanism doesn't
+// need this file edited too.
 const DECLARATION_TEMPLATE = "bidder.declarations.{requirement_id}";
 function isDeclarationBacked(type) {
   return type?.backed_fields?.[0] === DECLARATION_TEMPLATE;
@@ -205,11 +205,12 @@ function RequirementRow({ index, req, types, onChange, onRemove }) {
         {/* Declaration-backed types (DECLARATION and everything sharing its
             mechanism -- OEM_AUTHORIZATION, STARTUP_INDIA, NSIC,
             MAKE_IN_INDIA, BLACKLIST_DEBARMENT, EXPERIENCE, SIMILAR_WORK,
-            CERTIFICATION) ARE evidence_backed and adoptable, but the
-            catalog's own note explains a real limitation -- self-declared,
-            Tier C, capped at PARTIAL -- that applyType() otherwise discards
-            the moment the type is picked. Surfaced here instead of clearing
-            it, same honesty the catalog itself was written with. */}
+            CERTIFICATION, ITR, EPFO_ESIC) ARE evidence_backed and adoptable,
+            but the catalog's own note explains a real limitation --
+            self-declared, Tier C, capped at PARTIAL -- that applyType()
+            otherwise discards the moment the type is picked. Surfaced here
+            instead of clearing it, same honesty the catalog itself was
+            written with. */}
         {type && type.evidence_backed && isDeclarationBacked(type) && type.note && (
           <CaveatNote title="Self-declared evidence — read before making this mandatory">
             {type.note}

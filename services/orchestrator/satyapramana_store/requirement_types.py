@@ -123,7 +123,7 @@ _CATALOG: tuple[RequirementType, ...] = (
         "same way as minimum turnover -- and capped at PARTIAL for the same "
         "reason: self-declared, with no authority to verify it against."),
     RequirementType("ITR", "Income Tax Return filing",
-        (), ("exists", "gte"),
+        ("bidder.declarations.{requirement_id}",), ("exists", "gte"),
         "Same category as EPFO/ESIC below, confirmed round 10: Sandbox.co.in "
         "does have a real ITR-V API, but it is part of their ERI (e-Return "
         "Intermediary) product line -- using it requires the calling "
@@ -131,9 +131,14 @@ _CATALOG: tuple[RequirementType, ...] = (
         "Department (a Class II/III Digital Signature Certificate, an "
         "infrastructure due-diligence certificate, a formal Departmental "
         "technical/security review). A business/legal registration process, "
-        "not an API credential the existing aggregator account can add. "
-        "Saved for review; confirmed out of reach for this deployment, not "
-        "unresearched."),
+        "not an API credential the existing aggregator account can add -- "
+        "confirmed out of reach for this deployment, not unresearched. Usable "
+        "today as a self-declared undertaking via the same mechanism as "
+        "DECLARATION (Tier C, PARTIAL ceiling on a mandatory requirement), "
+        "the same honest weaker-evidence caveat as EXPERIENCE/SIMILAR_WORK/ "
+        "CERTIFICATION above: a self-attested filing status is not a "
+        "substitute for a real ITR-V check, an interim path pending real ERI "
+        "registration, not equivalent in strength."),
     RequirementType("EXPERIENCE", "Years of experience",
         ("bidder.declarations.{requirement_id}",), ("gte",),
         "No experience-certificate extraction or capability exists (work-"
@@ -234,10 +239,16 @@ _CATALOG: tuple[RequirementType, ...] = (
         "officer. An interim path, not a substitute for the real IAF "
         "CertSearch check if the team funds that account."),
     RequirementType("EPFO_ESIC", "EPFO / ESIC registration",
-        (), ("exists",),
+        ("bidder.declarations.{requirement_id}",), ("exists",),
         "Confirmed cut from scope (docs/STATUS.md): no lawful programmatic "
-        "source exists anywhere for EPFO/ESIC. Saved for review; this is a "
-        "known, permanent gap, not an oversight."),
+        "source exists anywhere for EPFO/ESIC, for any vendor -- a known, "
+        "permanent gap, not an oversight. Usable today as a self-declared "
+        "undertaking via the same mechanism as DECLARATION (Tier C, PARTIAL "
+        "ceiling on a mandatory requirement) so this is at least adoptable "
+        "rather than a dead end -- flagged honestly, same spirit as "
+        "BLACKLIST_DEBARMENT above: a self-attested registration number is "
+        "weaker evidence than every register-backed self-declared type, "
+        "since there is no register to eventually check it against at all."),
     RequirementType("DECLARATION", "Self-declaration / undertaking",
         ("bidder.declarations.{requirement_id}",), ("exists",),
         "Captured directly as a real, attributed event when a bidder (or "
@@ -279,7 +290,7 @@ def requirement_type_catalog(registry: Registry) -> list[dict[str, Any]]:
             # DECLARATION and every other type built on the same self-
             # declared mechanism (OEM_AUTHORIZATION, STARTUP_INDIA, NSIC,
             # MAKE_IN_INDIA, BLACKLIST_DEBARMENT, EXPERIENCE, SIMILAR_WORK,
-            # CERTIFICATION) share this one template
+            # CERTIFICATION, ITR, EPFO_ESIC) share this one template
             # field, never a literal member of `producible` -- it's
             # parameterized by a requirement id that only exists once a pack
             # is being drafted (rulepacks.py's _registry_as_dict computes the

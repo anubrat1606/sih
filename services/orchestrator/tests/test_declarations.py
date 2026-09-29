@@ -129,6 +129,22 @@ def test_round_10_followup_declaration_backed_types_are_also_evidence_backed():
         assert entry["note"], type_id  # every one has a real, non-empty explanation
 
 
+def test_round_11_declaration_backed_types_are_also_evidence_backed():
+    """ITR and EPFO_ESIC were the last two requirement types with zero
+    evidence path of any kind -- not even self-declared, unlike every other
+    confirmed-unavailable type. Both are permanent, structural gaps (no
+    lawful source exists for EPFO/ESIC; ITR needs real ERI registration),
+    but that was never a reason to leave officers with no way to at least
+    record the bidder's own attestation, the same weakest-tier path every
+    other unverifiable type already has."""
+    catalog = {t["id"]: t for t in requirement_type_catalog(Registry())}
+    for type_id in ("ITR", "EPFO_ESIC"):
+        entry = catalog[type_id]
+        assert entry["evidence_backed"] is True, type_id
+        assert entry["backed_fields"] == ["bidder.declarations.{requirement_id}"], type_id
+        assert entry["note"], type_id
+
+
 def test_a_startup_india_requirement_resolves_through_the_same_declaration_path(conn):
     """One representative end-to-end check (not all five -- they share one
     mechanism, already proven by test_a_recorded_declaration_resolves_at_
