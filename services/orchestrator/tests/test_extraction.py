@@ -1195,3 +1195,43 @@ def test_decompose_endpoint_reports_a_partial_chunk_failure_honestly(client, con
     assert len(result["proposals"]) >= 1
     assert "rate limited on this chunk" in result["reason"]
     assert "could not be analyzed" in result["reason"]
+
+
+def test_decompose_endpoint_stops_within_its_time_budget_and_still_returns_real_results(client, conn, monkeypatch):
+    """Confirmed live 2026-09-30: Render's own reverse proxy kills a
+    request at ~100-120s no matter what the client asked for -- a real
+    502, not a client-side timeout. A document with enough chunks that
+    honoring every real retry wait would exceed that must still return
+    the real, honestly-partial results already gathered within the
+    budget, not silently run past it and guarantee a 502 with nothing at
+    all returned."""
+    import time as time_module
+    from satyapramana_store import app as app_module
+    from satyapramana_store.tender_intelligence import Decomposed, ProposedRequirement
+    from datetime import datetime, timezone
+    import satyapramana_store.app as _appmod
+
+    class _SlowDecomposer:
+        def decompose(self, document_text):
+            time_module.sleep(0.05)
+            return Decomposed(
+                proposals=(ProposedRequirement(
+                    text="A real requirement.", page=1, obligation_guess="mandatory",
+                    suggested_field=None, suggested_check=None, note=None),),
+                model="fake-model", generated_at=datetime.now(timezone.utc))
+
+    monkeypatch.setattr(app_module, "DECOMPOSER", _SlowDecomposer())
+    monkeypatch.setattr(app_module, "DECOMPOSE_TIME_BUDGET_SECONDS", 0.08)
+    real_chunks = _appmod._page_chunks
+    monkeypatch.setattr(_appmod, "_page_chunks", lambda pages, max_words=2500: real_chunks(pages, max_words=5))
+
+    pdf = text_pdf(["one two three four five"], pages=6)
+    body = upload(client, pdf).json()
+    r = client.post("/tenders/T1/decompose", json={"document_sha256": body["document_sha256"]},
+                    headers=auth_headers(conn))
+    result = r.json()
+
+    assert result["available"] is True
+    assert 1 <= len(result["proposals"]) < 6, "expected some but not every chunk to have run"
+    assert "time budget" in result["reason"]
+    assert "not analyzed" in result["reason"]

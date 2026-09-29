@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
@@ -1088,6 +1089,14 @@ class DecomposeIn(BaseModel):
     document_sha256: str
 
 
+#: Confirmed live 2026-09-30: Render's own reverse proxy kills a request
+#: at roughly 100-120s regardless of the client's timeout. 75s leaves real
+#: margin. A module-level constant, not a literal inside decompose_tender,
+#: so a test can set it small and prove the deadline branch fires without
+#: waiting 75 real seconds.
+DECOMPOSE_TIME_BUDGET_SECONDS = 75.0
+
+
 def _page_chunks(pages: list, max_words: int = 2500):
     """Groups consecutive text-bearing pages so each group's word count
     stays under a real provider's per-request token budget -- see
@@ -1156,12 +1165,31 @@ def decompose_tender(tender_id: str, body: DecomposeIn, conn=Depends(db),
     # Chunking, not truncation: every page still reaches the model, just
     # across more than one real call, so nothing is silently dropped the
     # way a length cap on the raw text would.
+    #
+    # Chunking alone still isn't enough for a genuinely large document:
+    # confirmed live the same day, Render's own reverse proxy kills a
+    # request after roughly 100-120s regardless of the client's own
+    # timeout (a real 502, not a client-side failure) -- and honoring
+    # Groq's real per-429 retry wait (fix alongside this one) can easily
+    # need that long across many chunks. A wall-clock budget stops
+    # starting new chunks with enough margin to return the real,
+    # honestly-partial results already gathered as an actual response,
+    # rather than guaranteeing a 502 with nothing at all.
+    deadline = time.monotonic() + DECOMPOSE_TIME_BUDGET_SECONDS
     all_proposals: list = []
     model_used: str | None = None
     generated_at = None
     failed_ranges: list[tuple[int, int, str]] = []
     succeeded = 0
-    for chunk in _page_chunks(text_pages):
+    chunks = list(_page_chunks(text_pages))
+    for i, chunk in enumerate(chunks):
+        if time.monotonic() >= deadline:
+            remaining = chunks[i:]
+            failed_ranges.append((
+                remaining[0][0].number, remaining[-1][-1].number,
+                f"not analyzed -- {DECOMPOSE_TIME_BUDGET_SECONDS:.0f}s time budget for this request "
+                "was reached before this page range was attempted"))
+            break
         chunk_text = "\n\n".join(
             f"--- PAGE {p.number} ---\n" + " ".join(w.text for w in p.words)
             for p in chunk)
