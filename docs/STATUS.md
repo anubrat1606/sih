@@ -288,20 +288,53 @@ the three, and unlike round 10's five new self-declared types, none of
 these three have been given even a self-declared path yet. A real,
 specific residual gap, narrower than it was, not closed.
 
-### 3. Deployment — resolved 2026-09-12, no Docker
+### 3. Deployment — Docker declined (still the right call), but document storage is a real, recurring, currently-broken problem
 
-Docker was declined (see "Architecture direction" above) in favor of a
-Render Blueprint (`render.yaml`) running the orchestrator and frontend as
-two free services against the shared Neon database — see
-`docs/DEPLOYMENT.md` for the one-time setup and its one honest limitation
-(uploaded document files don't survive a redeploy on Render's free tier;
-the event log itself always does).
+Docker itself was declined (see "Architecture direction" above) in favor
+of a Render Blueprint (`render.yaml`) running the orchestrator and
+frontend as two free services against the shared Neon database — that
+part is resolved and stays resolved, see `docs/DEPLOYMENT.md` for setup.
+
+**Not resolved, and actively broken again as of this review, checked
+live, not assumed:** uploaded document files live on the orchestrator's
+local disk (`storage_ref` in `DOCUMENT_INGESTED`), and Render's free
+tier gives that service an *ephemeral* filesystem — every redeploy wipes
+it. `render.yaml` auto-deploys on every push to `main`, so **any** merge
+— a doc fix, a CSS change, anything — silently deletes every previously
+uploaded document, while the hash-chained event log keeps referencing
+the now-missing file forever (the reference cannot be repaired unless a
+byte-identical re-upload happens to land, which only works as a stopgap,
+not a fix). Confirmed live right now: `GET /documents/{sha256}` 404s
+with `"the event log references this document, but it is not on disk
+here"` for both real bidders' documents — re-uploaded once already this
+sprint, silently wiped again by at least three merges since.
+
+This is not cosmetic. It means an officer's decision, once made off a
+document, can permanently lose the ability to be independently
+re-verified by clicking through to the original page — directly
+undercutting the charter's own "provenance to the pixel" claim, the
+single most load-bearing promise this product makes to a judge.
+
+Real fix options, by effort (not yet decided as of this review):
+1. **Object storage** (Cloudflare R2 or Backblaze B2, both have a real
+   free tier) — swap the local-disk read/write path for an S3-compatible
+   client; survives every redeploy permanently. Needs a new account and
+   credentials, the same category of decision as the Gemini key.
+2. **Render persistent disk** — less code, but a real recurring cost;
+   the team has already declined paid infrastructure elsewhere (no
+   Docker, no Next.js), so this would be a deliberate, stated exception,
+   not a default.
+3. **Re-upload right before any screenshot/demo, zero pushes in
+   between** — not a fix, a timing workaround; what's unblocked every
+   screenshot so far, and will keep recurring exactly this way until 1
+   or 2 actually happens.
 
 ### 4. Everything else
 
 No other gap is currently open beyond what's named above (real demo data
-for collusion, the Gemini key, and `EXPERIENCE`/`SIMILAR_WORK`/
-`CERTIFICATION`). If a new one turns up, it goes here with the same rigor
+for collusion, the Gemini key, document storage, and
+`EXPERIENCE`/`SIMILAR_WORK`/`CERTIFICATION`). If a new one turns up, it
+goes here with the same rigor
 as 1–3: what's missing, why, and what real-world input (if any) it needs
 before it's buildable.
 
