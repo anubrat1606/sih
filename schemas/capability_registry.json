@@ -107,10 +107,31 @@
     },
     {
       "adapter_id": "udyam_status",
-      "adapter_version": "0.1.0",
+      "adapter_version": "1.0.0",
       "authority": "Ministry of Micro, Small and Medium Enterprises",
-      "identifier_queryable": false,
-      "capabilities": []
+      "intermediary": "PENDING -- Attestr account required before this is LIVE (round 11: Sandbox.co.in confirmed not to offer this capability; Attestr's documented Udyam API is a separate, second vendor)",
+      "identifier_queryable": true,
+      "capabilities": [
+        {
+          "capability_id": "UDYAM_STATUS",
+          "provides": [
+            "bidder.udyam.status",
+            "bidder.udyam.entity_name",
+            "bidder.udyam.enterprise_type",
+            "bidder.udyam.registered_date"
+          ],
+          "tier": "A",
+          "channel": "AGGREGATOR",
+          "as_of_supported": false,
+          "freshness_days": 90,
+          "not_found_is_negative": false,
+          "lawful_bases": [
+            "TENDER_EVALUATION",
+            "PUBLIC_REGISTER"
+          ],
+          "status": "AWAITING_CREDENTIALS"
+        }
+      ]
     },
     {
       "adapter_id": "epfo_establishment",
