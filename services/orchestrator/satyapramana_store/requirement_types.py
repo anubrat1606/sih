@@ -81,7 +81,8 @@ _CATALOG: tuple[RequirementType, ...] = (
         "No verification path currently exists; this is a confirmed gap, "
         "not an unresolved one."),
     RequirementType("DIGILOCKER_AADHAAR", "Aadhaar via DigiLocker (bidder consent)",
-        ("bidder.digilocker.aadhaar_verified", "bidder.digilocker.aadhaar_issuer"),
+        ("bidder.digilocker.aadhaar_verified", "bidder.digilocker.aadhaar_issuer",
+         "bidder.digilocker.pan_identity_match"),
         ("exists", "eq"),
         "PS26100 point 8. Round 10: real, live, consent-based -- the bidder "
         "is redirected to DigiLocker, authenticates with their own "
@@ -89,7 +90,13 @@ _CATALOG: tuple[RequirementType, ...] = (
         "/bidders/{id}/digilocker/session starts the flow, GET "
         ".../digilocker/status resolves it. Not part of the ordinary "
         "verify-everything loop the other identity types use -- a real "
-        "redirect step outside this API has to happen first."),
+        "redirect step outside this API has to happen first. Consent alone "
+        "proves a real Aadhaar-verified person completed the flow, not "
+        "that they are this bidder -- pick bidder.digilocker."
+        "pan_identity_match (eq \"MATCH\") for a requirement that also "
+        "needs the Aadhaar holder's name to match the bidder's own PAN "
+        "record on file; only resolves once both a PAN and an Aadhaar "
+        "verification exist for the same bidder."),
     RequirementType("DOCUMENT_REQUIRED", "Document required (generic)",
         (),
         ("exists",),

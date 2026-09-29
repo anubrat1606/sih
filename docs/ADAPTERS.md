@@ -279,7 +279,7 @@ than hidden.
 | `GST_STATUS` | A | AGGREGATOR | **LIVE** | Sandbox.co.in GST search |
 | `CIN_STATUS` | A | AGGREGATOR | **LIVE** | Sandbox.co.in MCA company master data |
 | `GST_RETURN_STATUS` | A | AGGREGATOR | **LIVE** | Sandbox.co.in Track GST Returns (round 10); FY-in-progress only, see adapter docstring |
-| `DIGILOCKER_DOCUMENT` | A | AGGREGATOR | **LIVE** | Sandbox.co.in DigiLocker (round 10) — real bidder-consent redirect flow, not a server-to-server lookup; `POST /bidders/{id}/digilocker/session` then `GET .../digilocker/status`. Aadhaar only this round. |
+| `DIGILOCKER_DOCUMENT` | A | AGGREGATOR | **LIVE** | Sandbox.co.in DigiLocker (round 10) — real bidder-consent redirect flow, not a server-to-server lookup; `POST /bidders/{id}/digilocker/session` then `GET .../digilocker/status`. Aadhaar only this round. Consent proves a real Aadhaar-verified person, not that they're this bidder — `bidder.digilocker.pan_identity_match` closes that gap by reading the real signed Aadhaar XML's name and cross-checking it against `bidder.pan.holder_name`, the same pattern the GSTIN↔PAN cross-check already uses. Name and DOB only; the XML's address and photo are deliberately never read or stored. |
 | `UDYAM_STATUS` | A | AGGREGATOR | **confirmed unavailable** | Checked round 10 against Sandbox's own KYC/KYB catalog — Udyam is not offered by this aggregator account |
 | `EPFO_ESTABLISHMENT` | — | — | **null adapter** | No lawful programmatic source. Renders as unavailable. |
 | `ESIC_ESTABLISHMENT` | — | — | **null adapter** | As above |
