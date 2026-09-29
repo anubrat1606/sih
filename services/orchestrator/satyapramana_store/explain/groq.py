@@ -14,6 +14,7 @@ adding a whole second provider SDK for one endpoint.
 from __future__ import annotations
 
 import os
+import re
 import time
 from datetime import datetime, timezone
 
@@ -30,7 +31,26 @@ DEFAULT_MODEL = "openai/gpt-oss-120b"
 _API_URL = "https://api.groq.com/openai/v1/chat/completions"
 _RETRYABLE_STATUS = {429, 503}
 _MAX_ATTEMPTS = 3
+#: Fallback only -- see tender_intelligence/groq.py's identical comment
+#: for the real 429 that made this necessary: Groq's TPM limit is a
+#: rolling per-minute budget, and the real wait it names (~10-30s) is
+#: nothing like a fixed 2s guess.
 _RETRY_DELAY_SECONDS = 2
+_RETRY_AFTER_RE = re.compile(r"try again in ([\d.]+)s", re.IGNORECASE)
+
+
+def _retry_delay_seconds(response: httpx.Response) -> float:
+    """See tender_intelligence/groq.py's identical helper."""
+    header = response.headers.get("retry-after")
+    if header:
+        try:
+            return float(header) + 0.5
+        except ValueError:
+            pass
+    match = _RETRY_AFTER_RE.search(response.text or "")
+    if match:
+        return float(match.group(1)) + 0.5
+    return _RETRY_DELAY_SECONDS
 
 _SYSTEM_INSTRUCTION = (
     "You narrate an already-final bid-compliance decision for a procurement "
@@ -71,7 +91,7 @@ def _post_with_retry(api_key: str, payload: dict) -> httpx.Response:
             return response
         if response.status_code not in _RETRYABLE_STATUS or attempt == _MAX_ATTEMPTS - 1:
             response.raise_for_status()
-        time.sleep(_RETRY_DELAY_SECONDS)
+        time.sleep(_retry_delay_seconds(response))
     raise last_exc  # pragma: no cover -- loop always returns or raises above
 
 
