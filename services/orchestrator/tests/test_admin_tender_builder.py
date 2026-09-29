@@ -138,10 +138,16 @@ def test_requirement_types_honestly_flags_unbacked_types(client):
     declaration-backed types (STARTUP_INDIA, NSIC, MAKE_IN_INDIA,
     BLACKLIST_DEBARMENT) that were never in this list to begin with --
     see test_declarations.py::test_round_10_declaration_backed_types_are_
-    also_evidence_backed."""
+    also_evidence_backed. EXPERIENCE/SIMILAR_WORK/CERTIFICATION moved out
+    the same way in a round 10 follow-up, each with the same weaker-
+    evidence caveat BLACKLIST_DEBARMENT already carries -- see
+    test_declarations.py::test_round_10_followup_declaration_backed_types_
+    are_also_evidence_backed. ITR and EPFO_ESIC remain the only genuinely
+    unbacked types, both for a checked, permanent reason (see
+    requirement_types.py)."""
     body = client.get("/requirement-types").json()
     by_id = {t["id"]: t for t in body["requirement_types"]}
-    for unbacked in ("ITR", "EXPERIENCE", "SIMILAR_WORK", "CERTIFICATION", "EPFO_ESIC"):
+    for unbacked in ("ITR", "EPFO_ESIC"):
         assert by_id[unbacked]["evidence_backed"] is False
         assert by_id[unbacked]["backed_fields"] == []
         assert by_id[unbacked]["note"]  # a real, non-empty explanation

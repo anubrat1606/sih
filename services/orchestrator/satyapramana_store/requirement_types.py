@@ -133,13 +133,31 @@ _CATALOG: tuple[RequirementType, ...] = (
         "Saved for review; confirmed out of reach for this deployment, not "
         "unresearched."),
     RequirementType("EXPERIENCE", "Years of experience",
-        (), ("gte",),
-        "No experience-certificate extraction or capability exists yet. "
-        "Saved for review; not adoptable until a real evidence path is built."),
+        ("bidder.declarations.{requirement_id}",), ("gte",),
+        "No experience-certificate extraction or capability exists (work-"
+        "completion certificates and purchase orders vary too much in "
+        "layout for a real extraction path). Usable today as a self-"
+        "declared undertaking via the same mechanism DECLARATION uses -- "
+        "Tier C, capped at PARTIAL on a mandatory requirement. Flagged "
+        "honestly, same spirit as BLACKLIST_DEBARMENT above: a bidder "
+        "self-attesting their own years of experience is weaker evidence "
+        "than Make in India/Startup India/NSIC/OEM above -- those are "
+        "assertions a real government register could someday confirm even "
+        "though no API exists today, while this is an assertion about the "
+        "bidder's own work history that a completion certificate could "
+        "evidence directly. An officer reviewing that underlying document "
+        "by eye remains the real check; this requirement's PASS/PARTIAL "
+        "is an interim path, not a substitute for it."),
     RequirementType("SIMILAR_WORK", "Similar work / past performance",
-        (), ("exists", "gte"),
-        "No work-completion-certificate extraction or capability exists yet. "
-        "Saved for review; not adoptable until a real evidence path is built."),
+        ("bidder.declarations.{requirement_id}",), ("exists",),
+        "No work-completion-certificate extraction or capability exists, "
+        "same reason as EXPERIENCE above. Usable today as a self-declared "
+        "undertaking via the same mechanism as DECLARATION (Tier C, "
+        "PARTIAL ceiling on a mandatory requirement) -- same honest "
+        "caveat as EXPERIENCE: weaker evidence than the register-backed "
+        "self-declared types, an interim path pending a real completion-"
+        "certificate evidence path, not a substitute for an officer "
+        "reviewing the actual document."),
     RequirementType("OEM_AUTHORIZATION", "OEM authorization",
         ("bidder.declarations.{requirement_id}",), ("exists",),
         "No OEM-authorization-letter extraction exists (PDF layouts vary too "
@@ -194,7 +212,7 @@ _CATALOG: tuple[RequirementType, ...] = (
         "specific, checked reason, not an unresearched gap; do not present "
         "this type's PASS/PARTIAL as equivalent in strength to the others."),
     RequirementType("CERTIFICATION", "Certification (ISO, BIS, etc.)",
-        (), ("exists",),
+        ("bidder.declarations.{requirement_id}",), ("exists",),
         "Round 10 planning flagged BIS/ISO as genuinely inconclusive and "
         "left it for a future round to actually check -- checked now. BIS's "
         "own licence verification is a public web tool with no documented "
@@ -204,9 +222,15 @@ _CATALOG: tuple[RequirementType, ...] = (
         "vendor account (free tier is 30 profiles/year via web search, not "
         "API access; paid plans run $31-312/month) this deployment does not "
         "have, a cost decision for the team, not something to build against "
-        "on a guess. No BIS path found at all. Saved for review; not "
-        "adoptable until either a real account exists or a BIS API "
-        "surfaces."),
+        "on a guess. No BIS path found at all. Usable today as a self-"
+        "declared undertaking via the same mechanism as DECLARATION (Tier "
+        "C, PARTIAL ceiling on a mandatory requirement) while that vendor "
+        "decision is pending -- same honest caveat as EXPERIENCE/"
+        "SIMILAR_WORK above: a self-attested certificate number is weaker "
+        "evidence than the register-backed self-declared types, since the "
+        "certificate document itself could be reviewed directly by an "
+        "officer. An interim path, not a substitute for the real IAF "
+        "CertSearch check if the team funds that account."),
     RequirementType("EPFO_ESIC", "EPFO / ESIC registration",
         (), ("exists",),
         "Confirmed cut from scope (docs/STATUS.md): no lawful programmatic "
@@ -252,7 +276,8 @@ def requirement_type_catalog(registry: Registry) -> list[dict[str, Any]]:
         if any(f == "bidder.declarations.{requirement_id}" for f in rt.candidate_fields):
             # DECLARATION and every other type built on the same self-
             # declared mechanism (OEM_AUTHORIZATION, STARTUP_INDIA, NSIC,
-            # MAKE_IN_INDIA, BLACKLIST_DEBARMENT) share this one template
+            # MAKE_IN_INDIA, BLACKLIST_DEBARMENT, EXPERIENCE, SIMILAR_WORK,
+            # CERTIFICATION) share this one template
             # field, never a literal member of `producible` -- it's
             # parameterized by a requirement id that only exists once a pack
             # is being drafted (rulepacks.py's _registry_as_dict computes the

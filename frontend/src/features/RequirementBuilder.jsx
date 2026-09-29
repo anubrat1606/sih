@@ -30,10 +30,11 @@ function declarationField(requirementId) {
 
 // Matches requirement_types.py's own detection: DECLARATION and every other
 // type built on the same self-declared mechanism (OEM_AUTHORIZATION,
-// STARTUP_INDIA, NSIC, MAKE_IN_INDIA, BLACKLIST_DEBARMENT -- round 10) share
-// this one unsubstituted template as their one backed field. Checked by
-// field content, not a hardcoded type id list, so a future type reusing
-// this mechanism doesn't need this file edited too.
+// STARTUP_INDIA, NSIC, MAKE_IN_INDIA, BLACKLIST_DEBARMENT, EXPERIENCE,
+// SIMILAR_WORK, CERTIFICATION) share this one unsubstituted template as
+// their one backed field. Checked by field content, not a hardcoded type id
+// list, so a future type reusing this mechanism doesn't need this file
+// edited too.
 const DECLARATION_TEMPLATE = "bidder.declarations.{requirement_id}";
 function isDeclarationBacked(type) {
   return type?.backed_fields?.[0] === DECLARATION_TEMPLATE;
