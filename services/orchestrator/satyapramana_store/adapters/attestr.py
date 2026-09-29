@@ -7,21 +7,38 @@ differently-shaped integration on the same account.
 
 Round 10 confirmed UDYAM_STATUS unavailable *from Sandbox.co.in* -- checked
 against their own KYC/KYB catalog, which does not offer it. That was never
-a claim that no vendor anywhere offers it; a follow-up check (this file)
-found Attestr's documented MSME Udyam Verification API
-(docs.attestr.com/attestr-docs/msme-udyam-verification-api): POST
-/api/{version}/public/corpx/udyam, Basic-auth, real request/response shape
-below. Built against Attestr's own published documentation; not yet
-exercised against a real account, since none exists on this deployment
-yet -- SATYAPRAMANA_ATTESTR_AUTH_TOKEN unset means this capability stays
-on the honest NullAdapter, exactly as before this file existed.
+a claim that no vendor anywhere offers it; a follow-up check found
+Attestr's documented MSME Udyam Verification API. Round 11: exercised
+against a real account for the first time (real curl calls, a real
+registered consent, a real Udyam number -- "GOENKA AGENCY", a genuine
+Micro enterprise in Telangana) rather than built against documentation
+alone, and two real corrections came out of that:
+
+1. Every call needs a real, separately-registered consent object first --
+   Attestr's own DPDA-compliance layer, confirmed live: a call with no
+   consent returns a real 400 "insufficient consent" error, and a consent
+   registered for the wrong service (e.g. reverse geocoding) still isn't
+   accepted -- it must be scoped to the "UDYAM" service specifically. This
+   adapter registers a fresh single-use consent immediately before every
+   verification call, the same lawful-basis shape the rest of this system
+   already threads through (Basis.TENDER_EVALUATION/PUBLIC_REGISTER --
+   this is a public-register lookup our own organization performs, not
+   something requiring the bidder's personal consent).
+2. The real response's top-level "type" field is the *business structure*
+   ("Proprietary", "Partnership", ...), not the MSME size classification
+   -- that lives in the "classifications" array, one entry per year. Using
+   the wrong field would have silently reported the wrong fact for every
+   real bidder. bidder.udyam.enterprise_type now reads the most recent
+   classification's "type" ("Micro"/"Small"/"Medium"), which is what that
+   field name actually promises.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -34,11 +51,24 @@ from .base import (
     Observation, Success, VerificationRequest,
 )
 
-#: Attestr issues separate test/live hosts, same shape as Sandbox.co.in's
-#: own test/live split -- see build_from_env() below for which one is used.
+#: Attestr's API is versioned in the URL; the live console (and every real
+#: call this adapter was verified against, 2026-09-30) uses v3.
 TEST_BASE_URL = "https://api.attestr.com"
 LIVE_BASE_URL = "https://api.attestr.com"
-_API_VERSION = "v2"
+_API_VERSION = "v3"
+
+#: The exact shape confirmed live against the real Register Consent API --
+#: not guessed from documentation. "UDYAM" is the real service code (not a
+#: placeholder -- confirmed by reading the live console's own generated
+#: request body after selecting "MSME Udyam Registration Check").
+_CONSENT_DATA_CATEGORIES = [
+    {"category": "business_identity", "values": ["business_registration_number", "business_name"]},
+    {"category": "personal_information", "values": ["gender", "social_category"]},
+    {"category": "location", "values": ["address"]},
+    {"category": "contact", "values": ["email", "phone"]},
+]
+_CONSENT_SERVICES = [{"service": "UDYAM"}]
+_ISO = "%Y-%m-%dT%H:%M:%S.000Z"
 
 
 def _record(
@@ -72,14 +102,11 @@ def _http_failure(exc: httpx.HTTPError) -> Failure:
 
 
 def _status_failure(status: int, body_text: str) -> Failure | None:
-    """Only the generic HTTP-layer failures are documented for Attestr;
-    the specific "not found" case is a 200 with valid: false in the body
-    (handled in verify() below, not here) -- not an HTTP status at all."""
     if status in (401, 403):
         return Failure(FailureCode.UNAUTHORIZED, f"Attestr rejected the credentials (HTTP {status})")
     if status == 429:
         return Failure(FailureCode.RATE_LIMITED, "Attestr rate-limited this request")
-    if status == 422:
+    if status in (400, 422):
         return Failure(FailureCode.MALFORMED, f"Attestr rejected the request as malformed: {body_text}")
     if status >= 500:
         return Failure(FailureCode.UNAVAILABLE, f"Attestr returned HTTP {status}: {body_text}")
@@ -88,12 +115,64 @@ def _status_failure(status: int, body_text: str) -> Failure | None:
     return None
 
 
+def _register_consent(auth_token: str, base_url: str) -> tuple[str | None, Failure | None]:
+    """A real, separate DPDA-compliance call Attestr's platform requires
+    before any personal/business-data lookup -- confirmed live, not
+    optional. Registers a fresh single-use consent scoped to the UDYAM
+    service and returns its real consentId, or a Failure describing
+    exactly what went wrong (never a guessed/fabricated id)."""
+    now = datetime.now(timezone.utc)
+    reference = str(uuid.uuid4())
+    body = {
+        "consentType": "single_use",
+        "consentTimestamp": now.strftime(_ISO),
+        "consentMode": "checkbox",
+        "consentPurpose": "kyc_verification",
+        "consentValidFrom": now.strftime(_ISO),
+        "consentValidTill": (now + timedelta(minutes=10)).strftime(_ISO),
+        "consentReferenceId": f"satyapramana.udyam.{reference}",
+        "consentEvidenceRef": f"satyapramana.tender-evaluation.{reference}",
+        "consentPrincipalUserId": "satyapramana.tender-evaluation",
+        "clientDeclaration": True,
+        "consentOperations": ["VERIFY", "FETCH"],
+        "consentDataCategories": _CONSENT_DATA_CATEGORIES,
+        "services": _CONSENT_SERVICES,
+    }
+    headers = {"Authorization": f"Basic {auth_token}", "Content-Type": "application/json"}
+    try:
+        resp = httpx.post(f"{base_url}/api/{_API_VERSION}/public/consent/register",
+                           json=body, headers=headers, timeout=30.0)
+    except httpx.HTTPError as exc:
+        return None, _http_failure(exc)
+
+    failure = _status_failure(resp.status_code, resp.text)
+    if failure:
+        return None, failure
+
+    consent_id = resp.json().get("_id")
+    if not consent_id:
+        return None, Failure(FailureCode.UNAVAILABLE, "Attestr's consent registration returned no consent id")
+    return consent_id, None
+
+
+def _current_enterprise_type(data: dict) -> str | None:
+    """The real response's top-level "type" is business structure
+    (Proprietary/Partnership/...), not MSME size -- confirmed live. Size
+    classification lives in "classifications", one entry per financial
+    year; the most recent one is the bidder's current category."""
+    classifications = data.get("classifications") or []
+    if not classifications:
+        return None
+    latest = max(classifications, key=lambda c: c.get("year") or "")
+    return latest.get("type")
+
+
 class UdyamStatusAdapter:
     """docs/ADAPTERS.md capability UDYAM_STATUS, backed by Attestr's
-    documented MSME/Udyam verification endpoint. `adapter_id` matches the
-    placeholder already declared in schemas/capability_registry.json
-    ("udyam_status") so registering this real adapter replaces that
-    NullAdapter -- the whole plug-in point, no other file needs to change.
+    MSME/Udyam verification endpoint. `adapter_id` matches the placeholder
+    already declared in schemas/capability_registry.json ("udyam_status")
+    so registering this real adapter replaces that placeholder -- the
+    whole plug-in point, no other file needs to change.
     """
 
     def __init__(self, auth_token: str, base_url: str = LIVE_BASE_URL):
@@ -101,7 +180,7 @@ class UdyamStatusAdapter:
         self._base_url = base_url
         self.manifest = CapabilityManifest(
             adapter_id="udyam_status",
-            adapter_version="1.0.0",
+            adapter_version="1.1.0",
             authority="Ministry of Micro, Small and Medium Enterprises",
             intermediary="Attestr",
             identifier_queryable=True,
@@ -128,7 +207,11 @@ class UdyamStatusAdapter:
         if not udyam_number:
             return Failure(FailureCode.MALFORMED, "no Udyam number extracted for this bidder; nothing to submit")
 
-        body = {"reg": udyam_number}
+        consent_id, consent_failure = _register_consent(self._auth_token, self._base_url)
+        if consent_failure:
+            return consent_failure
+
+        body = {"reg": udyam_number, "consent": {"consentId": consent_id}}
         observed_at = datetime.now(timezone.utc)
         url = f"{self._base_url}/api/{_API_VERSION}/public/corpx/udyam"
         headers = {"Authorization": f"Basic {self._auth_token}", "Content-Type": "application/json"}
@@ -139,7 +222,7 @@ class UdyamStatusAdapter:
             return _http_failure(exc)
 
         ref = _record(
-            conn, adapter_id="udyam_status", adapter_version="1.0.0",
+            conn, adapter_id="udyam_status", adapter_version="1.1.0",
             capability_id="UDYAM_STATUS", observed_at=observed_at, url=url,
             request_headers=dict(resp.request.headers), request_body=json.dumps(body),
             response_status=resp.status_code, response_headers=dict(resp.headers),
@@ -154,18 +237,17 @@ class UdyamStatusAdapter:
         if not data.get("valid"):
             return Failure(FailureCode.NOT_FOUND, data.get("message") or "no Udyam registration found for this number", raw_response_ref=ref)
 
-        # Attestr's documented response has no separate textual status field
-        # (unlike CIN's company_status) -- `valid: true` on a queried number
-        # IS the authority's own signal that a current, matching Udyam
-        # registration exists, so "ACTIVE" here is a derived label for a
-        # real fact, not an invented one. Revisit against a real response
-        # once a real account exists, in case Attestr's actual payload
-        # carries a field this documentation excerpt didn't show.
+        # valid: true is the authority's own signal that a current,
+        # matching Udyam registration exists -- confirmed against a real
+        # response, which has no separate textual status field (unlike
+        # CIN's company_status). "ACTIVE" is a derived label for a real
+        # fact, not an invented one.
         observations = [Observation("bidder.udyam.status", "ACTIVE", Tier.A, Channel.AGGREGATOR)]
         if data.get("entity"):
             observations.append(Observation("bidder.udyam.entity_name", data["entity"], Tier.A, Channel.AGGREGATOR))
-        if data.get("type"):
-            observations.append(Observation("bidder.udyam.enterprise_type", data["type"], Tier.A, Channel.AGGREGATOR))
+        enterprise_type = _current_enterprise_type(data)
+        if enterprise_type:
+            observations.append(Observation("bidder.udyam.enterprise_type", enterprise_type, Tier.A, Channel.AGGREGATOR))
         if data.get("registered"):
             observations.append(Observation("bidder.udyam.registered_date", data["registered"], Tier.A, Channel.AGGREGATOR))
 
@@ -178,7 +260,7 @@ class UdyamStatusAdapter:
 def build_from_env() -> list[Any]:
     """The whole plug-in point, same shape as sandbox_co_in.py's own
     build_from_env(). SATYAPRAMANA_ATTESTR_AUTH_TOKEN unset -> [] -> the
-    JSON-declared NullAdapter placeholder for UDYAM_STATUS is untouched."""
+    JSON-declared placeholder for UDYAM_STATUS is untouched."""
     token = os.environ.get("SATYAPRAMANA_ATTESTR_AUTH_TOKEN")
     if not token:
         return []
