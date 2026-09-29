@@ -8,12 +8,36 @@ reporting/dossier.py.
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timezone
 
 from google import genai
 from google.genai import errors, types
 
 from .base import ExplainOutcome, Narrated, Unavailable
+
+#: A 503 ("high demand", confirmed live 2026-09-29 the same day the Gemini
+#: key was first configured) or a 429 (rate limit) is the provider's own
+#: word that this is transient, not a real, permanent unavailability like a
+#: bad key or a retired model -- worth one short retry loop before
+#: degrading, since a single hiccup shouldn't permanently fail a request
+#: the provider itself says is temporary.
+_RETRYABLE_CODES = {429, 503}
+_MAX_ATTEMPTS = 3
+_RETRY_DELAY_SECONDS = 2
+
+
+def _generate_with_retry(client, **kwargs):
+    last_exc = None
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            return client.models.generate_content(**kwargs)
+        except errors.APIError as exc:
+            last_exc = exc
+            if getattr(exc, "code", None) not in _RETRYABLE_CODES or attempt == _MAX_ATTEMPTS - 1:
+                raise
+            time.sleep(_RETRY_DELAY_SECONDS)
+    raise last_exc  # pragma: no cover -- loop always returns or raises above
 
 #: Overridable without a code change -- by the time real credentials exist,
 #: a newer model id may be current. Never guessed at call time; a stale
@@ -50,7 +74,8 @@ class GeminiExplainer:
 
     def narrate(self, dossier_text: str) -> ExplainOutcome:
         try:
-            response = self._client.models.generate_content(
+            response = _generate_with_retry(
+                self._client,
                 model=self._model,
                 contents=dossier_text,
                 config=types.GenerateContentConfig(

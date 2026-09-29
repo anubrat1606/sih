@@ -6,12 +6,34 @@ adapter").
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timezone
 
 from google import genai
 from google.genai import errors, types
 
 from .base import Decomposed, DecompositionOutcome, ProposedRequirement, Unavailable
+
+#: See explain/gemini.py's own comment on this same helper -- identical
+#: reasoning, kept as a second small copy rather than a shared import,
+#: matching how the rest of this file already mirrors that one (same
+#: DEFAULT_MODEL, same try/except-to-Unavailable shape).
+_RETRYABLE_CODES = {429, 503}
+_MAX_ATTEMPTS = 3
+_RETRY_DELAY_SECONDS = 2
+
+
+def _generate_with_retry(client, **kwargs):
+    last_exc = None
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            return client.models.generate_content(**kwargs)
+        except errors.APIError as exc:
+            last_exc = exc
+            if getattr(exc, "code", None) not in _RETRYABLE_CODES or attempt == _MAX_ATTEMPTS - 1:
+                raise
+            time.sleep(_RETRY_DELAY_SECONDS)
+    raise last_exc  # pragma: no cover -- loop always returns or raises above
 
 #: See explain/gemini.py's own DEFAULT_MODEL comment -- same constant,
 #: same real 404 that surfaced it, same fix.
@@ -59,7 +81,8 @@ class GeminiDecomposer:
 
     def decompose(self, document_text: str) -> DecompositionOutcome:
         try:
-            response = self._client.models.generate_content(
+            response = _generate_with_retry(
+                self._client,
                 model=self._model,
                 contents=document_text,
                 config=types.GenerateContentConfig(
