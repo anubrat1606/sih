@@ -9,10 +9,12 @@ not guessed.
 from __future__ import annotations
 
 import json
+import uuid
 
 import httpx
 import pytest
 
+from satyapramana_store.adapters import Registry
 from satyapramana_store.adapters.base import (
     Basis, Failure, FailureCode, LawfulBasis, VerificationRequest,
 )
@@ -22,6 +24,8 @@ from satyapramana_store.adapters.digilocker import (
     fetch_document, initiate_session,
 )
 from satyapramana_store.adapters.sandbox_co_in import SandboxSession
+from satyapramana_store.events import Actor, append
+from satyapramana_store.evidence import rebuild_evidence
 
 BASIS = LawfulBasis(Basis.TENDER_EVALUATION, "officer_1", "Compliance evaluation for tender GEM-X")
 CONSENT_BASIS = LawfulBasis(Basis.BIDDER_CONSENT, "officer_1", "Document retrieval",
@@ -239,6 +243,78 @@ def test_fetch_document_refuses_an_unsupported_doc_type_never_calls_the_network(
     assert isinstance(outcome, Failure) and outcome.code is FailureCode.MALFORMED
 
 
+# --- parsing the real Aadhaar XML, and the PAN identity cross-check ------------------------
+
+from satyapramana_store.adapters.digilocker import (  # noqa: E402
+    AadhaarIdentity, download_document_file, names_match, parse_aadhaar_xml,
+)
+
+# The exact structure documented in Sandbox's own sample-responses page
+# (developer.sandbox.co.in/api-reference/kyc/digilocker/sample-responses),
+# not guessed -- Poa/LData/Pht included the same way a real response would,
+# so the test proves parse_aadhaar_xml actually ignores them, not just that
+# it works on an artificially minimal document.
+REAL_AADHAAR_XML = b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Certificate>
+  <CertificateData>
+    <KycRes code="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" ret="Y"
+            ts="2026-01-15T12:00:00.000+05:30" ttl="2027-01-15T12:00:00"
+            txn="UKC:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+      <UidData tkn="" uid="xxxxxxxx1234">
+        <Poi dob="01-01-1990" gender="M" name="SAMPLE NAME"/>
+        <Poa co="C/O SAMPLE GUARDIAN" country="India" dist="Sample District"
+             house="A 101, Sample Apartment" lm="Nr Sample Landmark"
+             loc="Sample Locality" pc="380001" po="Sample Post Office"
+             state="Gujarat" subdist="Sample Sub-District" vtc="Sample City"/>
+        <Pht><!-- Base64-encoded JPEG photo --></Pht>
+      </UidData>
+    </KycRes>
+  </CertificateData>
+  <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
+    <!-- Digital signature issued by Digital India Corporation -->
+  </Signature>
+</Certificate>"""
+
+
+def test_parse_aadhaar_xml_reads_name_and_dob():
+    identity = parse_aadhaar_xml(REAL_AADHAAR_XML)
+    assert identity == AadhaarIdentity(name="SAMPLE NAME", dob_iso="1990-01-01")
+
+
+def test_parse_aadhaar_xml_never_reads_address_or_photo():
+    """The point of the PII-minimisation stance in this module's docstring
+    -- prove it, not just claim it: nothing this function returns can leak
+    the address or photo, because the return type has no field for either."""
+    identity = parse_aadhaar_xml(REAL_AADHAAR_XML)
+    assert set(identity.__dataclass_fields__) == {"name", "dob_iso"}
+
+
+def test_parse_aadhaar_xml_malformed_document_is_none_not_a_guess():
+    assert parse_aadhaar_xml(b"not xml at all") is None
+
+
+def test_parse_aadhaar_xml_wrong_document_shape_is_none():
+    assert parse_aadhaar_xml(b"<Certificate><Other/></Certificate>") is None
+
+
+def test_names_match_tolerates_case_and_whitespace_not_substance():
+    assert names_match("Sample Name", "  SAMPLE   NAME ")
+    assert not names_match("Sample Name", "Sample K Name")
+
+
+def test_download_document_file_is_a_plain_get_no_sandbox_auth(monkeypatch):
+    calls = []
+
+    def fake_get(url, timeout=None):
+        calls.append(url)
+        return httpx.Response(200, content=b"<xml/>", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    content = download_document_file("https://s3.example/presigned?sig=abc")
+    assert content == b"<xml/>"
+    assert calls == ["https://s3.example/presigned?sig=abc"]
+
+
 # --- the placeholder adapter -------------------------------------------------------------
 
 def test_placeholder_adapter_refuses_the_generic_verify_loop():
@@ -360,6 +436,94 @@ def test_digilocker_status_endpoint_succeeded_fetches_and_records_a_real_observa
     resolver = ProjectionResolver(conn, "A")
     resolved = resolver.field("bidder.digilocker.aadhaar_verified")
     assert resolved.ok and resolved.value == "VERIFIED"
+
+
+def _digilocker_status_handler(xml_bytes):
+    """Shared plumbing for the identity-match tests below: mocks both the
+    Sandbox session (status + fetch_document) and the plain httpx.get that
+    downloads the pre-signed S3 file -- two different HTTP clients, real in
+    production, both need mocking here."""
+    def sandbox_handler(request):
+        if request.url.path == "/authenticate":
+            return AUTH_OK
+        if request.url.path.endswith("/status"):
+            return httpx.Response(200, json={
+                "code": 200, "data": {"id": "sess-1", "created_at": 1, "@entity": "x",
+                                       "status": "succeeded", "documents_consented": ["aadhaar"]},
+            })
+        return httpx.Response(200, json={
+            "code": 200, "data": {"files": [{
+                "@entity": "x", "url": "https://s3.example/presigned", "size": 100,
+                "metadata": {"ContentType": "application/xml", "issuer_id": "in.gov.uidai",
+                             "issuer": "Unique Identification Authority of India (UIDAI)",
+                             "LastModified": "09/05/2025", "description": "Aadhaar Card"},
+            }]},
+        })
+
+    def fake_get(url, timeout=None):
+        return httpx.Response(200, content=xml_bytes, request=httpx.Request("GET", url))
+
+    return sandbox_handler, fake_get
+
+
+def _set_pan_holder_name(conn, bidder_id, name):
+    """Same real mechanism deterministic extraction itself uses -- a real
+    FIELD_EXTRACTED event, folded into proj_evidence via rebuild_evidence
+    -- never a hand-crafted row against a guessed table shape."""
+    append(conn, event_type="FIELD_EXTRACTED", actor=Actor("SYSTEM", "extract-deterministic@1.0.0"),
+          correlation_id=str(uuid.uuid4()), tender_id="T-DL", bidder_id=bidder_id,
+          payload={"path": "bidder.pan.holder_name", "value": name,
+                   "page": 1, "region": [0, 0, 1, 1], "confidence": 1.0})
+    rebuild_evidence(conn, bidder_id, Registry())
+
+
+def test_digilocker_status_endpoint_pan_name_matches(client, conn, monkeypatch):
+    sandbox_handler, fake_get = _digilocker_status_handler(REAL_AADHAAR_XML)  # holder "SAMPLE NAME"
+    monkeypatch.setattr(_app_module, "DIGILOCKER_SESSION", session_with(sandbox_handler))
+    monkeypatch.setattr(httpx, "get", fake_get)
+    client.post("/tenders/T-DL/bidders", json={"bidder_id": "A"}, headers=auth_headers(conn))
+
+    # A real PAN already on file for this bidder, same name (case/whitespace
+    # differences only -- the same tolerance names_match itself proves).
+    _set_pan_holder_name(conn, "A", "sample   name")
+
+    r = client.get("/bidders/A/digilocker/status?tender_id=T-DL&session_id=sess-1",
+                   headers=auth_headers(conn))
+    assert r.status_code == 200
+    assert r.json()["pan_identity_match"] == "MATCH"
+
+    resolver = ProjectionResolver(conn, "A")
+    resolved = resolver.field("bidder.digilocker.pan_identity_match")
+    assert resolved.ok and resolved.value == "MATCH"
+    assert resolver.field("bidder.digilocker.aadhaar_name").value == "SAMPLE NAME"
+    assert resolver.field("bidder.digilocker.aadhaar_dob").value == "1990-01-01"
+
+
+def test_digilocker_status_endpoint_pan_name_mismatches_is_reported_honestly(client, conn, monkeypatch):
+    sandbox_handler, fake_get = _digilocker_status_handler(REAL_AADHAAR_XML)  # holder "SAMPLE NAME"
+    monkeypatch.setattr(_app_module, "DIGILOCKER_SESSION", session_with(sandbox_handler))
+    monkeypatch.setattr(httpx, "get", fake_get)
+    client.post("/tenders/T-DL/bidders", json={"bidder_id": "A"}, headers=auth_headers(conn))
+    _set_pan_holder_name(conn, "A", "a completely different person")
+
+    r = client.get("/bidders/A/digilocker/status?tender_id=T-DL&session_id=sess-1",
+                   headers=auth_headers(conn))
+    assert r.json()["pan_identity_match"] == "MISMATCH"
+
+
+def test_digilocker_status_endpoint_no_pan_on_file_reports_no_match_field(client, conn, monkeypatch):
+    """Nothing to compare against yet -- an honest absence, not a guessed
+    MATCH or a fabricated MISMATCH."""
+    sandbox_handler, fake_get = _digilocker_status_handler(REAL_AADHAAR_XML)
+    monkeypatch.setattr(_app_module, "DIGILOCKER_SESSION", session_with(sandbox_handler))
+    monkeypatch.setattr(httpx, "get", fake_get)
+    client.post("/tenders/T-DL/bidders", json={"bidder_id": "A"}, headers=auth_headers(conn))
+
+    r = client.get("/bidders/A/digilocker/status?tender_id=T-DL&session_id=sess-1",
+                   headers=auth_headers(conn))
+    assert r.json()["pan_identity_match"] is None
+    resolver = ProjectionResolver(conn, "A")
+    assert not resolver.field("bidder.digilocker.pan_identity_match").ok
 
 
 def test_digilocker_status_endpoint_failed_records_verification_failed(client, conn, monkeypatch):

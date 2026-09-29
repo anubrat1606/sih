@@ -92,7 +92,9 @@
       "capabilities": [
         {
           "capability_id": "DIGILOCKER_DOCUMENT",
-          "provides": ["bidder.digilocker.aadhaar_verified", "bidder.digilocker.aadhaar_issuer"],
+          "provides": ["bidder.digilocker.aadhaar_verified", "bidder.digilocker.aadhaar_issuer",
+                       "bidder.digilocker.aadhaar_name", "bidder.digilocker.aadhaar_dob",
+                       "bidder.digilocker.pan_identity_match"],
           "tier": "A",
           "channel": "AGGREGATOR",
           "as_of_supported": false,

@@ -93,11 +93,35 @@ function DigilockerSection({ bidderId, tenderId }) {
           development server.
         </p>
       ) : status === "succeeded" ? (
-        <p className="text-sm" style={{ marginTop: "var(--space-3)", color: "var(--status-pass-fg)" }}>
-          ✓ Verified via DigiLocker
-          {outcome?.description ? ` — ${outcome.description}` : ""}
-          {outcome?.issuer ? ` (issued by ${outcome.issuer})` : ""}.
-        </p>
+        <>
+          <p className="text-sm" style={{ marginTop: "var(--space-3)", color: "var(--status-pass-fg)" }}>
+            ✓ Verified via DigiLocker
+            {outcome?.description ? ` — ${outcome.description}` : ""}
+            {outcome?.issuer ? ` (issued by ${outcome.issuer})` : ""}.
+          </p>
+          {/* DigiLocker consent alone proves a real Aadhaar-verified person
+              completed the flow -- it does not by itself prove that person
+              is this bidder. pan_identity_match is the real cross-check
+              against the bidder's own PAN record; every state gets its own
+              color + glyph + label, never color alone (charter section 2.3). */}
+          {outcome?.pan_identity_match === "MATCH" && (
+            <p className="text-sm" style={{ marginTop: 4, color: "var(--status-pass-fg)" }}>
+              ✓ Matches the name on your PAN record.
+            </p>
+          )}
+          {outcome?.pan_identity_match === "MISMATCH" && (
+            <p className="error-note" role="alert" style={{ marginTop: 4 }}>
+              <span aria-hidden="true">⚠</span>{" "}
+              Does not match the name on your PAN record — a procuring officer will need to
+              review this.
+            </p>
+          )}
+          {outcome?.pan_identity_match == null && (
+            <p className="text-xs text-secondary" style={{ marginTop: 4 }}>
+              No PAN on file yet to cross-check this against.
+            </p>
+          )}
+        </>
       ) : status === "pending" ? (
         <p className="text-sm text-secondary" style={{ marginTop: "var(--space-3)" }}>
           Waiting for you to finish in the DigiLocker tab — checking automatically every

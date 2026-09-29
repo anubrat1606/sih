@@ -13,6 +13,25 @@ Round 10, PS26100 point 8. Scoped to one document type (aadhaar) this
 round -- pan and driving_license use the identical three calls with a
 different doc_type string; real future scope, not built here.
 
+Round 10 follow-up: DigiLocker consent alone proves a real Aadhaar-
+verified person completed the flow -- it does not, by itself, prove
+that person is the bidder. `parse_aadhaar_xml` closes that gap the same
+way the codebase already closes the equivalent PAN-embedded-in-GSTIN
+gap (app.py's `identifier_cross_check`): extract the Aadhaar holder's
+name and date of birth from the real signed XML DigiLocker returns, and
+let app.py compare them against `bidder.pan.holder_name`/
+`bidder.pan.date_of_birth`, already on file from the bidder's own PAN
+upload. Deliberately minimal about what's extracted and stored: the
+Aadhaar XML also carries a full postal address and a base64 photograph
+neither this check nor anything else in this system needs -- charter
+§9's security artefact calls for "PII handling and minimisation"
+explicitly, and this module takes that as a real constraint, not
+decoration. Name and DOB only, nothing else read out of the document,
+and the document's own bytes are never archived or persisted --
+_record already captures a citable reference to the *metadata* response
+that pointed at it, which is provenance enough without keeping a copy
+of someone's Aadhaar.
+
 Contracts read from Sandbox's own OpenAPI spec (developer.sandbox.co.in),
 not guessed:
 
@@ -40,9 +59,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from xml.etree import ElementTree
 
 import httpx
 
@@ -52,7 +73,9 @@ from .base import (
     Basis, Capability, CapabilityManifest, Failure, FailureCode, LawfulBasis,
     VerificationRequest,
 )
-from .sandbox_co_in import LIVE_BASE_URL, TEST_BASE_URL, SandboxSession, _http_failure, _record
+from .sandbox_co_in import (
+    LIVE_BASE_URL, TEST_BASE_URL, TIMEOUT_SECONDS, SandboxSession, _http_failure, _record,
+)
 
 DOC_TYPES = ("aadhaar", "pan", "driving_license")
 _LIVE_STATUSES = ("created", "succeeded", "failed", "expired")
@@ -63,7 +86,17 @@ _LIVE_STATUSES = ("created", "succeeded", "failed", "expired")
 #: can never silently drift into describing two different capabilities.
 DIGILOCKER_CAPABILITY = Capability(
     capability_id="DIGILOCKER_DOCUMENT",
-    provides=("bidder.digilocker.aadhaar_verified", "bidder.digilocker.aadhaar_issuer"),
+    provides=(
+        "bidder.digilocker.aadhaar_verified", "bidder.digilocker.aadhaar_issuer",
+        "bidder.digilocker.aadhaar_name", "bidder.digilocker.aadhaar_dob",
+        # Only ever emitted once bidder.pan.holder_name is itself resolved --
+        # there is nothing to cross-check against before that, and this
+        # capability does not manufacture a placeholder result to fill the
+        # gap. Still declared here: it is a real, possible output of this
+        # capability, the same way an optional field on any other adapter's
+        # response is still named in its manifest.
+        "bidder.digilocker.pan_identity_match",
+    ),
     tier=Tier.A,
     channel=Channel.AGGREGATOR,
     as_of_supported=False,
@@ -150,6 +183,89 @@ class SessionStatus:
 class FetchedDocument:
     files: tuple[dict[str, Any], ...]
     raw_response_ref: str
+
+
+@dataclass(frozen=True)
+class AadhaarIdentity:
+    name: str
+    #: ISO-8601 -- NORMALIZE's canonical form, converted from the XML's
+    #: own DD-MM-YYYY here, the same wire-format-belongs-to-the-adapter
+    #: discipline sandbox_co_in.py's _iso_to_ddmmyyyy already follows for
+    #: the opposite direction (ISO out to an authority's own format).
+    dob_iso: str | None
+
+
+_AADHAAR_DOB = re.compile(r"^([0-9]{2})-([0-9]{2})-([0-9]{4})$")
+
+
+def download_document_file(url: str, *, timeout: float = TIMEOUT_SECONDS) -> bytes:
+    """The `url` in a fetch_document response is a pre-signed S3 link, not
+    a Sandbox.co.in API path -- no JWT, no x-api-key, just a plain GET the
+    same way a browser would fetch it. Separate from SandboxSession on
+    purpose: this talks to S3, not to Sandbox."""
+    resp = httpx.get(url, timeout=timeout)
+    resp.raise_for_status()
+    return resp.content
+
+
+def parse_aadhaar_xml(xml_bytes: bytes) -> AadhaarIdentity | None:
+    """Reads exactly two facts out of the real, signed XML DigiLocker
+    returns for an Aadhaar document (structure and field names confirmed
+    against Sandbox's own published sample-responses doc, not guessed):
+
+        <Certificate><CertificateData><KycRes><UidData>
+          <Poi name="..." dob="DD-MM-YYYY" gender="..."/>
+        </UidData></KycRes></CertificateData></Certificate>
+
+    Deliberately does not read `Poa` (postal address), `LData` (local-
+    language name/address), or `Pht` (the photograph) -- none is needed
+    for a name/DOB cross-check against the bidder's PAN record, and
+    reading them would be exactly the kind of PII over-collection this
+    module's own docstring says not to do.
+
+    `ElementTree.fromstring` never resolves external entities or DTDs by
+    default (a difference from some other languages' XML parsers) --
+    still worth stating explicitly for content originating outside this
+    process, even signed content from a trusted source.
+
+    Returns None, never a guess, if the document doesn't have the shape
+    this function expects -- a malformed or unexpected document is a
+    real, reportable absence of evidence, not something to paper over
+    with a partial read.
+    """
+    try:
+        root = ElementTree.fromstring(xml_bytes)
+    except ElementTree.ParseError:
+        return None
+    poi = root.find(".//UidData/Poi")
+    if poi is None:
+        return None
+    name = poi.get("name")
+    if not name:
+        return None
+    dob_raw = poi.get("dob")
+    dob_iso = None
+    if dob_raw:
+        m = _AADHAAR_DOB.fullmatch(dob_raw)
+        if m:
+            day, month, year = m.groups()
+            dob_iso = f"{year}-{month}-{day}"
+    return AadhaarIdentity(name=name, dob_iso=dob_iso)
+
+
+def _normalize_name(name: str) -> str:
+    """Identifier match beats semantic similarity, always (charter §2.2) --
+    applied here to the one place this codebase compares two humans'
+    names rather than two statutory identifiers. This does not attempt
+    fuzzy/phonetic matching (no middle-name tolerance, no transliteration
+    handling) -- a genuine difference (a nickname, a missing middle name)
+    is reported honestly as AMBIGUOUS by the caller, never silently
+    guessed into a match."""
+    return re.sub(r"\s+", " ", name.strip().upper())
+
+
+def names_match(a: str, b: str) -> bool:
+    return _normalize_name(a) == _normalize_name(b)
 
 
 def initiate_session(

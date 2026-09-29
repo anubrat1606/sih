@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 from typing import Any
 
+import httpx
 import jwt as _jwt
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -902,6 +903,42 @@ def digilocker_session_status(bidder_id: str, tender_id: str, session_id: str,
         return {"status": "succeeded", "document_fetch": "failed", "verdict": judgement.verdict.value}
 
     file_meta = doc_outcome.files[0].get("metadata", {})
+    observations = [
+        {"path": "bidder.digilocker.aadhaar_verified", "value": "VERIFIED",
+         "tier": Tier.A.value, "channel": Channel.AGGREGATOR.value},
+        {"path": "bidder.digilocker.aadhaar_issuer",
+         "value": file_meta.get("issuer", "DigiLocker"),
+         "tier": Tier.A.value, "channel": Channel.AGGREGATOR.value},
+    ]
+
+    # DigiLocker consent alone proves a real Aadhaar-verified person
+    # completed the flow -- it does not, by itself, prove that person is
+    # this bidder. Downloading and reading the real signed document closes
+    # that gap; failing to (a network blip, an expired pre-signed link) is
+    # a real but non-fatal gap in a cross-check, never a reason to discard
+    # the "consent was genuinely granted" fact already established above.
+    identity_match_note = None
+    try:
+        doc_url = doc_outcome.files[0].get("url")
+        if doc_url:
+            identity = _digilocker.parse_aadhaar_xml(_digilocker.download_document_file(doc_url))
+            if identity is not None:
+                observations.append({"path": "bidder.digilocker.aadhaar_name", "value": identity.name,
+                                     "tier": Tier.A.value, "channel": Channel.AGGREGATOR.value})
+                if identity.dob_iso:
+                    observations.append({"path": "bidder.digilocker.aadhaar_dob", "value": identity.dob_iso,
+                                         "tier": Tier.A.value, "channel": Channel.AGGREGATOR.value})
+                pan_resolver = ProjectionResolver(conn, bidder_id)
+                pan_name = pan_resolver.field("bidder.pan.holder_name")
+                if pan_name.ok:
+                    match = _digilocker.names_match(identity.name, pan_name.value)
+                    observations.append({"path": "bidder.digilocker.pan_identity_match",
+                                         "value": "MATCH" if match else "MISMATCH",
+                                         "tier": Tier.A.value, "channel": Channel.AGGREGATOR.value})
+                    identity_match_note = "MATCH" if match else "MISMATCH"
+    except httpx.HTTPError:
+        pass  # the core VERIFIED fact below still stands; the cross-check just isn't available this time
+
     observed_at = datetime.now(timezone.utc)
     append(conn, event_type="VERIFICATION_OBSERVED",
            actor=Actor("ADAPTER", "digilocker"),
@@ -910,16 +947,11 @@ def digilocker_session_status(bidder_id: str, tender_id: str, session_id: str,
            payload={"capability_id": "DIGILOCKER_DOCUMENT",
                     "raw_response_ref": doc_outcome.raw_response_ref,
                     "observed_at": observed_at.isoformat(), "source_asserted_at": None,
-                    "observations": [
-                        {"path": "bidder.digilocker.aadhaar_verified", "value": "VERIFIED",
-                         "tier": Tier.A.value, "channel": Channel.AGGREGATOR.value},
-                        {"path": "bidder.digilocker.aadhaar_issuer",
-                         "value": file_meta.get("issuer", "DigiLocker"),
-                         "tier": Tier.A.value, "channel": Channel.AGGREGATOR.value},
-                    ]})
+                    "observations": observations})
     rebuild_evidence(conn, bidder_id, REGISTRY)
     return {"status": "succeeded", "document_fetch": "ok",
-            "issuer": file_meta.get("issuer"), "description": file_meta.get("description")}
+            "issuer": file_meta.get("issuer"), "description": file_meta.get("description"),
+            "pan_identity_match": identity_match_note}
 
 
 @app.get("/documents/{document_sha256}")
