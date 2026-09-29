@@ -954,32 +954,6 @@ def digilocker_session_status(bidder_id: str, tender_id: str, session_id: str,
             "pan_identity_match": identity_match_note}
 
 
-@app.get("/_debug/r2")
-def _debug_r2(key: str, admin: User = Depends(require_role(Role.ADMIN))) -> dict[str, Any]:
-    """TEMPORARY -- diagnosing a live 404 that only reproduces on the
-    deployed service, not locally with the same credentials. Remove once
-    resolved; never meant to ship."""
-    from .extract import ingest
-    out: dict[str, Any] = {
-        "access_key_set": bool(ingest._R2_ACCESS_KEY_ID),
-        "secret_set": bool(ingest._R2_SECRET_ACCESS_KEY),
-        "endpoint": ingest._R2_ENDPOINT,
-        "bucket": ingest._R2_BUCKET,
-    }
-    client = ingest._r2_client()
-    out["client_is_none"] = client is None
-    if client is not None:
-        try:
-            resp = client.get_object(Bucket=ingest._R2_BUCKET, Key=key)
-            out["result"] = "ok"
-            out["bytes"] = len(resp["Body"].read())
-        except Exception as exc:
-            out["result"] = "exception"
-            out["exception_type"] = type(exc).__name__
-            out["exception_str"] = str(exc)
-    return out
-
-
 @app.get("/documents/{document_sha256}")
 def get_document(document_sha256: str, conn=Depends(db), _user: User = Depends(require_role(Role.OFFICER))):
     """Serve a previously-ingested document back, for the evidence viewer --
@@ -989,12 +963,22 @@ def get_document(document_sha256: str, conn=Depends(db), _user: User = Depends(r
     Looked up by content hash, never by a client-supplied filesystem path --
     the client can never name an arbitrary path on disk, only a hash that has
     to match a real DOCUMENT_INGESTED event's storage_ref.
+
+    Real bug, found live (round 10): the same byte-identical content can be
+    ingested more than once -- a genuine re-upload after a lost file, or
+    two different bidders' documents that happen to collide on SHA-256 --
+    each producing its own DOCUMENT_INGESTED event with its own
+    storage_ref. `ORDER BY seq DESC` picks the most recent one, the same
+    "later wins" rule every other evidence fold in this system already
+    follows; without it, a bare LIMIT 1 could just as easily return a
+    storage_ref from years-old, long-since-wiped local disk storage over
+    one that's genuinely live right now.
     """
     with conn.cursor() as cur:
         cur.execute(
             """SELECT payload->>'storage_ref' FROM events
                WHERE event_type='DOCUMENT_INGESTED' AND payload->>'document_sha256'=%s
-               LIMIT 1""",
+               ORDER BY seq DESC LIMIT 1""",
             (document_sha256,))
         row = cur.fetchone()
     if not row or not row[0]:
@@ -1107,11 +1091,15 @@ def decompose_tender(tender_id: str, body: DecomposeIn, conn=Depends(db),
     source document, the same evidentiary discipline as everything else in
     this system.
     """
+    # ORDER BY seq DESC -- same real bug and same fix as GET /documents/
+    # {sha256} above: the same content can be re-ingested more than once,
+    # each with its own storage_ref, and a bare LIMIT 1 has no guarantee
+    # of picking the current one.
     with conn.cursor() as cur:
         cur.execute(
             """SELECT payload->>'storage_ref' FROM events
                WHERE event_type='DOCUMENT_INGESTED' AND payload->>'document_sha256'=%s
-               LIMIT 1""",
+               ORDER BY seq DESC LIMIT 1""",
             (body.document_sha256,))
         row = cur.fetchone()
     if not row or not row[0]:

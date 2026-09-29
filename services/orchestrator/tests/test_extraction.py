@@ -775,6 +775,36 @@ def test_an_unknown_document_hash_is_a_clean_404_not_a_guess(client):
     assert resp.status_code == 404
 
 
+def test_a_later_ingestion_of_the_same_content_wins_over_an_earlier_one(client):
+    """Real bug, found live (round 10): the exact same bytes can be
+    ingested more than once -- two different bidders' documents that
+    collide on SHA-256, or a genuine re-upload after the first copy was
+    lost -- each producing its own DOCUMENT_INGESTED event with its own
+    storage_ref. GET /documents/{sha256}'s query used to have no ORDER BY,
+    so a bare LIMIT 1 had no guarantee of returning the current one over
+    a long-dead one. Proven here exactly the way it broke live: bidder A
+    ingests first, bidder B ingests the identical content second, A's
+    file is then deleted from disk (simulating Render's ephemeral storage
+    wiping it) -- the fetch must still succeed, using B's still-real
+    storage_ref, not 404 on A's now-missing one."""
+    import os
+
+    pdf = text_pdf(["Test fixture, not a certificate.", f"GSTIN: {GSTIN}"])
+    a = upload(client, pdf, bidder="COLLIDE-A").json()
+    b = upload(client, pdf, bidder="COLLIDE-B").json()
+    assert a["document_sha256"] == b["document_sha256"], "the whole premise: identical content"
+
+    # Delete bidder A's file directly -- exactly what a Render redeploy did
+    # live, minus needing an actual redeploy to prove the fix.
+    from satyapramana_store.extract.ingest import DOCUMENT_DIR
+    a_path = DOCUMENT_DIR / "COLLIDE-A" / os.listdir(DOCUMENT_DIR / "COLLIDE-A")[0]
+    os.remove(a_path)
+
+    resp = client.get(f"/documents/{a['document_sha256']}")
+    assert resp.status_code == 200, "must resolve to B's still-real storage_ref, not 404 on A's wiped one"
+    assert resp.content == pdf
+
+
 def test_the_trail_reaches_the_source_document_for_a_cin(client, conn):
     """A CIN read off a company document is the input MCA verification needs and
     the claim its answer is fused against -- the trail must reach the PDF line."""
