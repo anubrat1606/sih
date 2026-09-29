@@ -1,6 +1,6 @@
 # STATUS — where the project is and what to do next
 
-Last reviewed: 2026-09-28. Read `../CLAUDE.md` first for architecture and conventions,
+Last reviewed: 2026-09-29. Read `../CLAUDE.md` first for architecture and conventions,
 then `CONTRIBUTING.md` for who owns what and how a change ships.
 
 This file went stale for two weeks (rounds 7 through 10 all shipped between
@@ -63,14 +63,14 @@ install and works from any machine:
 
 ## Built and merged, as of this review
 
-**696 backend tests passing** (514 `services/orchestrator` + 182
-`services/core`), plus a clean `npm run build` on the frontend. Two PRs open
-as of this review (#109, a performance change; #110, a documentation-only
-research writeup) — `gh pr list --state open` is the ground truth for
-whether they've landed by the time you read this. Every PR that landed this
-project went through the same cycle: built with real tests, reviewed in an
-isolated worktree, live-verified against a real running stack, then merged
-— nothing here is asserted without having been run for real at least once.
+**718 backend tests passing** (536 `services/orchestrator` + 182
+`services/core`), plus a clean `npm run build` on the frontend. **Zero open
+PRs** as of this review — `gh pr list --state open` is the ground truth for
+whether that's still true by the time you read this. Every PR that landed
+this project went through the same cycle: built with real tests, reviewed
+in an isolated worktree, live-verified against a real running stack, then
+merged — nothing here is asserted without having been run for real at
+least once.
 
 **Rounds 7 through 10** (the gap this review closes) shipped, in order: a
 full admin console (account directory, audit log, tender builder — round
@@ -88,12 +88,18 @@ status poll → document fetch, wired all the way into the bidder submission
 UI, PS26100 point 8), five new self-declared requirement types covering
 Make in India, Startup India, NSIC, OEM authorization, and blacklist/
 debarment (points 5, 7, 9 — each with a real, checked reason no
-verification API exists, not a placeholder), and a measured 77.6x
-performance fix for the seven single-bidder read endpoints that were each
-refolding every other bidder's verdicts in the deployment to answer a
-question about one (round 10). See `docs/NEXT_TASKS_10_anubrat_rishika.md`
-and `docs/NEXT_TASKS_10B_anubrat_rishika_sprint.md` for the real task
-briefs, and `docs/ADAPTERS.md` section 11 for the current, honest
+verification API exists, not a placeholder), a measured 77.6x performance
+fix for the seven single-bidder read endpoints that were each refolding
+every other bidder's verdicts in the deployment to answer a question about
+one, a real name/DOB cross-check proving a DigiLocker-verified Aadhaar
+identity is actually the bidder (not just a real person — a distinct,
+narrower claim), real R2 object storage replacing Render's ephemeral local
+disk for uploaded documents, and a real, independently-caught bug fix
+(a document lookup that could silently return a stale, already-wiped
+`storage_ref` instead of the current one) (round 10). See
+`docs/NEXT_TASKS_10_anubrat_rishika.md` and
+`docs/NEXT_TASKS_10B_anubrat_rishika_sprint.md` for the real task briefs,
+and `docs/ADAPTERS.md` section 11 for the current, honest
 capability-by-capability state.
 
 **Core domain layer** — the four-state verdict algebra (`PASS` / `FAIL` /
@@ -112,8 +118,12 @@ page and pixel region through to the rendered UI.
 **Verification** — five live capabilities on one Sandbox.co.in account:
 `PAN_STATUS`, `GST_STATUS`, `CIN_STATUS`, `GST_RETURN_STATUS` (round 10),
 and `DIGILOCKER_DOCUMENT` (round 10, Aadhaar only so far — a real bidder-
-consent redirect, not a lookup). Confirmed live against the real deployed
-API as of this review (`GET /capabilities`, `live_count: 5`), not assumed.
+consent redirect, not a lookup, and one that now also proves the verified
+person is the bidder: it reads the real signed Aadhaar XML's name and
+cross-checks it against `bidder.pan.holder_name`, never just trusting that
+"a real Aadhaar-verified person completed the flow" is the same claim as
+"this specific bidder did"). Confirmed live against the real deployed API
+as of this review (`GET /capabilities`, `live_count: 5`), not assumed.
 `UDYAM_STATUS`, `EPFO_ESTABLISHMENT`, and `ESIC_ESTABLISHMENT` are
 registered null adapters, each **confirmed** to have no lawful
 programmatic source (Udyam: checked against Sandbox's own product catalog,
@@ -288,51 +298,52 @@ the three, and unlike round 10's five new self-declared types, none of
 these three have been given even a self-declared path yet. A real,
 specific residual gap, narrower than it was, not closed.
 
-### 3. Deployment — Docker declined (still the right call), but document storage is a real, recurring, currently-broken problem
+### 3. Deployment — resolved, including document storage as of this review
 
-Docker itself was declined (see "Architecture direction" above) in favor
-of a Render Blueprint (`render.yaml`) running the orchestrator and
-frontend as two free services against the shared Neon database — that
-part is resolved and stays resolved, see `docs/DEPLOYMENT.md` for setup.
+Docker was declined (see "Architecture direction" above) in favor of a
+Render Blueprint (`render.yaml`) running the orchestrator and frontend
+as two free services against the shared Neon database — see
+`docs/DEPLOYMENT.md` for setup.
 
-**Not resolved, and actively broken again as of this review, checked
-live, not assumed:** uploaded document files live on the orchestrator's
-local disk (`storage_ref` in `DOCUMENT_INGESTED`), and Render's free
-tier gives that service an *ephemeral* filesystem — every redeploy wipes
-it. `render.yaml` auto-deploys on every push to `main`, so **any** merge
-— a doc fix, a CSS change, anything — silently deletes every previously
-uploaded document, while the hash-chained event log keeps referencing
-the now-missing file forever (the reference cannot be repaired unless a
-byte-identical re-upload happens to land, which only works as a stopgap,
-not a fix). Confirmed live right now: `GET /documents/{sha256}` 404s
-with `"the event log references this document, but it is not on disk
-here"` for both real bidders' documents — re-uploaded once already this
-sprint, silently wiped again by at least three merges since.
+**Document storage — real, recurring bug, now genuinely fixed, checked
+live, not assumed.** Uploaded documents used to live on the
+orchestrator's local disk, and Render's free tier gives that service an
+*ephemeral* filesystem — every redeploy wiped it, and since
+`render.yaml` auto-deploys on every push to `main`, **any** merge
+silently deleted every previously uploaded document while the
+hash-chained event log kept referencing the now-missing file forever.
+Rishika found this live while working her round 10D screenshot task;
+independently re-confirmed before any fix was written.
 
-This is not cosmetic. It means an officer's decision, once made off a
-document, can permanently lose the ability to be independently
-re-verified by clicking through to the original page — directly
-undercutting the charter's own "provenance to the pixel" claim, the
-single most load-bearing promise this product makes to a judge.
+Fixed properly, not patched over, in two parts:
+1. **Real object storage** (Cloudflare R2, free tier) — `store_document`/
+   `read_document` (`extract/ingest.py`) now write to and read from a
+   real R2 bucket when `SATYAPRAMANA_R2_*` credentials are configured
+   (they are, on the live deployment), with the same honest local-disk
+   fallback for unconfigured local dev as before. Verified against the
+   real live bucket before this ever touched Render: stored an object,
+   read it back byte-identical, confirmed absence returns an honest
+   miss rather than a crash.
+2. **A second, pre-existing bug the R2 migration exposed rather than
+   caused**: the document-lookup query (`GET /documents/{sha256}` and
+   Tender Intelligence's decomposition) had a bare `LIMIT 1` with no
+   `ORDER BY`. The same content can genuinely be ingested more than once
+   (a real re-upload, or two bidders' documents colliding on SHA-256 —
+   both true on this deployment), each with its own `storage_ref`, and
+   nothing guaranteed the query returned the current one over a
+   long-dead one. Fixed with `ORDER BY seq DESC` — same "later wins"
+   rule every other evidence fold in this system already follows.
 
-Real fix options, by effort (not yet decided as of this review):
-1. **Object storage** (Cloudflare R2 or Backblaze B2, both have a real
-   free tier) — swap the local-disk read/write path for an S3-compatible
-   client; survives every redeploy permanently. Needs a new account and
-   credentials, the same category of decision as the Gemini key.
-2. **Render persistent disk** — less code, but a real recurring cost;
-   the team has already declined paid infrastructure elsewhere (no
-   Docker, no Next.js), so this would be a deliberate, stated exception,
-   not a default.
-3. **Re-upload right before any screenshot/demo, zero pushes in
-   between** — not a fix, a timing workaround; what's unblocked every
-   screenshot so far, and will keep recurring exactly this way until 1
-   or 2 actually happens.
+**Proven the way that matters, not just asserted**: re-uploaded both
+real bidders' documents, then deployed the second fix — a real redeploy
+cycle, the exact scenario that broke this before — and confirmed live
+afterward that both documents still return `200`, not `404`. Hash chain
+reconfirmed intact throughout (201 events at last check, zero breaks).
 
 ### 4. Everything else
 
 No other gap is currently open beyond what's named above (real demo data
-for collusion, the Gemini key, document storage, and
+for collusion, the Gemini key, and
 `EXPERIENCE`/`SIMILAR_WORK`/`CERTIFICATION`). If a new one turns up, it
 goes here with the same rigor
 as 1–3: what's missing, why, and what real-world input (if any) it needs
@@ -349,7 +360,7 @@ cd services/core && ./venv/bin/python -m pytest tests/ -q   # expect 182 passed
 # orchestrator — needs PostgreSQL
 cd services/orchestrator
 export DATABASE_URL=postgresql://localhost/satyapramana_test
-./venv/bin/python -m pytest tests/ -q                        # expect 514 passed
+./venv/bin/python -m pytest tests/ -q                        # expect 536 passed
                                                               # (more once #109 merges)
 
 # frontend
