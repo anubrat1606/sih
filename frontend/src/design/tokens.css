@@ -43,6 +43,26 @@
   --color-text-muted: #7b8798;
   --color-text-on-dark: #ffffff;
   --color-text-on-dark-muted: #a9bdd4;
+  /* A third on-dark tier, between the two above: prominent body copy (the
+   * login page's assurance list, not a heading, not a caption) reads
+   * washed-out in -muted and loses hierarchy against -on-dark's pure
+   * white. Round 10D. */
+  --color-text-on-dark-emphasis: #dbe6f3;
+
+  /* ---- fixed-dark-surface accents -------------------------------------
+   * The sidebar and the login/landing brand panels stay on
+   * --color-surface-inverse regardless of the app's own light/dark theme
+   * choice -- so, like --color-text-on-dark above, these are NOT
+   * redefined in the dark-theme blocks below. --color-accent-on-dark
+   * intentionally equals dark theme's --color-accent: the same accent
+   * blue reads correctly against a permanently-dark surface no matter
+   * which theme the rest of the app is in. --color-focus-on-dark is
+   * deliberately its own, brighter value, not --color-accent-hover --
+   * a focus ring needs more contrast than a hover state, and reusing the
+   * app-wide --color-border-focus (a dark navy, unchanged in dark theme)
+   * would be close to invisible here. Round 10D. */
+  --color-accent-on-dark: #62a0e0;
+  --color-focus-on-dark: #8fc0f0;
 
   --color-accent: var(--blue-600);
   --color-accent-hover: var(--blue-700);
