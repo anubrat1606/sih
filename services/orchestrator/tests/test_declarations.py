@@ -112,6 +112,20 @@ def test_round_10_declaration_backed_types_are_also_evidence_backed():
         entry = catalog[type_id]
         assert entry["evidence_backed"] is True, type_id
         assert entry["backed_fields"] == ["bidder.declarations.{requirement_id}"], type_id
+
+
+def test_round_10_followup_declaration_backed_types_are_also_evidence_backed():
+    """EXPERIENCE, SIMILAR_WORK and CERTIFICATION had no evidence path at
+    all through round 10 (docs/STATUS.md gap 2's residual three) -- given
+    the same self-declared mechanism as a follow-up, each with its own
+    honest weaker-evidence note (requirement_types.py), same spirit as
+    BLACKLIST_DEBARMENT's caveat, not presented as equivalent in strength
+    to the register-backed self-declared types above."""
+    catalog = {t["id"]: t for t in requirement_type_catalog(Registry())}
+    for type_id in ("EXPERIENCE", "SIMILAR_WORK", "CERTIFICATION"):
+        entry = catalog[type_id]
+        assert entry["evidence_backed"] is True, type_id
+        assert entry["backed_fields"] == ["bidder.declarations.{requirement_id}"], type_id
         assert entry["note"], type_id  # every one has a real, non-empty explanation
 
 
