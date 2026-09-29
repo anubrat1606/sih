@@ -129,25 +129,20 @@ def test_requirement_types_marks_digilocker_aadhaar_as_evidence_backed(client):
 def test_requirement_types_honestly_flags_unbacked_types(client):
     """No fabricated evidence path for the types nothing in this system can
     currently produce -- each says so, with a real reason, not a bare false.
-    MIN_TURNOVER/NET_WORTH moved out of this list once extract/financials.py
-    gave them a real evidence path (round 8) -- see
-    test_requirement_types_marks_financial_types_as_evidence_backed.
-    DECLARATION moved out the same way in round 9 -- see
-    test_declarations.py::test_declaration_type_is_always_evidence_backed.
-    OEM_AUTHORIZATION moved out the same way in round 10, alongside four new
-    declaration-backed types (STARTUP_INDIA, NSIC, MAKE_IN_INDIA,
-    BLACKLIST_DEBARMENT) that were never in this list to begin with --
-    see test_declarations.py::test_round_10_declaration_backed_types_are_
-    also_evidence_backed. EXPERIENCE/SIMILAR_WORK/CERTIFICATION moved out
-    the same way in a round 10 follow-up, each with the same weaker-
-    evidence caveat BLACKLIST_DEBARMENT already carries -- see
-    test_declarations.py::test_round_10_followup_declaration_backed_types_
-    are_also_evidence_backed. ITR and EPFO_ESIC remain the only genuinely
-    unbacked types, both for a checked, permanent reason (see
-    requirement_types.py)."""
+    MIN_TURNOVER/NET_WORTH, DECLARATION, OEM_AUTHORIZATION/STARTUP_INDIA/
+    NSIC/MAKE_IN_INDIA/BLACKLIST_DEBARMENT, then EXPERIENCE/SIMILAR_WORK/
+    CERTIFICATION, and finally ITR/EPFO_ESIC (a further round-11 follow-up)
+    all moved out of this list in turn, each onto the same self-declared
+    mechanism DECLARATION uses, each with its own honest weaker-evidence
+    caveat -- see test_declarations.py's growing family of
+    ..._are_also_evidence_backed tests. DOCUMENT_REQUIRED and TECHNICAL are
+    the only two types left with no backed field, and that is by design,
+    not a gap: both are intentionally generic/open-ended (see their own
+    notes in requirement_types.py), never candidates for a self-declared
+    path the way a named, specific fact like "filed ITR" is."""
     body = client.get("/requirement-types").json()
     by_id = {t["id"]: t for t in body["requirement_types"]}
-    for unbacked in ("ITR", "EPFO_ESIC"):
+    for unbacked in ("DOCUMENT_REQUIRED", "TECHNICAL"):
         assert by_id[unbacked]["evidence_backed"] is False
         assert by_id[unbacked]["backed_fields"] == []
         assert by_id[unbacked]["note"]  # a real, non-empty explanation

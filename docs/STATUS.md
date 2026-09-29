@@ -1,14 +1,18 @@
 # STATUS — where the project is and what to do next
 
-Last reviewed: 2026-09-29. Read `../CLAUDE.md` first for architecture and conventions,
-then `CONTRIBUTING.md` for who owns what and how a change ships.
+Last reviewed: 2026-09-29 (round 11). Read `../CLAUDE.md` first for architecture and
+conventions, then `CONTRIBUTING.md` for who owns what and how a change ships.
 
 This file went stale for two weeks (rounds 7 through 10 all shipped between
 the last review and this one) before being refreshed against the real,
 live state below — checked against `gh pr list`, a real local test run,
-and the actual deployed system's own API, not assumed from memory. If
-you're reading this after another gap, the same three checks are how to
-tell what's still true.
+and the actual deployed system's own API, not assumed from memory. Round 11
+(same day) closed the last two genuinely-zero-evidence requirement types
+(`ITR`, `EPFO_ESIC`), added a second AI provider after Gemini hit a real
+billing wall on the live deployment, added a second vendor for Udyam
+status, and surfaced backend evidentiary caveats that existed in code but
+never reached the officer UI. If you're reading this after another gap,
+the same three checks are how to tell what's still true.
 
 ## Architecture direction — decided 2026-09-10, still in force
 
@@ -56,14 +60,14 @@ install and works from any machine:
   app runs changes either way — see `CONTRIBUTING.md`'s Setup section.
 - Free-tier Neon auto-suspends after inactivity; the first request after
   a while just takes a couple of seconds to wake it back up. Not a bug.
-- This resolves the *database* half of gap 2 below. The Sandbox.co.in /
-  Gemini credentials half is still an open, separate decision.
+- This resolves the *database* half of gap 2 below. The AI-provider
+  credentials half is still an open, separate decision.
 
 ---
 
 ## Built and merged, as of this review
 
-**718 backend tests passing** (536 `services/orchestrator` + 182
+**751 backend tests passing** (569 `services/orchestrator` + 182
 `services/core`), plus a clean `npm run build` on the frontend. **Zero open
 PRs** as of this review — `gh pr list --state open` is the ground truth for
 whether that's still true by the time you read this. Every PR that landed
@@ -71,6 +75,25 @@ this project went through the same cycle: built with real tests, reviewed
 in an isolated worktree, live-verified against a real running stack, then
 merged — nothing here is asserted without having been run for real at
 least once.
+
+**Round 11** (same day as round 10's review, in order): a genuine
+production incident diagnosed and fixed live — the newly-configured Gemini
+key immediately hit a deprecated default model (HTTP 404), then, once
+fixed, a persistent capacity/billing wall (HTTP 503, then HTTP 402
+"prepayment credits depleted" even against a $300 GCP trial credit); Groq
+added as a second, preferred AI provider (genuinely free, no card, not
+capacity-constrained) with Gemini kept as an automatic fallback, plus
+retry-with-backoff on transient provider errors for both; a real, honest
+gap found during a routine PR review — backend evidentiary caveats for
+self-declared requirement types existed in `requirement_types.py` but were
+silently dropped before reaching the officer's screen in the rule-pack
+builder, fixed with a new `CaveatNote` component; `UDYAM_STATUS` brought to
+`AWAITING_CREDENTIALS` via a second, separate vendor (Attestr) after
+Sandbox.co.in was re-confirmed not to offer it; and `ITR`/`EPFO_ESIC`, the
+last two requirement types with zero evidence path of any kind (not even
+self-declared, unlike every other confirmed-unavailable type), given the
+same self-declared-undertaking mechanism as the other nine, each with its
+own honest weaker-evidence caveat.
 
 **Rounds 7 through 10** (the gap this review closes) shipped, in order: a
 full admin console (account directory, audit log, tender builder — round
@@ -124,19 +147,35 @@ cross-checks it against `bidder.pan.holder_name`, never just trusting that
 "a real Aadhaar-verified person completed the flow" is the same claim as
 "this specific bidder did"). Confirmed live against the real deployed API
 as of this review (`GET /capabilities`, `live_count: 5`), not assumed.
-`UDYAM_STATUS`, `EPFO_ESTABLISHMENT`, and `ESIC_ESTABLISHMENT` are
-registered null adapters, each **confirmed** to have no lawful
-programmatic source (Udyam: checked against Sandbox's own product catalog,
-round 10; EPFO/ESIC: no source anywhere) — cut from scope for a real,
-checked reason, not outstanding work. `ITR_FILING` is the same category:
-Sandbox does have a real ITR-V API, but it requires the calling
+`UDYAM_STATUS` moved from a null adapter to `AWAITING_CREDENTIALS` in round
+11: Sandbox.co.in still confirmed not to offer it, but a second, separate
+vendor (Attestr, real documented API) does, and a real adapter
+(`adapters/attestr.py`) is built and tested — goes `LIVE` the moment
+`SATYAPRAMANA_ATTESTR_AUTH_TOKEN` is configured. `EPFO_ESTABLISHMENT` and
+`ESIC_ESTABLISHMENT` remain registered null adapters, **confirmed** to have
+no lawful programmatic source anywhere, any vendor — cut from scope for a
+real, checked reason, not outstanding work. `ITR_FILING` is the same
+category: Sandbox does have a real ITR-V API, but it requires the calling
 organization itself to be a registered e-Return Intermediary with the
 Income Tax Department — a legal/business registration, not a credential
-this account can add. The Gemini key (`SATYAPRAMANA_GEMINI_API_KEY`) is
-**not** configured on the live Render deployment as of this review — EXPLAIN
-and Tender Intelligence both correctly degrade to `available: false` there
-rather than fabricating anything, but nobody has actually seen either one
-narrate a real dossier live yet.
+this account can add. (Note: `ITR` and `EPFO_ESIC` as *requirement types*
+— what an officer can build a rule pack around — are a separate question
+from these *capabilities*; both now have a real self-declared evidence
+path, round 11, see "Built and merged" above. The live-verification
+capabilities themselves remain genuinely unavailable.)
+
+**AI providers (EXPLAIN / Tender Intelligence)** — round 11: the Gemini key
+was configured on the live deployment for the first time and immediately
+surfaced two real problems (a deprecated default model, then persistent
+billing/capacity failures — see round 11 summary above). Groq
+(`SATYAPRAMANA_GROQ_API_KEY`) is now the preferred provider, genuinely free
+and not capacity-constrained; Gemini remains wired in as an automatic
+fallback if only its key is set. Neither is confirmed configured on the
+live Render deployment as of this review — check `GET /capabilities` and a
+real `GET /bidders/{id}/explain` call, not this file, for current truth.
+Nobody has yet watched either stage narrate a real result in the actual
+browser UI (Rishika's round 11 task, `docs/NEXT_TASKS_11_rishika.md`) —
+only via raw API calls during diagnosis.
 
 **Auth** — real login, `hashlib.scrypt` password hashing (stdlib, no new
 dependency), signed JWT sessions, three roles totally ordered
@@ -204,14 +243,16 @@ pack.
   computed **live** against the real capability registry and extraction
   field list — the same two sources rule 8 already validates a submitted
   pack against, so this can never silently drift from what adoption will
-  actually accept. **13 of the 20** come back backed with a real evidence
+  actually accept. **18 of the 20** come back backed with a real evidence
   path today (GST/PAN/CIN/Udyam/DigiLocker-Aadhaar via extraction or a live
   capability; turnover/net worth via financial-statement extraction;
-  declaration and the five round-10 self-declared types via round 9's
-  attestation mechanism); the remaining 7 (ITR, experience, similar work,
-  certification, EPFO/ESIC, plus the intentionally generic document-
-  required and technical) honestly come back unbacked with a stated
-  reason — nothing here fabricates an evidence path.
+  declaration plus nine self-declared types — OEM authorization, Startup
+  India, NSIC, Make in India, blacklist/debarment, experience, similar
+  work, certification, and, as of round 11, ITR and EPFO/ESIC — via round
+  9's attestation mechanism); only document-required and technical come
+  back unbacked, and both by design, not as a gap: genuinely open-ended
+  types with no single fact to attest to — nothing here fabricates an
+  evidence path.
 - `POST /tenders/{tender_id}/rule-pack/validate` — dry-run validation
   (`rulepacks.validate_only()`), same rule-8-through-13 check adoption
   gates on, appends no event and writes no row.
@@ -256,22 +297,31 @@ name, address, phone, or bank account with `ANUBRAT-DAS` or
 `GST-BIDDER-01` — a real-world-input gap, same as before, just narrower
 than it was.
 
-### 2. Live credentials are shared for Sandbox.co.in, not yet for Gemini
+### 2. AI provider credentials — Groq preferred, still being finalized on the live deployment
 
-**The Sandbox.co.in half is resolved**, confirmed live as of this review:
+**The Sandbox.co.in half is resolved**, confirmed live:
 `SATYAPRAMANA_SANDBOX_API_KEY`/`_SECRET`/`_ENV=live` are all set on the
 shared Render backend (`GET /capabilities` shows `live_count: 5` from the
 public internet, not a local `.env`) — a shared Neon Postgres plus this
 shared Render deployment means nobody needs their own Sandbox credentials
-just to use the running app.
+just to use the running app. Round 11 added a real Attestr adapter for
+`UDYAM_STATUS` the same way — `SATYAPRAMANA_ATTESTR_AUTH_TOKEN` not yet
+set on the live deployment as of this review.
 
-Still open: `SATYAPRAMANA_GEMINI_API_KEY` is not set on the live
-deployment (checked directly against Render's env-var list, not assumed)
-— correct, not a bug, since EXPLAIN and Tender Intelligence both honestly
-degrade to `available: false` without it, rather than faking a narrative.
-Worth deciding: does the team add one real shared key to Render's env vars
-(same place the Sandbox credentials already live), or does this stay
-per-developer for local work only?
+Round 11, in detail: `SATYAPRAMANA_GEMINI_API_KEY` was set on the live
+deployment for the first time — and the very first real call surfaced a
+real, live-only bug (a deprecated default model, HTTP 404), fixed within
+the hour. The fix redeployed clean, but the *next* real call hit a
+different wall: persistent HTTP 503 ("high demand") from Gemini's free
+tier, then, after switching to a fresh key on a $300 GCP trial-credit
+account, HTTP 402 ("prepayment credits depleted") — the trial credit does
+not cover Gemini's own prepay billing model. Rather than keep chasing one
+provider's billing state days before a deadline, Groq was added as a
+second, preferred provider (`SATYAPRAMANA_GROQ_API_KEY`) — genuinely free,
+no card required, not capacity-constrained the way Gemini's free tier is
+— with Gemini kept wired in as an automatic fallback. Neither key is
+confirmed set on the live deployment as of this review; check
+`GET /capabilities` for current truth, not this file.
 
 [PR #59](https://github.com/anubrat1606/sih/pull/59), merged: Kevin ran a
 real GeM tender (BHEL, Enquiry No. T7J1Z68239, "Supply of Metallic
@@ -288,15 +338,14 @@ checked against the actual PDF page and matched verbatim.
 5 more real requirements from the same tender (turnover, experience,
 certification, two declarations) were drafted, validated, and correctly
 refused adoption at the time (rule 8: no evidence path; rule 11:
-`review_required`) — documented in the PR, not silently dropped. Updated
-as of this review: turnover and net worth got a real, deterministic
+`review_required`) — documented in the PR, not silently dropped. **Fully
+resolved as of round 11**: turnover and net worth got a real, deterministic
 evidence path in round 8 (`extract/financials.py`); declarations got real
-capture in round 9 (`DECLARATION`). What's still genuinely unbacked today
-— checked directly, not assumed — is `EXPERIENCE`, `SIMILAR_WORK`, and
-`CERTIFICATION`: no extraction path or verification API exists for any of
-the three, and unlike round 10's five new self-declared types, none of
-these three have been given even a self-declared path yet. A real,
-specific residual gap, narrower than it was, not closed.
+capture in round 9 (`DECLARATION`); `EXPERIENCE` and `CERTIFICATION` (plus
+`SIMILAR_WORK`, `ITR`, and `EPFO_ESIC`) all got a real self-declared
+evidence path across round 10's follow-up and round 11 — every requirement
+type drafted against this real tender in PR #59 now has some real evidence
+path. No residual gap left from this specific PR.
 
 ### 3. Deployment — resolved, including document storage as of this review
 
@@ -343,10 +392,9 @@ reconfirmed intact throughout (201 events at last check, zero breaks).
 ### 4. Everything else
 
 No other gap is currently open beyond what's named above (real demo data
-for collusion, the Gemini key, and
-`EXPERIENCE`/`SIMILAR_WORK`/`CERTIFICATION`). If a new one turns up, it
-goes here with the same rigor
-as 1–3: what's missing, why, and what real-world input (if any) it needs
+for collusion, and finalizing the Groq/Attestr credentials on the live
+deployment). If a new one turns up, it goes here with the same rigor as
+1–3: what's missing, why, and what real-world input (if any) it needs
 before it's buildable.
 
 ---
@@ -360,8 +408,7 @@ cd services/core && ./venv/bin/python -m pytest tests/ -q   # expect 182 passed
 # orchestrator — needs PostgreSQL
 cd services/orchestrator
 export DATABASE_URL=postgresql://localhost/satyapramana_test
-./venv/bin/python -m pytest tests/ -q                        # expect 536 passed
-                                                              # (more once #109 merges)
+./venv/bin/python -m pytest tests/ -q                        # expect 569 passed
 
 # frontend
 cd frontend && npm run build && npm run lint                 # both clean
