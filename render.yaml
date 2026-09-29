@@ -53,8 +53,13 @@ services:
         sync: false
       - key: SATYAPRAMANA_SANDBOX_ENV
         sync: false
-      # Optional -- leave unset and EXPLAIN / Tender Intelligence honestly
-      # report unavailable instead of fabricating anything.
+      # Optional -- leave both unset and EXPLAIN / Tender Intelligence
+      # honestly report unavailable instead of fabricating anything. Groq
+      # preferred when both are set (see explain/__init__.py).
+      - key: SATYAPRAMANA_GROQ_API_KEY
+        sync: false
+      - key: SATYAPRAMANA_GROQ_MODEL
+        sync: false
       - key: SATYAPRAMANA_GEMINI_API_KEY
         sync: false
       - key: SATYAPRAMANA_GEMINI_MODEL
