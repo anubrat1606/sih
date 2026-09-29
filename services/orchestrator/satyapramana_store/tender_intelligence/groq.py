@@ -23,30 +23,42 @@ DEFAULT_MODEL = "openai/gpt-oss-120b"
 
 _API_URL = "https://api.groq.com/openai/v1/chat/completions"
 _RETRYABLE_STATUS = {429, 503}
-_MAX_ATTEMPTS = 3
-#: Fallback only -- a real 429 names the actual wait itself (see
-#: _retry_delay_seconds below), found live 2026-09-30: Groq's TPM limit is
-#: a rolling per-minute budget, not per-request, so decomposing a large
-#: tender across many chunks in quick succession genuinely needs ~10-30s
-#: between retries, not a fixed short guess -- a 2s wait just fails again.
+#: Confirmed live 2026-09-30: this endpoint runs synchronously on a
+#: shared, single-worker free-tier deployment (satyapramana_store/app.py's
+#: decompose_tender). Honoring a real 429's full named wait (seen up to
+#: ~27-30s) across enough attempts and chunks genuinely wedged the whole
+#: service, not just one request -- /health itself started 503ing for
+#: every user until a manual restart. _MAX_ATTEMPTS and
+#: _MAX_RETRY_DELAY_SECONDS are deliberately tight: bounding this
+#: process's worst case protects shared infrastructure, which matters
+#: more here than maximizing any single request's odds of full success --
+#: a bounded honest failure beats an unbounded one that can take the
+#: whole deployment down with it.
+_MAX_ATTEMPTS = 2
 _RETRY_DELAY_SECONDS = 2
+_MAX_RETRY_DELAY_SECONDS = 10.0
 _RETRY_AFTER_RE = re.compile(r"try again in ([\d.]+)s", re.IGNORECASE)
+#: Real successful calls take a few seconds (confirmed live); 60s let one
+#: hung call eat most of the whole request's safety budget by itself.
+_REQUEST_TIMEOUT_SECONDS = 20.0
 
 
 def _retry_delay_seconds(response: httpx.Response) -> float:
     """Groq's own Retry-After header, if present; otherwise the real wait
     named in the 429 body text ("...try again in 27.285s..."), confirmed
     live; otherwise the fixed fallback. A small buffer is added since the
-    provider's own clock and ours are never perfectly in sync."""
+    provider's own clock and ours are never perfectly in sync. Capped --
+    see _MAX_ATTEMPTS's own comment on why this stays bounded rather than
+    honoring an arbitrarily long real wait."""
     header = response.headers.get("retry-after")
     if header:
         try:
-            return float(header) + 0.5
+            return min(float(header) + 0.5, _MAX_RETRY_DELAY_SECONDS)
         except ValueError:
             pass
     match = _RETRY_AFTER_RE.search(response.text or "")
     if match:
-        return float(match.group(1)) + 0.5
+        return min(float(match.group(1)) + 0.5, _MAX_RETRY_DELAY_SECONDS)
     return _RETRY_DELAY_SECONDS
 
 _SYSTEM_INSTRUCTION = (
@@ -80,7 +92,7 @@ def _post_with_retry(api_key: str, payload: dict) -> httpx.Response:
                 _API_URL,
                 headers={"Authorization": f"Bearer {api_key}"},
                 json=payload,
-                timeout=60.0,
+                timeout=_REQUEST_TIMEOUT_SECONDS,
             )
         except httpx.HTTPError as exc:
             last_exc = exc

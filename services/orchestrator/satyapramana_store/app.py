@@ -1090,11 +1090,20 @@ class DecomposeIn(BaseModel):
 
 
 #: Confirmed live 2026-09-30: Render's own reverse proxy kills a request
-#: at roughly 100-120s regardless of the client's timeout. 75s leaves real
-#: margin. A module-level constant, not a literal inside decompose_tender,
-#: so a test can set it small and prove the deadline branch fires without
-#: waiting 75 real seconds.
-DECOMPOSE_TIME_BUDGET_SECONDS = 75.0
+#: at roughly 100-120s regardless of the client's timeout -- and a first
+#: version of this budget (75s) still wasn't tight enough: a chunk already
+#: in flight when the deadline is crossed keeps running to its own worst
+#: case (tender_intelligence/groq.py's _MAX_ATTEMPTS/_MAX_RETRY_DELAY_
+#: SECONDS, ~50s worst case after that round's tightening) before the loop
+#: checks the deadline again, and a long enough synchronous request on
+#: this single-worker free-tier deployment doesn't just fail its own
+#: request -- it wedged the *whole* service, confirmed live (/health
+#: itself started 503ing for every user until a manual restart). 30s
+#: leaves real margin against that combined worst case. A module-level
+#: constant, not a literal inside decompose_tender, so a test can set it
+#: small and prove the deadline branch fires without waiting 30 real
+#: seconds.
+DECOMPOSE_TIME_BUDGET_SECONDS = 30.0
 
 
 def _page_chunks(pages: list, max_words: int = 2500):
