@@ -1,15 +1,23 @@
 # Demo script — screen recording + voiceover
 
-For the YT submission video. Target ~4-5 minutes. Every number and screen
-below was checked live against the real deployment on 2026-09-29 — if it's
-been a while, spot-check the live numbers before recording (`GET
-/capabilities`, the BHEL tender's bidder list) since they can genuinely
-change as more real data gets added.
+For the YT submission video. Target ~5-6 minutes (Tender Intelligence's
+real processing time, section 7, adds a genuine ~90s on its own). Every
+number and screen below was checked live against the real deployment on
+2026-09-30 — if it's been a while, spot-check the live numbers before
+recording (`GET /capabilities`, the BHEL tender's bidder list) since they
+can genuinely change as more real data gets added.
 
 **Before you hit record**: open `https://sih26100-orchestrator.onrender.com/health`
 once to wake the free-tier instance from cold-start — the first real
 request after inactivity takes a couple of seconds, which reads as a
 stall on camera if it happens mid-recording instead.
+
+**On retakes of section 7 (Tender Intelligence)**: that call genuinely
+uses real Groq quota; if you re-record it more than once or twice in
+close succession, later attempts may return fewer proposals (a real,
+honestly-reported rate-limit effect, not a bug) since the free tier's
+per-minute budget is shared across attempts. Leave a minute or two
+between takes of that section specifically if you need more than one.
 
 **Do not navigate to tender `34532`** — an empty stray tender from testing,
 zero bidders, adds nothing and looks unpolished.
@@ -93,7 +101,40 @@ Open the EXPLAIN panel for `ANUBRAT-DAS`.
 Let the real narrative render on camera (it's already confirmed working
 live — real prose, not a mock).
 
-## 7. Audit log (20-30s)
+## 7. Tender Intelligence — a real, large document (60-100s of real wait, shown honestly)
+
+Open the tender detail page for `BHEL-T7J1Z68239` and click "Read
+requirements from PDF" (Tender Intelligence's decompose action) against
+its real source document — a genuine 71-page GeM tender PDF.
+
+> "This tender's own source document is real and large — 71 pages. We
+> deliberately don't hide that from you: watch what happens."
+
+Let it actually run on camera. Confirmed live, 2026-09-30: it takes
+roughly 60-100 seconds and returns real, honest results — **34 real
+proposed requirements** extracted from the actual document text (e.g.
+"the bidder should not have been under suspension for business or
+blacklisted", "the cyclic life of the expansion bellows shall be a
+minimum of 10,000 cycles", "material test certificates for both chemical
+and mechanical as per code requirements"), plus a plain note that some
+page ranges couldn't be analyzed within the free tier's rate limit for
+this round.
+
+> "Thirty-four real candidate requirements, pulled straight from the
+> tender's own language — real weld standards, real inspection
+> requirements, a real blacklist check. Some page ranges didn't make it
+> into this run — a free-tier rate limit on the model we're using, named
+> honestly right here, not hidden. Every one of these is still just a
+> proposal: an officer reviews and re-enters each one by hand before it
+> ever becomes a real requirement. No model gets a path around that."
+
+*(This segment is a genuine live wait, not padding — plan the cut/voiceover
+around it rather than trying to hide it. It is also the demo's second
+strongest honesty moment after the capabilities screen: showing a real
+scale limit, named plainly, mid-feature, is a harder thing for a judge to
+distrust than a suspiciously instant result would be.)*
+
+## 8. Audit log (20-30s)
 
 Open the audit trail / `/audit/verify`.
 
@@ -102,7 +143,7 @@ Open the audit trail / `/audit/verify`.
 > the one before it, so tampering with history breaks the chain visibly.
 > This isn't a claim — it's independently re-verifiable, live, right now."
 
-## 8. Honest close (15-20s)
+## 9. Honest close (15-20s)
 
 > "What you haven't seen us do anywhere in this demo: fake a value, mock
 > a check, or hide a gap behind a green checkmark. Where we can't verify
