@@ -1076,3 +1076,122 @@ def test_decompose_endpoint_returns_real_proposals_from_a_configured_provider(cl
     assert result["model"] == "fake-model"
     assert len(result["proposals"]) == 1
     assert result["proposals"][0]["suggested_field"] == "bidder.gst.status"
+
+
+# --- chunking a large document across multiple real provider calls ------------
+#
+# Round 11, found live: a real 71-page tender needed 40,865 tokens in one
+# call and hit Groq's free-tier 8,000 TPM cap (a real HTTP 413). Chunking
+# by page groups, not truncating, so every page still reaches the model.
+
+def test_page_chunks_splits_on_the_word_budget():
+    from satyapramana_store.app import _page_chunks
+    from satyapramana_store.extract.layout import Page, Word
+
+    def page(number, word_count):
+        words = tuple(Word(text=f"w{i}", page=number, x0=0, top=0, x1=1, bottom=1)
+                      for i in range(word_count))
+        return Page(number=number, words=words, width=1, height=1)
+
+    pages = [page(1, 1000), page(2, 1000), page(3, 1000), page(4, 1000)]
+    chunks = list(_page_chunks(pages, max_words=2500))
+    # 1000+1000=2000 fits; +1000 more would be 3000 > 2500, so page 3
+    # starts a new chunk. Page 4 then joins page 3 (2000 <= 2500).
+    assert [p.number for p in chunks[0]] == [1, 2]
+    assert [p.number for p in chunks[1]] == [3, 4]
+
+
+def test_page_chunks_never_drops_a_page_even_one_over_budget_alone():
+    """A single page whose own word count exceeds the budget still gets
+    its own chunk -- it is sent anyway, never silently dropped."""
+    from satyapramana_store.app import _page_chunks
+    from satyapramana_store.extract.layout import Page, Word
+
+    huge = Page(number=1, words=tuple(
+        Word(text=f"w{i}", page=1, x0=0, top=0, x1=1, bottom=1) for i in range(5000)),
+        width=1, height=1)
+    chunks = list(_page_chunks([huge], max_words=2500))
+    assert len(chunks) == 1
+    assert chunks[0][0].number == 1
+
+
+def test_decompose_endpoint_chunks_a_large_document_across_multiple_real_calls(client, conn, monkeypatch):
+    """A document with more words than one chunk's budget must trigger more
+    than one real DECOMPOSER.decompose() call, and every proposal from
+    every chunk must come back -- proof this is chunking, not truncation."""
+    from satyapramana_store import app as app_module
+    from satyapramana_store.tender_intelligence import Decomposed, ProposedRequirement
+    from datetime import datetime, timezone
+
+    calls = []
+
+    class _FakeDecomposer:
+        def decompose(self, document_text):
+            calls.append(document_text)
+            page_seen = document_text.split("PAGE ")[1].split(" ")[0].rstrip("-").strip()
+            return Decomposed(
+                proposals=(ProposedRequirement(
+                    text=f"Requirement found on page {page_seen}.", page=int(page_seen),
+                    obligation_guess="mandatory", suggested_field=None,
+                    suggested_check=None, note=None),),
+                model="fake-model", generated_at=datetime.now(timezone.utc))
+
+    monkeypatch.setattr(app_module, "DECOMPOSER", _FakeDecomposer())
+
+    # A real multi-page PDF, with a tiny max_words forced via a thin
+    # wrapper around the real chunking function -- exercises the real
+    # decompose_tender code path, not a reimplementation of it.
+    import satyapramana_store.app as _appmod
+    real_chunks = _appmod._page_chunks
+    monkeypatch.setattr(_appmod, "_page_chunks", lambda pages, max_words=2500: real_chunks(pages, max_words=5))
+
+    pdf = text_pdf(["one two three four five"], pages=3)
+    body = upload(client, pdf).json()
+    r = client.post("/tenders/T1/decompose", json={"document_sha256": body["document_sha256"]},
+                    headers=auth_headers(conn))
+    result = r.json()
+
+    assert len(calls) >= 2, "expected more than one real decompose() call for a multi-chunk document"
+    assert result["available"] is True
+    assert len(result["proposals"]) == len(calls)
+
+
+def test_decompose_endpoint_reports_a_partial_chunk_failure_honestly(client, conn, monkeypatch):
+    """If one chunk's real call fails (a real provider error) while
+    others succeed, the response stays available with the real proposals
+    gathered so far, and says plainly that coverage is incomplete --
+    never silently drops the failure, never fails the whole request over
+    one chunk."""
+    from satyapramana_store import app as app_module
+    from satyapramana_store.tender_intelligence import Decomposed, ProposedRequirement, Unavailable
+    from datetime import datetime, timezone
+    import satyapramana_store.app as _appmod
+
+    class _FlakyDecomposer:
+        def __init__(self):
+            self.n = 0
+
+        def decompose(self, document_text):
+            self.n += 1
+            if self.n == 1:
+                return Unavailable(reason="rate limited on this chunk")
+            return Decomposed(
+                proposals=(ProposedRequirement(
+                    text="A real requirement.", page=1, obligation_guess="mandatory",
+                    suggested_field=None, suggested_check=None, note=None),),
+                model="fake-model", generated_at=datetime.now(timezone.utc))
+
+    monkeypatch.setattr(app_module, "DECOMPOSER", _FlakyDecomposer())
+    real_chunks = _appmod._page_chunks
+    monkeypatch.setattr(_appmod, "_page_chunks", lambda pages, max_words=2500: real_chunks(pages, max_words=5))
+
+    pdf = text_pdf(["one two three four five"], pages=3)
+    body = upload(client, pdf).json()
+    r = client.post("/tenders/T1/decompose", json={"document_sha256": body["document_sha256"]},
+                    headers=auth_headers(conn))
+    result = r.json()
+
+    assert result["available"] is True
+    assert len(result["proposals"]) >= 1
+    assert "rate limited on this chunk" in result["reason"]
+    assert "could not be analyzed" in result["reason"]

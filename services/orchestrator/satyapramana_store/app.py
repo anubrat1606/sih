@@ -1088,6 +1088,27 @@ class DecomposeIn(BaseModel):
     document_sha256: str
 
 
+def _page_chunks(pages: list, max_words: int = 2500):
+    """Groups consecutive text-bearing pages so each group's word count
+    stays under a real provider's per-request token budget -- see
+    decompose_tender's own comment for the live 413 that made this
+    necessary. 2,500 words is a deliberately conservative budget (roughly
+    3,600 tokens at English's ~1.44 tokens/word) to leave real headroom
+    for the system prompt and the model's own JSON response inside
+    Groq's free-tier 8,000 TPM cap."""
+    chunk: list = []
+    chunk_words = 0
+    for p in pages:
+        words = len(p.words)
+        if chunk and chunk_words + words > max_words:
+            yield chunk
+            chunk, chunk_words = [], 0
+        chunk.append(p)
+        chunk_words += words
+    if chunk:
+        yield chunk
+
+
 @app.post("/tenders/{tender_id}/decompose")
 def decompose_tender(tender_id: str, body: DecomposeIn, conn=Depends(db),
                      user: User = Depends(require_role(Role.OFFICER))) -> dict[str, Any]:
@@ -1123,25 +1144,54 @@ def decompose_tender(tender_id: str, body: DecomposeIn, conn=Depends(db),
         raise HTTPException(404, "the event log references this document, but it is not on disk here")
 
     pages = read_pdf(data)
-    document_text = "\n\n".join(
-        f"--- PAGE {p.number} ---\n" + " ".join(w.text for w in p.words)
-        for p in pages if p.has_text_layer)
-    if not document_text.strip():
+    text_pages = [p for p in pages if p.has_text_layer]
+    if not text_pages:
         return {"tender_id": tender_id, "available": False,
                 "reason": "this document has no extractable text layer (a scanned image, not real text)",
                 "model": None, "generated_at": None, "proposals": []}
 
-    outcome = DECOMPOSER.decompose(document_text)
-    if isinstance(outcome, DecomposeUnavailable):
-        return {"tender_id": tender_id, "available": False, "reason": outcome.reason,
+    # Round 11: a real 71-page tender (BHEL, T7J1Z68239) needed 40,865
+    # tokens sent in one call -- Groq's free tier caps openai/gpt-oss-120b
+    # at 8,000 tokens/minute per request, confirmed live (a real 413).
+    # Chunking, not truncation: every page still reaches the model, just
+    # across more than one real call, so nothing is silently dropped the
+    # way a length cap on the raw text would.
+    all_proposals: list = []
+    model_used: str | None = None
+    generated_at = None
+    failed_ranges: list[tuple[int, int, str]] = []
+    succeeded = 0
+    for chunk in _page_chunks(text_pages):
+        chunk_text = "\n\n".join(
+            f"--- PAGE {p.number} ---\n" + " ".join(w.text for w in p.words)
+            for p in chunk)
+        outcome = DECOMPOSER.decompose(chunk_text)
+        if isinstance(outcome, DecomposeUnavailable):
+            failed_ranges.append((chunk[0].number, chunk[-1].number, outcome.reason))
+            continue
+        succeeded += 1
+        model_used = outcome.model
+        generated_at = outcome.generated_at
+        all_proposals.extend(outcome.proposals)
+
+    if succeeded == 0:
+        return {"tender_id": tender_id, "available": False,
+                "reason": failed_ranges[0][2] if failed_ranges else "no page range could be analyzed",
                 "model": None, "generated_at": None, "proposals": []}
-    return {"tender_id": tender_id, "available": True, "reason": None,
-            "model": outcome.model, "generated_at": outcome.generated_at.isoformat(),
+
+    reason = None
+    if failed_ranges:
+        reason = (f"{len(failed_ranges)} of {succeeded + len(failed_ranges)} page range(s) "
+                  "could not be analyzed -- proposals below are real, just incomplete: "
+                  + "; ".join(f"pages {a}-{b}: {r}" for a, b, r in failed_ranges))
+
+    return {"tender_id": tender_id, "available": True, "reason": reason,
+            "model": model_used, "generated_at": generated_at.isoformat() if generated_at else None,
             "proposals": [
                 {"text": p.text, "page": p.page, "obligation_guess": p.obligation_guess,
                  "suggested_field": p.suggested_field, "suggested_check": p.suggested_check,
                  "note": p.note}
-                for p in outcome.proposals
+                for p in all_proposals
             ]}
 
 
