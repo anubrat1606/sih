@@ -87,7 +87,7 @@ def test_groq_explainer_retries_a_transient_503_before_succeeding(monkeypatch):
 
     def flaky(*a, **kw):
         calls["n"] += 1
-        if calls["n"] < 3:
+        if calls["n"] < 2:
             return _FakeResponse(503, text="high demand")
         return _ok_response("Recovered narrative.")
     monkeypatch.setattr("satyapramana_store.explain.groq.httpx.post", flaky)
@@ -98,16 +98,25 @@ def test_groq_explainer_retries_a_transient_503_before_succeeding(monkeypatch):
 
 
 # --- retry delay: see tender_intelligence/groq.py's identical tests -----------
+#
+# Round 11 follow-up: the real named wait is capped, not honored in full --
+# see _MAX_RETRY_DELAY_SECONDS's own comment for the real incident
+# (honoring an uncapped wait wedged the whole shared service).
 
-def test_retry_delay_reads_the_real_wait_from_the_error_message():
+def test_retry_delay_reads_the_real_wait_from_the_error_message_but_caps_it():
     resp = _FakeResponse(429, text='{"error":{"message":"Rate limit reached... '
                           'Please try again in 27.285s. Need more tokens?"}}')
-    assert _retry_delay_seconds(resp) == pytest.approx(27.785, abs=0.01)
+    assert _retry_delay_seconds(resp) == 10.0
 
 
-def test_retry_delay_prefers_the_retry_after_header_when_present():
+def test_retry_delay_prefers_the_retry_after_header_but_still_caps_it():
     resp = _FakeResponse(429, text="try again in 5s", headers={"retry-after": "12"})
-    assert _retry_delay_seconds(resp) == pytest.approx(12.5, abs=0.01)
+    assert _retry_delay_seconds(resp) == 10.0
+
+
+def test_retry_delay_under_the_cap_is_used_as_named():
+    resp = _FakeResponse(429, text="...Please try again in 3.5s...")
+    assert _retry_delay_seconds(resp) == pytest.approx(4.0, abs=0.01)
 
 
 def test_retry_delay_falls_back_to_the_fixed_default_with_no_signal():
@@ -126,7 +135,7 @@ def test_groq_explainer_gives_up_after_max_retries_on_a_persistent_503(monkeypat
 
     outcome = explainer.narrate("dossier text")
     assert isinstance(outcome, Unavailable)
-    assert calls["n"] == 3
+    assert calls["n"] == 2
     assert "503" in outcome.reason
 
 

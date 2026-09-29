@@ -30,13 +30,15 @@ DEFAULT_MODEL = "openai/gpt-oss-120b"
 
 _API_URL = "https://api.groq.com/openai/v1/chat/completions"
 _RETRYABLE_STATUS = {429, 503}
-_MAX_ATTEMPTS = 3
-#: Fallback only -- see tender_intelligence/groq.py's identical comment
-#: for the real 429 that made this necessary: Groq's TPM limit is a
-#: rolling per-minute budget, and the real wait it names (~10-30s) is
-#: nothing like a fixed 2s guess.
+#: See tender_intelligence/groq.py's identical, much longer comment: found
+#: live 2026-09-30, honoring a real 429's full wait wedged the whole
+#: shared service, not just one request. Deliberately tight -- bounding
+#: worst case protects shared infrastructure.
+_MAX_ATTEMPTS = 2
 _RETRY_DELAY_SECONDS = 2
+_MAX_RETRY_DELAY_SECONDS = 10.0
 _RETRY_AFTER_RE = re.compile(r"try again in ([\d.]+)s", re.IGNORECASE)
+_REQUEST_TIMEOUT_SECONDS = 20.0
 
 
 def _retry_delay_seconds(response: httpx.Response) -> float:
@@ -44,12 +46,12 @@ def _retry_delay_seconds(response: httpx.Response) -> float:
     header = response.headers.get("retry-after")
     if header:
         try:
-            return float(header) + 0.5
+            return min(float(header) + 0.5, _MAX_RETRY_DELAY_SECONDS)
         except ValueError:
             pass
     match = _RETRY_AFTER_RE.search(response.text or "")
     if match:
-        return float(match.group(1)) + 0.5
+        return min(float(match.group(1)) + 0.5, _MAX_RETRY_DELAY_SECONDS)
     return _RETRY_DELAY_SECONDS
 
 _SYSTEM_INSTRUCTION = (
@@ -79,7 +81,7 @@ def _post_with_retry(api_key: str, payload: dict) -> httpx.Response:
                 _API_URL,
                 headers={"Authorization": f"Bearer {api_key}"},
                 json=payload,
-                timeout=60.0,
+                timeout=_REQUEST_TIMEOUT_SECONDS,
             )
         except httpx.HTTPError as exc:
             last_exc = exc

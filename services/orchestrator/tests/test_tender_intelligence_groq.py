@@ -135,7 +135,7 @@ def test_groq_decomposer_retries_a_transient_503_before_succeeding(monkeypatch):
 
     def flaky(*a, **kw):
         calls["n"] += 1
-        if calls["n"] < 3:
+        if calls["n"] < 2:
             return _FakeResponse(503, text="high demand")
         return _ok_response({"requirements": [
             {"text": "Recovered requirement.", "page": 1, "obligation_guess": "mandatory"},
@@ -144,7 +144,7 @@ def test_groq_decomposer_retries_a_transient_503_before_succeeding(monkeypatch):
 
     outcome = decomposer.decompose("text")
     assert isinstance(outcome, Decomposed)
-    assert calls["n"] == 3
+    assert calls["n"] == 2
 
 
 # --- retry delay: the real wait a 429 names, not a fixed guess -----------------
@@ -152,17 +152,26 @@ def test_groq_decomposer_retries_a_transient_503_before_succeeding(monkeypatch):
 # Found live 2026-09-30: Groq's TPM limit is a rolling per-minute budget,
 # not per-request -- chunking a large tender across many quick calls
 # still hits it, and the real 429 named a ~10-30s wait. A fixed 2s retry
-# just failed again immediately.
+# just failed again immediately. Round 11 follow-up: honoring that real
+# wait in full, across enough chunks and retries, wedged the whole shared
+# service (a single-worker free-tier deployment) -- not just one request.
+# _MAX_RETRY_DELAY_SECONDS caps it: a bounded honest failure beats an
+# unbounded one that can take the whole deployment down with it.
 
-def test_retry_delay_reads_the_real_wait_from_the_error_message():
+def test_retry_delay_reads_the_real_wait_from_the_error_message_but_caps_it():
     resp = _FakeResponse(429, text='{"error":{"message":"Rate limit reached... '
                           'Please try again in 27.285s. Need more tokens?"}}')
-    assert _retry_delay_seconds(resp) == pytest.approx(27.785, abs=0.01)
+    assert _retry_delay_seconds(resp) == 10.0
 
 
-def test_retry_delay_prefers_the_retry_after_header_when_present():
+def test_retry_delay_prefers_the_retry_after_header_but_still_caps_it():
     resp = _FakeResponse(429, text="try again in 5s", headers={"retry-after": "12"})
-    assert _retry_delay_seconds(resp) == pytest.approx(12.5, abs=0.01)
+    assert _retry_delay_seconds(resp) == 10.0
+
+
+def test_retry_delay_under_the_cap_is_used_as_named():
+    resp = _FakeResponse(429, text="...Please try again in 3.5s...")
+    assert _retry_delay_seconds(resp) == pytest.approx(4.0, abs=0.01)
 
 
 def test_retry_delay_falls_back_to_the_fixed_default_with_no_signal():
