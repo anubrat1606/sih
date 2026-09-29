@@ -122,6 +122,15 @@ from .adapters.sandbox_co_in import build_from_env as _build_sandbox_adapters  #
 for _adapter in _build_sandbox_adapters():
     REGISTRY.register(_adapter)
 
+# UDYAM_STATUS (round 11): Sandbox.co.in's own catalog doesn't offer it
+# (confirmed round 10, still true), but Attestr's does -- a second,
+# separate vendor account, same plug-in shape. With no
+# SATYAPRAMANA_ATTESTR_AUTH_TOKEN set this is a no-op and UDYAM_STATUS
+# stays on the honest NullAdapter declared in capability_registry.json.
+from .adapters.attestr import build_from_env as _build_attestr_adapters  # noqa: E402
+for _adapter in _build_attestr_adapters():
+    REGISTRY.register(_adapter)
+
 # DigiLocker (round 10, PS26100 point 8) doesn't fit the loop-callable
 # VerificationAdapter shape the four adapters above use -- it's a real
 # bidder-consent redirect flow, not a server-to-server lookup -- so it gets
@@ -666,7 +675,12 @@ def verify(bidder_id: str, tender_id: str, conn=Depends(db), _user: User = Depen
                        # PAN_STATUS goes from a standing MALFORMED refusal to a
                        # real live call the moment both resolve for a bidder.
                        ("pan_holder_name", "bidder.pan.holder_name"),
-                       ("pan_date_of_birth", "bidder.pan.date_of_birth")):
+                       ("pan_date_of_birth", "bidder.pan.date_of_birth"),
+                       # Round 11: UdyamStatusAdapter reads this exact key --
+                       # was missing entirely before, so UDYAM_STATUS could
+                       # never have received a real number even when
+                       # Attestr credentials were configured.
+                       ("udyam_number", "bidder.udyam.udyam_number")):
         resolved = resolver.field(path)
         if resolved.ok:
             subject[key] = resolved.value

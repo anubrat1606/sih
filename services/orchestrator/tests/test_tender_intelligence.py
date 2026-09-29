@@ -25,6 +25,13 @@ class _FakeResponse:
         self.text = text
 
 
+@pytest.fixture(autouse=True)
+def _no_real_sleep(monkeypatch):
+    """See test_explain.py's identical fixture -- only the wall-clock wait
+    between retry attempts is faked, not the retry count or the outcome."""
+    monkeypatch.setattr("satyapramana_store.tender_intelligence.gemini.time.sleep", lambda *_: None)
+
+
 def test_unconfigured_decomposer_is_honestly_unavailable():
     outcome = UnconfiguredDecomposer().decompose("irrelevant tender text")
     assert isinstance(outcome, Unavailable)
@@ -128,3 +135,38 @@ def test_gemini_decomposer_degrades_honestly_on_a_provider_error():
     outcome = decomposer.decompose("text")
     assert isinstance(outcome, Unavailable)
     assert "429" in outcome.reason
+
+
+def test_gemini_decomposer_retries_a_transient_503_before_succeeding():
+    """Same real-world finding as test_explain.py's twin: the provider's
+    own 503 says this is transient, so a request that recovers on a later
+    attempt should succeed, not fail on the first hiccup."""
+    decomposer = GeminiDecomposer(api_key="fake-key-for-test")
+    calls = {"n": 0}
+
+    def flaky(**kw):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise errors.APIError(503, {"error": {"message": "high demand", "status": "UNAVAILABLE"}})
+        return _FakeResponse(json.dumps([
+            {"text": "Recovered requirement.", "page": 1, "obligation_guess": "mandatory"},
+        ]))
+    decomposer._client.models.generate_content = flaky
+
+    outcome = decomposer.decompose("text")
+    assert isinstance(outcome, Decomposed)
+    assert calls["n"] == 3
+
+
+def test_gemini_decomposer_does_not_retry_a_non_transient_error():
+    decomposer = GeminiDecomposer(api_key="fake-key-for-test")
+    calls = {"n": 0}
+
+    def raise_401(**kw):
+        calls["n"] += 1
+        raise errors.APIError(401, {"error": {"message": "invalid API key", "status": "UNAUTHENTICATED"}})
+    decomposer._client.models.generate_content = raise_401
+
+    outcome = decomposer.decompose("text")
+    assert isinstance(outcome, Unavailable)
+    assert calls["n"] == 1

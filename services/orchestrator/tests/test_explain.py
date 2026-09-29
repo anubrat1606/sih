@@ -26,6 +26,16 @@ class _FakeResponse:
         self.text = text
 
 
+@pytest.fixture(autouse=True)
+def _no_real_sleep(monkeypatch):
+    """The retry loop's short pause between attempts is real product
+    behaviour worth having live; sitting through it for real in every test
+    that exercises a retryable error would just slow the suite for no
+    benefit -- only the wall-clock wait is faked here, not the retry count
+    or the outcome."""
+    monkeypatch.setattr("satyapramana_store.explain.gemini.time.sleep", lambda *_: None)
+
+
 def test_unconfigured_explainer_is_honestly_unavailable_not_a_blank_narrative():
     outcome = UnconfiguredExplainer().narrate("irrelevant dossier text")
     assert isinstance(outcome, Unavailable)
@@ -110,3 +120,55 @@ def test_gemini_explainer_treats_an_empty_response_as_unavailable_not_a_blank_na
     outcome = explainer.narrate("dossier text")
     assert isinstance(outcome, Unavailable)
     assert "empty" in outcome.reason
+
+
+def test_gemini_explainer_retries_a_transient_503_before_succeeding():
+    """Found live 2026-09-29: the real Gemini key's first calls came back
+    503 'high demand' -- the provider's own word that this is transient,
+    not a real, permanent unavailability. A request that recovers on a
+    later attempt should succeed, not fail on the first hiccup."""
+    explainer = GeminiExplainer(api_key="fake-key-for-test")
+    calls = {"n": 0}
+
+    def flaky(**kw):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise errors.APIError(503, {"error": {"message": "high demand", "status": "UNAVAILABLE"}})
+        return _FakeResponse("Recovered narrative.")
+    explainer._client.models.generate_content = flaky
+
+    outcome = explainer.narrate("dossier text")
+    assert isinstance(outcome, Narrated)
+    assert outcome.narrative == "Recovered narrative."
+    assert calls["n"] == 3
+
+
+def test_gemini_explainer_gives_up_after_max_retries_on_a_persistent_503():
+    explainer = GeminiExplainer(api_key="fake-key-for-test")
+    calls = {"n": 0}
+
+    def always_503(**kw):
+        calls["n"] += 1
+        raise errors.APIError(503, {"error": {"message": "high demand", "status": "UNAVAILABLE"}})
+    explainer._client.models.generate_content = always_503
+
+    outcome = explainer.narrate("dossier text")
+    assert isinstance(outcome, Unavailable)
+    assert calls["n"] == 3
+    assert "503" in outcome.reason
+
+
+def test_gemini_explainer_does_not_retry_a_non_transient_error():
+    """401/bad key, 404/retired model -- retrying changes nothing about a
+    permanent failure, just delays the honest Unavailable an officer sees."""
+    explainer = GeminiExplainer(api_key="fake-key-for-test")
+    calls = {"n": 0}
+
+    def raise_401(**kw):
+        calls["n"] += 1
+        raise errors.APIError(401, {"error": {"message": "invalid API key", "status": "UNAUTHENTICATED"}})
+    explainer._client.models.generate_content = raise_401
+
+    outcome = explainer.narrate("dossier text")
+    assert isinstance(outcome, Unavailable)
+    assert calls["n"] == 1

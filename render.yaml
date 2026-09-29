@@ -53,6 +53,12 @@ services:
         sync: false
       - key: SATYAPRAMANA_SANDBOX_ENV
         sync: false
+      # Optional -- a second, separate vendor backing only UDYAM_STATUS
+      # (round 11). Unset and it stays AWAITING_CREDENTIALS.
+      - key: SATYAPRAMANA_ATTESTR_AUTH_TOKEN
+        sync: false
+      - key: SATYAPRAMANA_ATTESTR_ENV
+        sync: false
       # Optional -- leave both unset and EXPLAIN / Tender Intelligence
       # honestly report unavailable instead of fabricating anything. Groq
       # preferred when both are set (see explain/__init__.py).
