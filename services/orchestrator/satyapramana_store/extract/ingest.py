@@ -29,9 +29,38 @@ from ..events import Actor, append
 INGEST = Actor("SYSTEM", "ingest@1.0.0")
 EXTRACT = Actor("SYSTEM", "extract-deterministic@1.0.0")
 
-#: Where uploaded documents are written. A local directory stands in for object
-#: storage; the interface is one function, so swapping it is contained.
+#: Where uploaded documents are written when no object-storage account is
+#: configured. Local-dev fallback only -- a local directory on Render's
+#: free tier is ephemeral (wiped on every redeploy, confirmed live round
+#: 10), which is exactly why object storage exists below as the real path.
 DOCUMENT_DIR = Path(os.environ.get("SATYAPRAMANA_DOCUMENT_DIR", "documents"))
+
+#: R2 (or any S3-compatible bucket) credentials, read once at import time --
+#: same honest-degrade shape as every other credential in this system
+#: (Sandbox.co.in, Gemini): unset and store_document()/read_document() fall
+#: back to the local directory above rather than erroring.
+_R2_ACCESS_KEY_ID = os.environ.get("SATYAPRAMANA_R2_ACCESS_KEY_ID")
+_R2_SECRET_ACCESS_KEY = os.environ.get("SATYAPRAMANA_R2_SECRET_ACCESS_KEY")
+_R2_ENDPOINT = os.environ.get("SATYAPRAMANA_R2_ENDPOINT")
+_R2_BUCKET = os.environ.get("SATYAPRAMANA_R2_BUCKET")
+#: Prefix marking a storage_ref as an object-storage key rather than a local
+#: filesystem path -- existing events from before this round always
+#: reference a plain relative path (documents/BIDDER/hash-name.pdf), never
+#: this scheme, so detecting by prefix is unambiguous and needs no
+#: migration of old events.
+_R2_REF_PREFIX = "r2://"
+
+
+def _r2_client():
+    if not (_R2_ACCESS_KEY_ID and _R2_SECRET_ACCESS_KEY and _R2_ENDPOINT and _R2_BUCKET):
+        return None
+    import boto3
+    return boto3.client(
+        "s3", endpoint_url=_R2_ENDPOINT,
+        aws_access_key_id=_R2_ACCESS_KEY_ID, aws_secret_access_key=_R2_SECRET_ACCESS_KEY,
+        # R2 is S3-compatible but region-less; boto3 still requires a value.
+        region_name="auto",
+    )
 
 #: Evidence paths this stage produces. Rule pack validation resolves predicate
 #: operands against the union of these and the registered capabilities' paths --
@@ -76,11 +105,49 @@ class Candidate:
 
 
 def store_document(data: bytes, bidder_id: str, filename: str) -> tuple[str, str]:
+    """Round 10: object storage when configured (survives a redeploy
+    permanently), local disk otherwise (unconfigured local dev only --
+    never the live deployment once R2 credentials are set)."""
     digest = hashlib.sha256(data).hexdigest()
+    key = f"{bidder_id}/{digest[:16]}-{Path(filename).name}"
+
+    client = _r2_client()
+    if client is not None:
+        client.put_object(Bucket=_R2_BUCKET, Key=key, Body=data,
+                          ContentType="application/pdf")
+        return digest, f"{_R2_REF_PREFIX}{key}"
+
     target = DOCUMENT_DIR / bidder_id / f"{digest[:16]}-{Path(filename).name}"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
     return digest, str(target)
+
+
+def read_document(storage_ref: str) -> bytes | None:
+    """The read half of store_document -- same object-storage-or-local-disk
+    branch, keyed off storage_ref's own shape so a caller never needs to
+    know which backend actually holds a given document. Returns None,
+    never raises, on any real absence (object not found, file not on
+    disk, credentials since removed) -- the caller (app.py) turns that
+    into an honest 404, not a 500."""
+    if storage_ref.startswith(_R2_REF_PREFIX):
+        client = _r2_client()
+        if client is None:
+            return None
+        key = storage_ref[len(_R2_REF_PREFIX):]
+        from botocore.exceptions import ClientError
+        try:
+            return client.get_object(Bucket=_R2_BUCKET, Key=key)["Body"].read()
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code")
+            if code in ("NoSuchKey", "404"):
+                return None
+            raise  # a real, unexpected R2 error -- surface it, don't mask it as absence
+
+    path = Path(storage_ref)
+    if not path.is_file():
+        return None
+    return path.read_bytes()
 
 
 def find_candidates(pages: list[Page]) -> tuple[list[Candidate], list[dict[str, Any]]]:
